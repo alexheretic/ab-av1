@@ -1,9 +1,9 @@
 [package]
-name = "approx-vmaf-av1"
+name = "abav1"
 version = "0.1.0"
 authors = ["Alex Butler <alexheretic@gmail.com>"]
 edition = "2021"
-description = "Approximate VMAF score for AV1 re-encoding"
+description = "AV1 re-encoding"
 repository = "https://github.com/alexheretic/ab-glyph"
 keywords = ["av1", "vmaf"]
 license = "Apache-2.0"

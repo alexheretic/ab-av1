@@ -3,9 +3,11 @@ set -eu
 dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$dir"
 
+cargo fmt -- --check
+
 cargo build --release
 
-cp "${CARGO_TARGET_DIR:-./target}/release/approx-vmaf-av1" ~/bin/approx-vmaf-av1
-strip ~/bin/approx-vmaf-av1
+cp "${CARGO_TARGET_DIR:-./target}/release/abav1" ~/bin/abav1
+strip ~/bin/abav1
 
-ls -lh ~/bin/approx-vmaf-av1
+ls -lh ~/bin/abav1

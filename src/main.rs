@@ -15,9 +15,21 @@ use tokio::fs;
 const SAMPLE_SIZE_S: u64 = 20;
 const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[clap(version, about)]
 struct Args {
+    #[clap(subcommand)]
+    action: Action,
+}
+
+#[derive(clap::Subcommand)]
+enum Action {
+    SampleVmaf(SampleVmafArgs),
+}
+
+/// Fast calculation of VMAF score for AV1 re-encoding settings using short samples.
+#[derive(Parser)]
+struct SampleVmafArgs {
     /// Input video file.
     #[clap(short)]
     input: PathBuf,
@@ -47,12 +59,15 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let main = Instant::now();
     let Args {
-        input,
-        crf,
-        preset,
-        samples,
-        quiet,
-        keep,
+        action:
+            Action::SampleVmaf(SampleVmafArgs {
+                input,
+                crf,
+                preset,
+                samples,
+                quiet,
+                keep,
+            }),
     } = Args::parse();
 
     macro_rules! verboseprintln {
@@ -81,17 +96,8 @@ async fn main() -> anyhow::Result<()> {
         );
 
         // cut sample
-        let b = Instant::now();
         let sample = ffmpeg::cut_sample(&input, sample_start).await?.keep(keep);
         let sample_size = fs::metadata(&sample).await?.len();
-        verboseprintln!(
-            " - cut sample {} in {:.1?}",
-            sample
-                .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_default(),
-            b.elapsed()
-        );
 
         // encode sample
         let b = Instant::now();
@@ -99,11 +105,7 @@ async fn main() -> anyhow::Result<()> {
         let encode_time = b.elapsed();
         let encoded_size = fs::metadata(&encoded_sample).await?.len();
         verboseprintln!(
-            " - encoded {} :{}% in {:.1?}",
-            encoded_sample
-                .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_default(),
+            " - encoded :{}% in {:.1?}",
             (encoded_size as f32 * 100.0 / sample_size as f32).round(),
             encode_time
         );
