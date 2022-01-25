@@ -1,0 +1,23 @@
+[package]
+name = "approx-vmaf-av1"
+version = "0.1.0"
+authors = ["Alex Butler <alexheretic@gmail.com>"]
+edition = "2021"
+description = "Approximate VMAF score for AV1 re-encoding"
+repository = "https://github.com/alexheretic/ab-glyph"
+keywords = ["av1", "vmaf"]
+license = "Apache-2.0"
+readme = "README.md"
+
+[dependencies]
+clap = { version = "3.0.10", features = ["derive"] }
+ffprobe = "0.3"
+anyhow = "1.0.53"
+tokio = { version = "1.15", features = ["rt", "macros", "process", "fs"] }
+human_bytes = "0.3"
+termcolor = "1.1.2"
+humantime = "2.1"
+
+[profile.release]
+lto = true
+opt-level = "s"

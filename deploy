@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -eu
+dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$dir"
+
+cargo build --release
+
+cp "${CARGO_TARGET_DIR:-./target}/release/approx-vmaf-av1" ~/bin/approx-vmaf-av1
+strip ~/bin/approx-vmaf-av1
+
+ls -lh ~/bin/approx-vmaf-av1
