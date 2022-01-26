@@ -19,6 +19,8 @@ tokio-process-stream = { git = "https://github.com/alexheretic/tokio-process-str
 indicatif = "0.16.2"
 console = "0.15"
 once_cell = "1.9"
+futures = "0.3.19"
+time = { version = "0.3", features = ["parsing", "macros"] }
 
 [profile.release]
 lto = true
