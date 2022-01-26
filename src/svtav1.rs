@@ -77,7 +77,7 @@ pub fn encode(
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     anyhow::ensure!(
         output.extension().and_then(|e| e.to_str()) == Some("mp4"),
-        "Only mp4 supported"
+        "Only mp4 output is supported"
     );
 
     let mut yuv4mpegpipe = Command::new("ffmpeg")

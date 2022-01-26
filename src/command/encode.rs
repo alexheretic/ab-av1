@@ -1,8 +1,9 @@
 use crate::{ffmpeg::FfmpegProgress, ffprobe, svtav1};
 use clap::Parser;
 use console::style;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
+use tokio::fs;
 use tokio_stream::StreamExt;
 
 /// Simple invocation of ffmpeg & SvtAv1EncApp to reencode a video.
@@ -63,5 +64,17 @@ pub async fn encode(
         }
     }
     bar.finish();
+
+    // print output info
+    let output_size = fs::metadata(&output).await?.len();
+    let output_percent = 100.0 * output_size as f64 / fs::metadata(&input).await?.len() as f64;
+    let output_size = style(HumanBytes(output_size)).dim().bold();
+    let output_percent = style(format!("{}%", output_percent.round())).dim().bold();
+    eprintln!(
+        "{} {output_size} {}{output_percent}{}",
+        style("Encoded").dim(),
+        style("(").dim(),
+        style(")").dim(),
+    );
     Ok(())
 }

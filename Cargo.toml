@@ -1,5 +1,5 @@
 [package]
-name = "abav1"
+name = "ab-av1"
 version = "0.1.0"
 authors = ["Alex Butler <alexheretic@gmail.com>"]
 edition = "2021"

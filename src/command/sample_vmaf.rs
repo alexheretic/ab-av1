@@ -129,7 +129,7 @@ pub async fn sample_vmaf(
         "\n{} {}",
         style("Encode with:").dim(),
         style(format!(
-            "abav1 encode -i {input:?} --crf {crf} --preset {preset}"
+            "ab-av1 encode -i {input:?} --crf {crf} --preset {preset}"
         ))
         .dim()
         .italic()

@@ -7,7 +7,7 @@ cargo fmt -- --check
 
 cargo build --release
 
-cp "${CARGO_TARGET_DIR:-./target}/release/abav1" ~/bin/abav1
-strip ~/bin/abav1
+cp "${CARGO_TARGET_DIR:-./target}/release/ab-av1" ~/bin/ab-av1
+strip ~/bin/ab-av1
 
-ls -lh ~/bin/abav1
+ls -lh ~/bin/ab-av1

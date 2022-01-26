@@ -3,7 +3,7 @@
 version = 3
 
 [[package]]
-name = "abav1"
+name = "ab-av1"
 version = "0.1.0"
 dependencies = [
  "anyhow",

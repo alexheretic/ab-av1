@@ -1,4 +1,4 @@
-# abav1
+# ab-av1
 AV1 re-encoding using _ffmpeg_ & _svt-av1_ & _vmaf_.
 
 ## sample-vmaf
@@ -7,7 +7,7 @@ full duration encoding & vmaf calculation. Also predicts encoding size & duratio
 
 ```
 USAGE:
-    abav1 sample-vmaf [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
+    ab-av1 sample-vmaf [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 
 OPTIONS:
         --crf <CRF>            Encoder constant rate factor. Lower means better quality
@@ -23,7 +23,7 @@ Simple invocation of ffmpeg & SvtAv1EncApp to reencode a video.
 
 ```
 USAGE:
-    abav1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
+    ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 
 OPTIONS:
         --crf <CRF>          Encoder constant rate factor. Lower means better quality
@@ -39,7 +39,7 @@ Simple full calculation of VMAF score distorted file vs original file.
 
 ```
 USAGE:
-    abav1 vmaf --original <ORIGINAL> --distorted <DISTORTED>
+    ab-av1 vmaf --original <ORIGINAL> --distorted <DISTORTED>
 
 OPTIONS:
         --distorted <DISTORTED>    Re-encoded/distorted video file
