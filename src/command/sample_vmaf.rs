@@ -46,7 +46,7 @@ pub async fn sample_vmaf(
 
     let bar = ProgressBar::new(SAMPLE_SIZE_S * samples * 2).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}, eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^12}, eta {eta})")
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
@@ -75,13 +75,14 @@ pub async fn sample_vmaf(
             let FfmpegProgress { time, fps, .. } = progress?;
             bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
             if fps > 0.0 {
-                bar.set_message(format!("encoding {fps} fps"));
+                bar.set_message(format!("enc {fps} fps"));
             }
         }
         let encode_time = b.elapsed();
         let encoded_size = fs::metadata(&encoded_sample).await?.len();
 
         // calculate vmaf
+        bar.set_message("vmaf running");
         let mut vmaf = vmaf::run(&sample, &encoded_sample)?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {

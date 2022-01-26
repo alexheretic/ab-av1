@@ -1,5 +1,5 @@
 # abav1
-AV1 re-encoding using _ffmpeg_ & _svt-av1_.
+AV1 re-encoding using _ffmpeg_ & _svt-av1_ & _vmaf_.
 
 ## sample-vmaf
 Fast calculation of VMAF score for AV1 re-encoding settings using short samples.
