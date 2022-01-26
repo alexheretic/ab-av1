@@ -8,9 +8,12 @@ pub struct Ffprobe {
 }
 
 pub fn probe(input: &Path) -> anyhow::Result<Ffprobe> {
-    let duration_s = ffprobe::ffprobe(&input)?
+    let probe = ffprobe::ffprobe(&input)?;
+
+    let duration_s = probe
         .format
         .duration
+        .as_deref()
         .context("ffprobe missing video duration")?
         .parse::<f32>()
         .context("invalid ffprobe video duration")?;

@@ -1,42 +1,17 @@
-use std::path::{Path, PathBuf};
+//! temp file logic
+use once_cell::sync::Lazy;
+use std::{path::PathBuf, sync::Mutex};
 
-#[derive(Debug)]
-pub struct TemporaryPath {
-    path: PathBuf,
-    keep: bool,
+static TEMPS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(<_>::default);
+
+/// Add a file as tempoary so it can be removed later.
+pub fn add(file: impl Into<PathBuf>) {
+    TEMPS.lock().unwrap().push(file.into())
 }
 
-impl TemporaryPath {
-    pub fn keep(mut self, keep: bool) -> Self {
-        self.keep = keep;
-        self
-    }
-}
-
-impl From<PathBuf> for TemporaryPath {
-    fn from(path: PathBuf) -> Self {
-        Self { path, keep: false }
-    }
-}
-
-impl std::ops::Deref for TemporaryPath {
-    type Target = PathBuf;
-
-    fn deref(&self) -> &Self::Target {
-        &self.path
-    }
-}
-
-impl AsRef<Path> for TemporaryPath {
-    fn as_ref(&self) -> &Path {
-        self.path.as_ref()
-    }
-}
-
-impl Drop for TemporaryPath {
-    fn drop(&mut self) {
-        if !self.keep {
-            let _ = std::fs::remove_file(&self.path);
-        }
+/// Delete all added temporary files.
+pub async fn clean() {
+    for file in std::mem::take(&mut *TEMPS.lock().unwrap()) {
+        let _ = tokio::fs::remove_file(file).await;
     }
 }
