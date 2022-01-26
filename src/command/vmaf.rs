@@ -23,11 +23,11 @@ pub async fn vmaf(
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}, eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^12}, eta {eta})")
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
-    bar.set_message("vmaf");
+    bar.set_message("vmaf running");
 
     let duration = ffprobe::probe(&original).map(|p| p.duration);
     if let Ok(d) = duration {

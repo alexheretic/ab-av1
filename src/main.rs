@@ -29,6 +29,7 @@ struct Args {
 enum Action {
     SampleVmaf(command::SampleVmafArgs),
     Vmaf(command::VmafArgs),
+    Encode(command::EncodeArgs),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -39,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         r = match action {
             Action::SampleVmaf(args) => command::sample_vmaf(args).boxed_local(),
             Action::Vmaf(args) => command::vmaf(args).boxed_local(),
+            Action::Encode(args) => command::encode(args).boxed_local(),
         } => r,
         _ = signal::ctrl_c() => Err(anyhow!("ctrl_c")),
     };

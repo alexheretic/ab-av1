@@ -12,11 +12,13 @@ use std::{
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Fast calculation of VMAF score for AV1 re-encoding settings using short samples.
+/// Fast VMAF score for provided AV1 re-encoding settings.
+/// Uses short video samples to avoid expensive full duration encoding & vmaf calculation.
+/// Also predicts encoding size & duration.
 #[derive(Parser)]
 pub struct SampleVmafArgs {
     /// Input video file.
-    #[clap(short)]
+    #[clap(short, long)]
     input: PathBuf,
 
     /// Encoder constant rate factor. Lower means better quality.
@@ -122,6 +124,16 @@ pub async fn sample_vmaf(
 
     bar.finish();
 
+    // encode how-to hint + predictions
+    eprintln!(
+        "\n{} {}",
+        style("Encode with:").dim(),
+        style(format!(
+            "abav1 encode -i {input:?} --crf {crf} --preset {preset}"
+        ))
+        .dim()
+        .italic()
+    );
     let input_size = fs::metadata(&input).await?.len();
     let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
     eprint_predictions(
@@ -129,11 +141,7 @@ pub async fn sample_vmaf(
         results.encoded_percent_size(),
         results.estimate_encode_time(duration),
     );
-
-    // temporary encode how-to hint
-    eprintln!("{}", style(format!("ffmpeg -loglevel panic -i {input:?} -strict -1 -f yuv4mpegpipe - |\n  \
-        SvtAv1EncApp -i stdin -b stdout --crf {crf} --progress 0 --preset {preset} |\n  \
-        ffmpeg -i - -i {input:?} -map 0:v -map 1:a:0 -c:v copy -c:a libopus -movflags +faststart out.mp4\n")).dim());
+    eprintln!();
 
     // finally print the mean sample vmaf
     println!("{}", results.mean_vmaf());
@@ -183,7 +191,7 @@ fn eprint_predictions(size: f64, percent: f64, time: Duration) {
     let encoded_percent = style(format!("{}%", percent.round())).dim().bold();
     let predicted_encode_time = style(HumanDuration(time)).dim().bold();
     eprintln!(
-        "\n{} {predicted_size} {}{encoded_percent}{} {} {predicted_encode_time}\n",
+        "{} {predicted_size} {}{encoded_percent}{} {} {predicted_encode_time}",
         style("Predicted full encode size").dim(),
         style("(").dim(),
         style(")").dim(),
