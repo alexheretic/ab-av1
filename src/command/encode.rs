@@ -1,5 +1,6 @@
 use crate::{ffmpeg::FfmpegProgress, ffprobe, svtav1};
 use clap::Parser;
+use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use tokio_stream::StreamExt;
@@ -32,6 +33,7 @@ pub async fn encode(
         output,
     }: EncodeArgs,
 ) -> anyhow::Result<()> {
+    let defaulting_output = output.is_none();
     let output = output.unwrap_or_else(|| input.with_extension("av1.mp4"));
 
     let bar = ProgressBar::new(1).with_style(
@@ -40,6 +42,9 @@ pub async fn encode(
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
+    if defaulting_output {
+        bar.println(style(format!("Encoding {output:?}")).dim().to_string());
+    }
     bar.set_message("encoding");
 
     let duration = ffprobe::probe(&input).map(|p| p.duration);
