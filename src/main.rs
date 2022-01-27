@@ -19,29 +19,31 @@ const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 struct Args {
     #[clap(subcommand)]
     action: Action,
-
-    /// Keep temporary files after exiting.
-    #[clap(long)]
-    keep: bool,
 }
 
 #[derive(clap::Subcommand)]
 enum Action {
-    SampleVmaf(command::SampleVmafArgs),
+    SampleEncode(command::SampleEncodeArgs),
     Vmaf(command::VmafArgs),
     Encode(command::EncodeArgs),
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    let Args { action, keep } = Args::parse();
+    let Args { action } = Args::parse();
+    let mut keep = false;
+
+    let command = match action {
+        Action::SampleEncode(args) => {
+            keep = args.keep;
+            command::sample_encode(args).boxed_local()
+        }
+        Action::Vmaf(args) => command::vmaf(args).boxed_local(),
+        Action::Encode(args) => command::encode(args).boxed_local(),
+    };
 
     let out = tokio::select! {
-        r = match action {
-            Action::SampleVmaf(args) => command::sample_vmaf(args).boxed_local(),
-            Action::Vmaf(args) => command::vmaf(args).boxed_local(),
-            Action::Encode(args) => command::encode(args).boxed_local(),
-        } => r,
+        r = command => r,
         _ = signal::ctrl_c() => Err(anyhow!("ctrl_c")),
     };
 

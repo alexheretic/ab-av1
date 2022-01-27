@@ -12,11 +12,15 @@ use std::{
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Fast VMAF score for provided AV1 re-encoding settings.
-/// Uses short video samples to avoid expensive full duration encoding & vmaf calculation.
-/// Also predicts encoding size & duration.
+/// Encode short video samples of an input using provided **crf** & **preset**.
+/// This is much quicker than full encode/vmaf run.
+///
+/// Outputs:
+/// * Mean sample VMAF score
+/// * Predicted full encode size
+/// * Predicted full encode time
 #[derive(Parser)]
-pub struct SampleVmafArgs {
+pub struct SampleEncodeArgs {
     /// Input video file.
     #[clap(short, long)]
     input: PathBuf,
@@ -32,23 +36,32 @@ pub struct SampleVmafArgs {
     /// Number of 20s samples.
     #[clap(long, default_value_t = 3)]
     samples: u64,
+
+    /// Keep temporary files after exiting.
+    #[clap(long)]
+    pub keep: bool,
+
+    /// Stdout message format `human` or `json`.
+    #[clap(long, arg_enum, default_value_t = StdoutFormat::Human)]
+    stdout_format: StdoutFormat,
 }
 
-pub async fn sample_vmaf(
-    SampleVmafArgs {
+pub async fn sample_encode(
+    SampleEncodeArgs {
         input,
         crf,
         preset,
         samples,
-        ..
-    }: SampleVmafArgs,
+        keep,
+        stdout_format,
+    }: SampleEncodeArgs,
 ) -> anyhow::Result<()> {
     let Ffprobe { duration, .. } = ffprobe::probe(&input)?;
     let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
 
     let bar = ProgressBar::new(SAMPLE_SIZE_S * samples * 2).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^12}, eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^13} eta {eta})")
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
@@ -57,7 +70,7 @@ pub async fn sample_vmaf(
     for sample_n in 1..=samples {
         let sample_idx = sample_n - 1;
         bar.set_prefix(format!("Sample {sample_n}/{samples}"));
-        bar.set_message("encoding");
+        bar.set_message("encoding,");
         let sample_start =
             Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
                 * sample_n as _
@@ -77,14 +90,14 @@ pub async fn sample_vmaf(
             let FfmpegProgress { time, fps, .. } = progress?;
             bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
             if fps > 0.0 {
-                bar.set_message(format!("enc {fps} fps"));
+                bar.set_message(format!("enc {fps} fps,"));
             }
         }
         let encode_time = b.elapsed();
         let encoded_size = fs::metadata(&encoded_sample).await?.len();
 
         // calculate vmaf
-        bar.set_message("vmaf running");
+        bar.set_message("vmaf running,");
         let mut vmaf = vmaf::run(&sample, &encoded_sample)?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
@@ -98,7 +111,7 @@ pub async fn sample_vmaf(
                         SAMPLE_SIZE_S + time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2,
                     );
                     if fps > 0.0 {
-                        bar.set_message(format!("vmaf {fps} fps"));
+                        bar.set_message(format!("vmaf {fps} fps,"));
                     }
                 }
                 VmafOut::Err(e) => return Err(e),
@@ -120,13 +133,17 @@ pub async fn sample_vmaf(
             encoded_size,
             encode_time,
         });
+
+        if !keep {
+            temporary::clean().await;
+        }
     }
 
     bar.finish();
 
     // encode how-to hint + predictions
     eprintln!(
-        "\n{} {}",
+        "\n{} {}\n",
         style("Encode with:").dim(),
         style(format!(
             "ab-av1 encode -i {input:?} --crf {crf} --preset {preset}"
@@ -134,17 +151,15 @@ pub async fn sample_vmaf(
         .dim()
         .italic()
     );
+    // stdout result
     let input_size = fs::metadata(&input).await?.len();
     let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
-    eprint_predictions(
-        predicted_size,
+    stdout_format.print_result(
+        results.mean_vmaf(),
+        predicted_size as _,
         results.encoded_percent_size(),
         results.estimate_encode_time(duration),
     );
-    eprintln!();
-
-    // finally print the mean sample vmaf
-    println!("{}", results.mean_vmaf());
     Ok(())
 }
 
@@ -186,15 +201,44 @@ impl EncodeResults for Vec<EncodeResult> {
     }
 }
 
-fn eprint_predictions(size: f64, percent: f64, time: Duration) {
-    let predicted_size = style(HumanBytes(size as _)).dim().bold();
-    let encoded_percent = style(format!("{}%", percent.round())).dim().bold();
-    let predicted_encode_time = style(HumanDuration(time)).dim().bold();
-    eprintln!(
-        "{} {predicted_size} {}{encoded_percent}{} {} {predicted_encode_time}",
-        style("Predicted full encode size").dim(),
-        style("(").dim(),
-        style(")").dim(),
-        style("taking").dim()
-    );
+#[derive(Debug, Clone, Copy, clap::ArgEnum)]
+pub enum StdoutFormat {
+    Human,
+    Json,
+}
+
+impl StdoutFormat {
+    fn print_result(self, vmaf: f32, size: u64, percent: f64, time: Duration) {
+        match self {
+            Self::Human => {
+                let vmaf = match vmaf {
+                    v if v >= 95.0 => style(v).bold().green(),
+                    v if v < 80.0 => style(v).bold().red(),
+                    v => style(v).bold(),
+                };
+                let percent = percent.round();
+                let size = match size {
+                    v if percent < 80.0 => style(HumanBytes(v)).bold().green(),
+                    v if percent >= 100.0 => style(HumanBytes(v)).bold().red(),
+                    v => style(HumanBytes(v)).bold(),
+                };
+                let percent = match percent {
+                    v if v < 80.0 => style(format!("{}%", v)).bold().green(),
+                    v if v >= 100.0 => style(format!("{}%", v)).bold().red(),
+                    v => style(format!("{}%", v)).bold(),
+                };
+                let time = style(HumanDuration(time)).bold();
+                println!("VMAF {vmaf} predicted full encode size {size} ({percent}) taking {time}");
+            }
+            Self::Json => {
+                let json = serde_json::json!({
+                    "vmaf": vmaf,
+                    "predicted_encode_size": size,
+                    "predicted_encode_percent": percent,
+                    "predicted_encode_seconds": time.as_secs(),
+                });
+                println!("{}", serde_json::to_string(&json).unwrap());
+            }
+        }
+    }
 }
