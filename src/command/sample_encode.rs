@@ -61,7 +61,7 @@ pub async fn sample_encode(
 
     let bar = ProgressBar::new(SAMPLE_SIZE_S * samples * 2).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^13} eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
@@ -228,7 +228,9 @@ impl StdoutFormat {
                     v => style(format!("{}%", v)).bold(),
                 };
                 let time = style(HumanDuration(time)).bold();
-                println!("VMAF {vmaf} predicted full encode size {size} ({percent}) taking {time}");
+                println!(
+                    "VMAF {vmaf:.2} predicted full encode size {size} ({percent}) taking {time}"
+                );
             }
             Self::Json => {
                 let json = serde_json::json!({

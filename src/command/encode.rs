@@ -39,14 +39,14 @@ pub async fn encode(
 
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:^11}, eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:12} eta {eta})")
             .progress_chars("##-")
     );
     bar.enable_steady_tick(100);
     if defaulting_output {
         bar.println(style(format!("Encoding {output:?}")).dim().to_string());
     }
-    bar.set_message("encoding");
+    bar.set_message("encoding,");
 
     let duration = ffprobe::probe(&input).map(|p| p.duration);
     if let Ok(d) = duration {
@@ -57,7 +57,7 @@ pub async fn encode(
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {
-            bar.set_message(format!("enc {fps} fps"));
+            bar.set_message(format!("enc {fps} fps,"));
         }
         if duration.is_ok() {
             bar.set_position(time.as_secs());
