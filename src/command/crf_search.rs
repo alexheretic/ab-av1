@@ -5,8 +5,14 @@ use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 
-/// Pseudo binary search using sample-encode calls to find the best crf value
+/// Pseudo binary search using sample-encode to find the best crf value
 /// delivering min-vmaf & max-encoded-percent.
+///
+/// Outputs:
+/// * Best crf value
+/// * Mean sample VMAF score
+/// * Predicted full encode size
+/// * Predicted full encode time
 #[derive(Parser)]
 pub struct Args {
     /// Input video file.
