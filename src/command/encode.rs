@@ -1,4 +1,6 @@
-use crate::{command::PROGRESS_CHARS, ffprobe, sample::FfmpegProgress, svtav1, temporary};
+use crate::{
+    command::PROGRESS_CHARS, console_ext::style, ffprobe, sample::FfmpegProgress, svtav1, temporary,
+};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -46,7 +48,7 @@ pub async fn encode(
     );
     bar.enable_steady_tick(100);
     if defaulting_output {
-        bar.println(style(format!("Encoding {output:?}")).dim().to_string());
+        bar.println(style!("Encoding {output:?}").dim().to_string());
     }
     bar.set_message("encoding");
 
@@ -74,7 +76,7 @@ pub async fn encode(
     let output_size = fs::metadata(&output).await?.len();
     let output_percent = 100.0 * output_size as f64 / fs::metadata(&input).await?.len() as f64;
     let output_size = style(HumanBytes(output_size)).dim().bold();
-    let output_percent = style(format!("{}%", output_percent.round())).dim().bold();
+    let output_percent = style!("{}%", output_percent.round()).dim().bold();
     eprintln!(
         "{} {output_size} {}{output_percent}{}",
         style("Encoded").dim(),

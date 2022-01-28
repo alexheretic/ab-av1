@@ -1,9 +1,14 @@
-use crate::command::{sample_encode, PROGRESS_CHARS};
-use anyhow::ensure;
+use crate::{
+    command::{sample_encode, PROGRESS_CHARS},
+    console_ext::style,
+};
+use anyhow::{bail, ensure};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
+
+const BAR_LEN: u64 = 1000;
 
 /// Pseudo binary search using sample-encode to find the best crf value
 /// delivering min-vmaf & max-encoded-percent.
@@ -48,7 +53,7 @@ pub struct Args {
 pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} (eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
             .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(100);
@@ -61,10 +66,12 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style(format!(
+        style!(
             "ab-av1 encode -i {:?} --crf {} --preset {}",
-            args.input, best.crf, args.preset,
-        ))
+            args.input,
+            best.crf,
+            args.preset,
+        )
         .dim()
         .italic()
     );
@@ -97,19 +104,27 @@ async fn run(
         stdout_format: sample_encode::StdoutFormat::Json,
     };
 
-    bar.set_length(1_000);
+    bar.set_length(BAR_LEN);
     let sample_bar = ProgressBar::hidden();
     let mut crf_attempts = Vec::new();
+    // if we're doing/did a 1-sample 3rd run
+    let mut quick_3rd_run = false;
 
     for run in 1.. {
         // how much we're prepared to go higher than the min-vmaf
         let higher_tolerance = run as f32 * 0.2;
         args.samples = match run {
-            1 | 2 => 1, // use a single sample on the first 2 runs for speed
+            // use a single sample on the first 2 runs for speed
+            1 | 2 => 1,
+            // use a single sample to test 3rd run on the boundary for speed
+            3 if args.crf == *min_crf || args.crf == *max_crf => {
+                quick_3rd_run = true;
+                1
+            }
             _ => *samples,
         };
 
-        bar.set_prefix(format!("crf {}", args.crf));
+        bar.set_message(format!("sampling crf {}, ", args.crf));
         let mut sample_task =
             tokio::task::spawn_local(sample_encode::run(args.clone(), sample_bar.clone()));
 
@@ -119,7 +134,7 @@ async fn run(
                 Err(_) => {
                     let sample_progress =
                         sample_bar.position() as f64 / sample_bar.length().max(1) as f64;
-                    bar.set_position(guess_progress(run, sample_progress) as _);
+                    bar.set_position(guess_progress(run, sample_progress, quick_3rd_run) as _);
                 }
                 Ok(o) => {
                     sample_bar.set_position(0);
@@ -130,17 +145,10 @@ async fn run(
 
         let sample = Sample {
             crf: args.crf,
+            samples: args.samples,
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
-        bar.println(
-            style(format!(
-                "- crf {} vmaf {:.2} ({:.0}%)",
-                sample.crf, sample.enc.vmaf, sample.enc.predicted_encode_percent,
-            ))
-            .dim()
-            .to_string(),
-        );
 
         if sample.enc.vmaf > *min_vmaf {
             // good
@@ -160,7 +168,7 @@ async fn run(
                     return Ok(sample);
                 }
                 Some(upper) => {
-                    args.crf = (upper.crf + sample.crf) / 2;
+                    args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample);
                 }
                 None if sample.crf == *max_crf => {
                     return Ok(sample);
@@ -172,11 +180,12 @@ async fn run(
             };
         } else {
             // not good enough
-            ensure!(
-                sample.enc.predicted_encode_percent < *max_encoded_percent as _
-                    && sample.crf != *min_crf,
-                "Failed to find a suitable crf"
-            );
+            if sample.enc.predicted_encode_percent > *max_encoded_percent as _
+                || sample.crf == *min_crf
+            {
+                sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
+                bail!("Failed to find a suitable crf");
+            }
 
             let l_bound = crf_attempts
                 .iter()
@@ -185,10 +194,11 @@ async fn run(
 
             match l_bound {
                 Some(lower) if lower.crf + 1 == sample.crf => {
+                    sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
-                    args.crf = (lower.crf + sample.crf) / 2;
+                    args.crf = vmaf_lerp_crf(*min_vmaf, &sample, lower);
                 }
                 None if run == 1 && sample.crf > min_crf + 1 => {
                     args.crf = (min_crf + sample.crf) / 2;
@@ -196,6 +206,7 @@ async fn run(
                 None => args.crf = *min_crf,
             };
         }
+        sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
     }
     unreachable!();
 }
@@ -204,54 +215,98 @@ async fn run(
 struct Sample {
     enc: sample_encode::Output,
     crf: u8,
-    // preset
+    samples: u64,
+}
+
+impl Sample {
+    fn print_attempt(&self, bar: &ProgressBar, min_vmaf: f32, max_encoded_percent: f32) {
+        let crf_label = style("- crf").dim();
+        let mut crf = style(self.crf);
+        let samples = style(match self.samples {
+            1 => ", 1 sample",
+            _ => "",
+        })
+        .dim();
+        let vmaf_label = style("VMAF").dim();
+        let mut vmaf = style(self.enc.vmaf);
+        let mut percent = style!("{:.0}%", self.enc.predicted_encode_percent);
+        let open = style("(").dim();
+        let close = style(")").dim();
+
+        if self.enc.vmaf < min_vmaf {
+            crf = crf.red();
+            vmaf = vmaf.red().bright();
+        }
+        if self.enc.predicted_encode_percent > max_encoded_percent as _ {
+            crf = crf.red();
+            percent = percent.red();
+        }
+
+        bar.println(format!(
+            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{samples}{close}"
+        ));
+    }
 }
 
 #[derive(Debug, Clone, Copy, clap::ArgEnum)]
 pub enum StdoutFormat {
     Human,
-    // Json,
 }
 
 impl StdoutFormat {
-    fn print_result(self, Sample { crf, enc }: &Sample) {
+    fn print_result(self, Sample { crf, enc, .. }: &Sample) {
         match self {
             Self::Human => {
                 let crf = style(crf).bold().green();
                 let vmaf = style(enc.vmaf).bold().green();
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
-                let percent = style(format!("{}%", enc.predicted_encode_percent.round()))
+                let percent = style!("{}%", enc.predicted_encode_percent.round())
                     .bold()
                     .green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
                 println!(
                     "crf {crf} VMAF {vmaf:.2} predicted full encode size {size} ({percent}) taking {time}"
                 );
-            } // Self::Json => {
-              //     let json = serde_json::json!({
-              //         "vmaf": vmaf,
-              //         "predicted_encode_size": size,
-              //         "predicted_encode_percent": percent,
-              //         "predicted_encode_seconds": time.as_secs(),
-              //     });
-              //     println!("{}", serde_json::to_string(&json).unwrap());
-              // }
+            }
         }
     }
 }
 
-fn guess_progress(run: usize, sample_progress: f64) -> f64 {
+/// Produce a crf value between given samples using vmaf score linear interpolation.
+fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
+    assert!(
+        worse_q.enc.vmaf <= min_vmaf
+            && worse_q.enc.vmaf < better_q.enc.vmaf
+            && better_q.crf < worse_q.crf,
+        "invalid vmaf_lerp_crf usage: {:?}, {:?}",
+        worse_q,
+        better_q
+    );
+
+    let vmaf_diff = better_q.enc.vmaf - worse_q.enc.vmaf;
+    let vmaf_factor = (min_vmaf - worse_q.enc.vmaf) / vmaf_diff;
+
+    let crf_diff = worse_q.crf - better_q.crf;
+    let lerp = (worse_q.crf as f32 - crf_diff as f32 * vmaf_factor).round() as u8;
+    lerp.max(better_q.crf + 1)
+}
+
+fn guess_progress(run: usize, sample_progress: f64, quick_3rd_run: bool) -> f64 {
     let guess_total_samples = match run {
-        // Guess 4 iterations (1+1+3+3 samples) initially
-        1 | 2 | 3 | 4 => 8,
-        // Guess this iteration is the last
+        // Guess 4 iterations initially
+        1 | 2 | 3 | 4 if quick_3rd_run => 1 + 1 + 1 + 3,
+        1 | 2 | 3 | 4 => 1 + 1 + 3 + 3,
+        // Otherwise guess this iteration is the last
+        _ if quick_3rd_run => 3 + (run - 3) * 3,
         _ => 2 + (run - 2) * 3,
     };
 
     (match run {
         1 => sample_progress,
         2 => 1.0 + sample_progress,
+        3 if quick_3rd_run => 2.0 + sample_progress,
+        _ if quick_3rd_run => 3.0 + (run - 4) as f64 * 3.0 + sample_progress * 3.0,
         _ => 2.0 + (run - 3) as f64 * 3.0 + sample_progress * 3.0,
-    }) * 1000.0
+    }) * BAR_LEN as f64
         / guess_total_samples as f64
 }

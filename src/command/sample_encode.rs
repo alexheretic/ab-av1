@@ -1,6 +1,6 @@
 use crate::{
-    command::PROGRESS_CHARS, ffprobe, ffprobe::Ffprobe, sample, sample::FfmpegProgress, svtav1,
-    temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
+    command::PROGRESS_CHARS, console_ext::style, ffprobe, ffprobe::Ffprobe, sample,
+    sample::FfmpegProgress, svtav1, temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use clap::Parser;
 use console::style;
@@ -126,10 +126,10 @@ pub async fn run(
         }
 
         bar.println(
-            style(format!(
+            style!(
                 "- Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}",
                 100.0 * encoded_size as f32 / sample_size as f32
-            ))
+            )
             .dim()
             .to_string(),
         );
@@ -161,11 +161,9 @@ pub async fn run(
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
-            style(format!(
-                "ab-av1 encode -i {input:?} --crf {crf} --preset {preset}"
-            ))
-            .dim()
-            .italic()
+            style!("ab-av1 encode -i {input:?} --crf {crf} --preset {preset}")
+                .dim()
+                .italic()
         );
         // stdout result
         stdout_format.print_result(
@@ -239,9 +237,9 @@ impl StdoutFormat {
                     v => style(HumanBytes(v)).bold(),
                 };
                 let percent = match percent {
-                    v if v < 80.0 => style(format!("{}%", v)).bold().green(),
-                    v if v >= 100.0 => style(format!("{}%", v)).bold().red(),
-                    v => style(format!("{}%", v)).bold(),
+                    v if v < 80.0 => style!("{}%", v).bold().green(),
+                    v if v >= 100.0 => style!("{}%", v).bold().red(),
+                    v => style!("{}%", v).bold(),
                 };
                 let time = style(HumanDuration(time)).bold();
                 println!(
