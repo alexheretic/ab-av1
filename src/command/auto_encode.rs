@@ -7,8 +7,13 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
-/// TODO
+/// Automatically determining the best crf & use it to encode a video.
+/// 
+/// Two phases:
+/// * crf-search to determine the best --crf value
+/// * ffmpeg & SvtAv1EncApp to encode using the settings
 #[derive(Parser)]
+#[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(flatten)]
     pub crf_search: crf_search::Args,

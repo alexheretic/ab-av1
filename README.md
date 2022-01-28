@@ -1,6 +1,17 @@
 # ab-av1
 AV1 re-encoding using _ffmpeg_, _svt-av1_ & _vmaf_.
 
+## auto-encode
+Automatically determining the best crf & use it to encode a video.
+
+Two phases:
+* [crf-search](#crf-search) to determine the best --crf value
+* ffmpeg & SvtAv1EncApp to encode using the settings
+
+```
+ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET>
+```
+
 ## crf-search
 Pseudo binary search using [sample-encode](#sample-encode) to find the best 
 crf value delivering **min-vmaf** & **max-encoded-percent**.
@@ -12,7 +23,7 @@ Outputs:
 * Predicted full encode time
 
 ```
-ab-av1 crf-search [OPTIONS] --input <INPUT> --preset <PRESET>
+ab-av1 crf-search [OPTIONS] -i <INPUT> --preset <PRESET>
 ```
 
 ## sample-encode

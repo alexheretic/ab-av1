@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Simple invocation of ffmpeg & SvtAv1EncApp to reencode a video.
+/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
 #[derive(Parser)]
 pub struct Args {
     /// Input video file.

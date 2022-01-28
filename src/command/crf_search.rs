@@ -19,6 +19,7 @@ const BAR_LEN: u64 = 1000;
 /// * Predicted full encode size
 /// * Predicted full encode time
 #[derive(Parser)]
+#[clap(verbatim_doc_comment)]
 pub struct Args {
     /// Input video file.
     #[clap(short, long)]

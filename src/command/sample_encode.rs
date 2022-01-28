@@ -20,6 +20,7 @@ use tokio_stream::StreamExt;
 /// * Predicted full encode size
 /// * Predicted full encode time
 #[derive(Parser, Clone)]
+#[clap(verbatim_doc_comment)]
 pub struct Args {
     /// Input video file.
     #[clap(short, long)]
