@@ -1,5 +1,5 @@
 use crate::{
-    ffmpeg, ffmpeg::FfmpegProgress, ffprobe, ffprobe::Ffprobe, svtav1, temporary, vmaf,
+    ffprobe, ffprobe::Ffprobe, sample, sample::FfmpegProgress, svtav1, temporary, vmaf,
     vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use clap::Parser;
@@ -70,22 +70,21 @@ pub async fn sample_encode(
     for sample_n in 1..=samples {
         let sample_idx = sample_n - 1;
         bar.set_prefix(format!("Sample {sample_n}/{samples}"));
-        bar.set_message("encoding,");
+
         let sample_start =
             Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
                 * sample_n as _
                 + SAMPLE_SIZE * sample_idx as _;
 
         // cut sample
-        let (sample, mut output) = ffmpeg::cut_sample(&input, sample_start)?;
-        temporary::add(&sample);
-        output.next().await.map(Err).unwrap_or(Ok(()))?;
+        bar.set_message("cutting,");
+        let sample = sample::copy(&input, sample_start).await?;
         let sample_size = fs::metadata(&sample).await?.len();
 
         // encode sample
+        bar.set_message("encoding,");
         let b = Instant::now();
         let (encoded_sample, mut output) = svtav1::encode_ivf(&sample, crf, preset)?;
-        temporary::add(&encoded_sample);
         while let Some(progress) = output.next().await {
             let FfmpegProgress { time, fps, .. } = progress?;
             bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);

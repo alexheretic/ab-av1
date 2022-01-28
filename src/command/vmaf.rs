@@ -1,4 +1,4 @@
-use crate::{ffmpeg::FfmpegProgress, ffprobe, vmaf, vmaf::VmafOut};
+use crate::{ffprobe, sample::FfmpegProgress, vmaf, vmaf::VmafOut};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;

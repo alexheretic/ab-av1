@@ -1,6 +1,7 @@
 mod command;
-mod ffmpeg;
 mod ffprobe;
+mod process;
+mod sample;
 mod svtav1;
 mod temporary;
 mod vmaf;

@@ -1,4 +1,4 @@
-use crate::{ffmpeg::FfmpegProgress, ffprobe, svtav1};
+use crate::{ffprobe, sample::FfmpegProgress, svtav1};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};

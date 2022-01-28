@@ -1,5 +1,5 @@
 //! svt-av1 logic
-use crate::ffmpeg::FfmpegProgress;
+use crate::{process::exit_ok_option, sample::FfmpegProgress, temporary};
 use anyhow::{anyhow, Context};
 use std::{
     path::{Path, PathBuf},
@@ -16,6 +16,7 @@ pub fn encode_ivf(
     preset: u8,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
     let dest = sample.with_extension(format!("crf{crf}.p{preset}.ivf"));
+    temporary::add(&dest);
 
     let mut yuv4mpegpipe = Command::new("ffmpeg")
         .kill_on_drop(true)
@@ -95,11 +96,7 @@ pub fn encode(
         .context("ffmpeg yuv4mpegpipe")?;
     let yuv4mpegpipe_out: Stdio = yuv4mpegpipe.stdout.take().unwrap().try_into().unwrap();
     let yuv4mpegpipe = ProcessChunkStream::from(yuv4mpegpipe).filter_map(|item| match item {
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(Err(anyhow!("ffmpeg yuv4mpegpipe exit code {:?}", c.code()))),
-            Err(err) => Some(Err(err.into())),
-        },
+        Item::Done(code) => exit_ok_option("ffmpeg yuv4mpegpipe", code),
         _ => None,
     });
 
@@ -119,11 +116,7 @@ pub fn encode(
         .context("SvtAv1EncApp")?;
     let svt_out: Stdio = svt.stdout.take().unwrap().try_into().unwrap();
     let svt = ProcessChunkStream::from(svt).filter_map(|item| match item {
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(Err(anyhow!("SvtAv1EncApp exit code {:?}", c.code()))),
-            Err(err) => Some(Err(err.into())),
-        },
+        Item::Done(code) => exit_ok_option("SvtAv1EncApp", code),
         _ => None,
     });
 
@@ -153,11 +146,7 @@ pub fn encode(
     let to_mp4 = ProcessChunkStream::from(to_mp4).filter_map(|item| match item {
         Item::Stderr(chunk) => FfmpegProgress::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),
         Item::Stdout(_) => None,
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(Err(anyhow!("ffmpeg to-mp4 exit code {:?}", c.code()))),
-            Err(err) => Some(Err(err.into())),
-        },
+        Item::Done(code) => exit_ok_option("ffmpeg to-mp4", code),
     });
 
     Ok(yuv4mpegpipe.merge(svt).merge(to_mp4))

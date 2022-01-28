@@ -1,57 +1,53 @@
 //! vmaf logic
-use crate::ffmpeg::FfmpegProgress;
-use anyhow::{anyhow, Context};
-use std::path::Path;
+use crate::{process::exit_ok, sample::FfmpegProgress};
+use anyhow::Context;
+use std::{path::Path, process::Stdio};
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
-/// Calculate the VMAF at 24fps.
+/// Calculate VMAF score by converting the original first to yuv.
+/// This can produce more accurate results than testing directly from original source.
 pub fn run(original: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let out: ProcessChunkStream = match distorted.extension().and_then(|e| e.to_str()) {
-        // `-r 24` seems to work better for .ivf samples
-        Some("ivf") => Command::new("ffmpeg")
-            .arg("-r")
-            .arg("24")
-            .arg("-i")
-            .arg(distorted)
-            .arg("-r")
-            .arg("24")
-            .arg("-i")
-            .arg(original)
-            .arg("-lavfi")
-            .arg("libvmaf")
-            .arg("-f")
-            .arg("null")
-            .arg("-")
-            .try_into()
-            .context("ffmpeg vmaf")?,
-        _ => Command::new("ffmpeg")
-            .arg("-i")
-            .arg(distorted)
-            .arg("-i")
-            .arg(original)
-            .arg("-lavfi")
-            .arg("libvmaf")
-            .arg("-f")
-            .arg("null")
-            .arg("-")
-            .try_into()
-            .context("ffmpeg vmaf")?,
-    };
+    let mut yuv4mpegpipe = Command::new("ffmpeg")
+        .kill_on_drop(true)
+        .arg("-i")
+        .arg(original)
+        .arg("-strict")
+        .arg("-1")
+        .arg("-f")
+        .arg("yuv4mpegpipe")
+        .arg("-")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("ffmpeg original yuv4mpegpipe")?;
+    let yuv4mpegpipe_out: Stdio = yuv4mpegpipe.stdout.take().unwrap().try_into().unwrap();
+    let yuv4mpegpipe = ProcessChunkStream::from(yuv4mpegpipe).filter_map(|item| match item {
+        Item::Done(code) => VmafOut::try_from_result(exit_ok("ffmpeg original yuv4mpegpipe", code)),
+        _ => None,
+    });
 
-    Ok(out.filter_map(|item| match item {
+    let vmaf: ProcessChunkStream = Command::new("ffmpeg")
+        .arg("-i")
+        .arg(distorted)
+        .arg("-i")
+        .arg("-")
+        .arg("-lavfi")
+        .arg("libvmaf")
+        .arg("-f")
+        .arg("null")
+        .arg("-")
+        .stdin(yuv4mpegpipe_out)
+        .try_into()
+        .context("ffmpeg vmaf")?;
+    let vmaf = vmaf.filter_map(|item| match item {
         Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk),
         Item::Stdout(_) => None,
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(VmafOut::Err(anyhow!(
-                "ffmpeg vmaf exit code {:?}",
-                c.code()
-            ))),
-            Err(err) => Some(VmafOut::Err(err.into())),
-        },
-    }))
+        Item::Done(code) => VmafOut::try_from_result(exit_ok("ffmpeg vmaf", code)),
+    });
+
+    Ok(yuv4mpegpipe.merge(vmaf))
 }
 
 #[derive(Debug)]
@@ -62,6 +58,13 @@ pub enum VmafOut {
 }
 
 impl VmafOut {
+    fn try_from_result(result: anyhow::Result<()>) -> Option<Self> {
+        match result {
+            Ok(_) => None,
+            Err(err) => Some(Self::Err(err)),
+        }
+    }
+
     fn try_from_chunk(chunk: &[u8]) -> Option<Self> {
         let out = String::from_utf8_lossy(chunk);
         if let Some(idx) = out.find("VMAF score: ") {

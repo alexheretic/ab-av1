@@ -1,20 +1,17 @@
 //! ffmpeg logic
-use crate::SAMPLE_SIZE_S;
-use anyhow::{anyhow, Context};
+use crate::{process::ensure_success, temporary, SAMPLE_SIZE_S};
+use anyhow::Context;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
 use time::macros::format_description;
 use tokio::process::Command;
-use tokio_process_stream::{Item, ProcessChunkStream};
-use tokio_stream::{Stream, StreamExt};
 
-/// Create a 20s sample from `sample_start`, or re-use if it already exists.
-pub fn cut_sample(
-    input: &Path,
-    sample_start: Duration,
-) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Error>)> {
+/// Create a 20s sample from `sample_start`.
+///
+/// Fast as this uses `-c:v copy`.
+pub async fn copy(input: &Path, sample_start: Duration) -> anyhow::Result<PathBuf> {
     let ext = input
         .extension()
         .context("input has no extension")?
@@ -24,7 +21,9 @@ pub fn cut_sample(
         sample_start.as_secs()
     ));
 
-    let output: ProcessChunkStream = Command::new("ffmpeg")
+    temporary::add(&dest);
+
+    let out = Command::new("ffmpeg")
         .arg("-y")
         .arg("-i")
         .arg(input)
@@ -36,19 +35,12 @@ pub fn cut_sample(
         .arg("copy")
         .arg("-an")
         .arg(&dest)
-        .try_into()
-        .context("ffmpeg cut")?;
+        .output()
+        .await
+        .context("ffmpeg copy")?;
 
-    let output = output.filter_map(|item| match item {
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(anyhow!("ffmpeg cut exit code {:?}", c.code())),
-            Err(err) => Some(err.into()),
-        },
-        _ => None,
-    });
-
-    Ok((dest, output))
+    ensure_success("ffmpeg copy", &out)?;
+    Ok(dest)
 }
 
 #[derive(Debug, PartialEq)]
