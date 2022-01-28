@@ -48,6 +48,9 @@ pub struct Args {
     /// More samples take longer but may provide a more accurate result.
     #[clap(long, default_value_t = 3)]
     pub samples: u64,
+
+    #[clap(skip)]
+    pub quiet: bool,
 }
 
 pub async fn crf_search(args: Args) -> anyhow::Result<()> {
@@ -58,7 +61,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(100);
 
-    let best = run(&args, &bar).await?;
+    let best = run(&args, bar.clone()).await?;
 
     bar.finish();
 
@@ -81,7 +84,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run(
+pub async fn run(
     Args {
         input,
         preset,
@@ -90,8 +93,9 @@ async fn run(
         min_crf,
         max_crf,
         samples,
+        quiet,
     }: &Args,
-    bar: &ProgressBar,
+    bar: ProgressBar,
 ) -> anyhow::Result<Sample> {
     ensure!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
 
@@ -183,7 +187,7 @@ async fn run(
             if sample.enc.predicted_encode_percent > *max_encoded_percent as _
                 || sample.crf == *min_crf
             {
-                sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
+                sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
                 bail!("Failed to find a suitable crf");
             }
 
@@ -194,7 +198,7 @@ async fn run(
 
             match l_bound {
                 Some(lower) if lower.crf + 1 == sample.crf => {
-                    sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
+                    sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
@@ -206,20 +210,30 @@ async fn run(
                 None => args.crf = *min_crf,
             };
         }
-        sample.print_attempt(bar, *min_vmaf, *max_encoded_percent);
+        sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
     }
     unreachable!();
 }
 
 #[derive(Debug, Clone)]
-struct Sample {
-    enc: sample_encode::Output,
-    crf: u8,
-    samples: u64,
+pub struct Sample {
+    pub enc: sample_encode::Output,
+    pub crf: u8,
+    pub samples: u64,
 }
 
 impl Sample {
-    fn print_attempt(&self, bar: &ProgressBar, min_vmaf: f32, max_encoded_percent: f32) {
+    fn print_attempt(
+        &self,
+        bar: &ProgressBar,
+        min_vmaf: f32,
+        max_encoded_percent: f32,
+        quiet: bool,
+    ) {
+        if quiet {
+            return;
+        }
+
         let crf_label = style("- crf").dim();
         let mut crf = style(self.crf);
         let samples = style(match self.samples {

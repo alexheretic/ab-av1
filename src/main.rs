@@ -29,6 +29,7 @@ enum Action {
     Vmaf(command::vmaf::Args),
     Encode(command::encode::Args),
     CrfSearch(command::crf_search::Args),
+    AutoEncode(command::auto_encode::Args),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         Action::Vmaf(args) => command::vmaf(args).boxed_local(),
         Action::Encode(args) => command::encode(args).boxed_local(),
         Action::CrfSearch(args) => command::crf_search(args).boxed_local(),
+        Action::AutoEncode(args) => command::auto_encode(args).boxed_local(),
     });
 
     let out = tokio::select! {
