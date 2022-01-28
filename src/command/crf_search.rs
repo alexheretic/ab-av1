@@ -249,12 +249,12 @@ impl Sample {
         let close = style(")").dim();
 
         if self.enc.vmaf < min_vmaf {
-            crf = crf.red();
+            crf = crf.red().bright();
             vmaf = vmaf.red().bright();
         }
         if self.enc.predicted_encode_percent > max_encoded_percent as _ {
-            crf = crf.red();
-            percent = percent.red();
+            crf = crf.red().bright();
+            percent = percent.red().bright();
         }
 
         bar.println(format!(
@@ -292,7 +292,7 @@ fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
     assert!(
         worse_q.enc.vmaf <= min_vmaf
             && worse_q.enc.vmaf < better_q.enc.vmaf
-            && better_q.crf < worse_q.crf,
+            && better_q.crf < worse_q.crf + 1,
         "invalid vmaf_lerp_crf usage: {:?}, {:?}",
         worse_q,
         better_q
@@ -303,7 +303,7 @@ fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
 
     let crf_diff = worse_q.crf - better_q.crf;
     let lerp = (worse_q.crf as f32 - crf_diff as f32 * vmaf_factor).round() as u8;
-    lerp.max(better_q.crf + 1)
+    lerp.max(better_q.crf + 1).min(worse_q.crf - 1)
 }
 
 fn guess_progress(run: usize, sample_progress: f64, quick_3rd_run: bool) -> f64 {

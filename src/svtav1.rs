@@ -69,12 +69,13 @@ pub fn encode_ivf(
     Ok((dest, yuv4mpegpipe.merge(svt)))
 }
 
-/// Encode to mp4 including re-encoding audio with libopus.
+/// Encode to mp4 including re-encoding audio with libopus, if present.
 pub fn encode(
     input: &Path,
     crf: u8,
     preset: u8,
     output: &Path,
+    audio: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     anyhow::ensure!(
         output.extension().and_then(|e| e.to_str()) == Some("mp4"),
@@ -101,6 +102,7 @@ pub fn encode(
     });
 
     let mut svt = Command::new("SvtAv1EncApp")
+        .kill_on_drop(true)
         .arg("-i")
         .arg("stdin")
         .arg("--crf")
@@ -120,28 +122,45 @@ pub fn encode(
         _ => None,
     });
 
-    let to_mp4 = Command::new("ffmpeg")
-        .arg("-y")
-        .arg("-i")
-        .arg("-")
-        .arg("-i")
-        .arg(input)
-        .arg("-map")
-        .arg("0:v")
-        .arg("-map")
-        .arg("1:a:0")
-        .arg("-c:v")
-        .arg("copy")
-        .arg("-c:a")
-        .arg("libopus")
-        .arg("-movflags")
-        .arg("+faststart")
-        .arg(output)
-        .stdin(svt_out)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg to-mp4")?;
+    let to_mp4 = match audio {
+        false => Command::new("ffmpeg")
+            .kill_on_drop(true)
+            .stdin(svt_out)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .arg("-y")
+            .arg("-i")
+            .arg("-")
+            .arg("-c:v")
+            .arg("copy")
+            .arg("-movflags")
+            .arg("+faststart")
+            .arg(output)
+            .spawn(),
+        true => Command::new("ffmpeg")
+            .kill_on_drop(true)
+            .stdin(svt_out)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .arg("-y")
+            .arg("-i")
+            .arg("-")
+            .arg("-i")
+            .arg(input)
+            .arg("-map")
+            .arg("0:v")
+            .arg("-map")
+            .arg("1:a:0")
+            .arg("-c:v")
+            .arg("copy")
+            .arg("-c:a")
+            .arg("libopus")
+            .arg("-movflags")
+            .arg("+faststart")
+            .arg(output)
+            .spawn(),
+    }
+    .context("ffmpeg to-mp4")?;
 
     let to_mp4 = ProcessChunkStream::from(to_mp4).filter_map(|item| match item {
         Item::Stderr(chunk) => FfmpegProgress::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),

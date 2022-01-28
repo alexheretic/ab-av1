@@ -58,12 +58,14 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let duration = ffprobe::probe(&input).map(|p| p.duration);
+    let probe = ffprobe::probe(&input);
+    let audio = probe.as_ref().map_or(true, |p| p.has_audio);
+    let duration = probe.as_ref().map(|p| p.duration);
     if let Ok(d) = duration {
         bar.set_length(d.as_secs());
     }
 
-    let mut enc = svtav1::encode(&input, crf, preset, &output)?;
+    let mut enc = svtav1::encode(&input, crf, preset, &output, audio)?;
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {

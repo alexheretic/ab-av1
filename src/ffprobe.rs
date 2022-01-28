@@ -5,6 +5,8 @@ use std::{path::Path, time::Duration};
 pub struct Ffprobe {
     /// Duration of video
     pub duration: Duration,
+    /// The video has audio stream.
+    pub has_audio: bool,
 }
 
 pub fn probe(input: &Path) -> anyhow::Result<Ffprobe> {
@@ -20,5 +22,9 @@ pub fn probe(input: &Path) -> anyhow::Result<Ffprobe> {
 
     Ok(Ffprobe {
         duration: Duration::from_secs_f32(duration_s),
+        has_audio: probe
+            .streams
+            .iter()
+            .any(|s| s.codec_type.as_deref() == Some("audio")),
     })
 }
