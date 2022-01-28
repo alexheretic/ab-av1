@@ -77,7 +77,7 @@ pub async fn sample_encode(
                 + SAMPLE_SIZE * sample_idx as _;
 
         // cut sample
-        bar.set_message("cutting,");
+        bar.set_message("sampling,");
         let sample = sample::copy(&input, sample_start).await?;
         let sample_size = fs::metadata(&sample).await?.len();
 
