@@ -1,4 +1,4 @@
-use crate::{ffprobe, sample::FfmpegProgress, svtav1, temporary};
+use crate::{command::PROGRESS_CHARS, ffprobe, sample::FfmpegProgress, svtav1, temporary};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 
 /// Simple invocation of ffmpeg & SvtAv1EncApp to reencode a video.
 #[derive(Parser)]
-pub struct EncodeArgs {
+pub struct Args {
     /// Input video file.
     #[clap(short, long)]
     input: PathBuf,
@@ -27,12 +27,12 @@ pub struct EncodeArgs {
 }
 
 pub async fn encode(
-    EncodeArgs {
+    Args {
         input,
         crf,
         preset,
         output,
-    }: EncodeArgs,
+    }: Args,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
     let output = output.unwrap_or_else(|| input.with_extension("av1.mp4"));
@@ -41,14 +41,14 @@ pub async fn encode(
 
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:12} eta {eta})")
-            .progress_chars("##-")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg} eta {eta})")
+            .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(100);
     if defaulting_output {
         bar.println(style(format!("Encoding {output:?}")).dim().to_string());
     }
-    bar.set_message("encoding,");
+    bar.set_message("encoding");
 
     let duration = ffprobe::probe(&input).map(|p| p.duration);
     if let Ok(d) = duration {
@@ -59,7 +59,7 @@ pub async fn encode(
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {
-            bar.set_message(format!("enc {fps} fps,"));
+            bar.set_message(format!("{fps} fps,"));
         }
         if duration.is_ok() {
             bar.set_position(time.as_secs());

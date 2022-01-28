@@ -1,6 +1,6 @@
 use crate::{
-    ffprobe, ffprobe::Ffprobe, sample, sample::FfmpegProgress, svtav1, temporary, vmaf,
-    vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
+    command::PROGRESS_CHARS, ffprobe, ffprobe::Ffprobe, sample, sample::FfmpegProgress, svtav1,
+    temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use clap::Parser;
 use console::style;
@@ -12,30 +12,31 @@ use std::{
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Encode short video samples of an input using provided **crf** & **preset**.
-/// This is much quicker than full encode/vmaf run.
+/// Encode & analyse input samples to predict how a full encode would go.
+/// This is much quicker than a full encode/vmaf run.
 ///
 /// Outputs:
 /// * Mean sample VMAF score
 /// * Predicted full encode size
 /// * Predicted full encode time
-#[derive(Parser)]
-pub struct SampleEncodeArgs {
+#[derive(Parser, Clone)]
+pub struct Args {
     /// Input video file.
     #[clap(short, long)]
-    input: PathBuf,
+    pub input: PathBuf,
 
     /// Encoder constant rate factor. Lower means better quality.
     #[clap(long)]
-    crf: u8,
+    pub crf: u8,
 
     /// Encoder preset. Higher presets means faster encodes, but with a quality tradeoff.
     #[clap(long)]
-    preset: u8,
+    pub preset: u8,
 
-    /// Number of 20s samples.
+    /// Number of 20s samples to use across the input video.
+    /// More samples take longer but may provide a more accurate result.
     #[clap(long, default_value_t = 3)]
-    samples: u64,
+    pub samples: u64,
 
     /// Keep temporary files after exiting.
     #[clap(long)]
@@ -43,28 +44,35 @@ pub struct SampleEncodeArgs {
 
     /// Stdout message format `human` or `json`.
     #[clap(long, arg_enum, default_value_t = StdoutFormat::Human)]
-    stdout_format: StdoutFormat,
+    pub stdout_format: StdoutFormat,
 }
 
-pub async fn sample_encode(
-    SampleEncodeArgs {
+pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
+    let bar = ProgressBar::new(12).with_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")
+            .progress_chars(PROGRESS_CHARS)
+    );
+    bar.enable_steady_tick(100);
+
+    run(args, bar).await?;
+    Ok(())
+}
+
+pub async fn run(
+    Args {
         input,
         crf,
         preset,
         samples,
         keep,
         stdout_format,
-    }: SampleEncodeArgs,
-) -> anyhow::Result<()> {
+    }: Args,
+    bar: ProgressBar,
+) -> anyhow::Result<Output> {
     let Ffprobe { duration, .. } = ffprobe::probe(&input)?;
     let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
-
-    let bar = ProgressBar::new(SAMPLE_SIZE_S * samples * 2).with_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")
-            .progress_chars("##-")
-    );
-    bar.enable_steady_tick(100);
+    bar.set_length(SAMPLE_SIZE_S * samples * 2);
 
     let mut results = Vec::new();
     for sample_n in 1..=samples {
@@ -137,29 +145,38 @@ pub async fn sample_encode(
             temporary::clean().await;
         }
     }
-
     bar.finish();
 
-    // encode how-to hint + predictions
-    eprintln!(
-        "\n{} {}\n",
-        style("Encode with:").dim(),
-        style(format!(
-            "ab-av1 encode -i {input:?} --crf {crf} --preset {preset}"
-        ))
-        .dim()
-        .italic()
-    );
-    // stdout result
     let input_size = fs::metadata(&input).await?.len();
     let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
-    stdout_format.print_result(
-        results.mean_vmaf(),
-        predicted_size as _,
-        results.encoded_percent_size(),
-        results.estimate_encode_time(duration),
-    );
-    Ok(())
+    let output = Output {
+        vmaf: results.mean_vmaf(),
+        predicted_encode_size: predicted_size as _,
+        predicted_encode_percent: results.encoded_percent_size(),
+        predicted_encode_time: results.estimate_encode_time(duration),
+    };
+
+    if !bar.is_hidden() {
+        // encode how-to hint + predictions
+        eprintln!(
+            "\n{} {}\n",
+            style("Encode with:").dim(),
+            style(format!(
+                "ab-av1 encode -i {input:?} --crf {crf} --preset {preset}"
+            ))
+            .dim()
+            .italic()
+        );
+        // stdout result
+        stdout_format.print_result(
+            output.vmaf,
+            output.predicted_encode_size,
+            output.predicted_encode_percent,
+            output.predicted_encode_time,
+        );
+    }
+
+    Ok(output)
 }
 
 struct EncodeResult {
@@ -242,4 +259,12 @@ impl StdoutFormat {
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Output {
+    pub vmaf: f32,
+    pub predicted_encode_size: u64,
+    pub predicted_encode_percent: f64,
+    pub predicted_encode_time: Duration,
 }

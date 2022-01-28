@@ -1,4 +1,4 @@
-use crate::{ffprobe, sample::FfmpegProgress, vmaf, vmaf::VmafOut};
+use crate::{command::PROGRESS_CHARS, ffprobe, sample::FfmpegProgress, vmaf, vmaf::VmafOut};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use tokio_stream::StreamExt;
 
 /// Simple full calculation of VMAF score distorted file vs original file.
 #[derive(Parser)]
-pub struct VmafArgs {
+pub struct Args {
     /// Original video file.
     #[clap(long)]
     original: PathBuf,
@@ -16,15 +16,15 @@ pub struct VmafArgs {
 }
 
 pub async fn vmaf(
-    VmafArgs {
+    Args {
         original,
         distorted,
-    }: VmafArgs,
+    }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13}, eta {eta})")
-            .progress_chars("##-")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg:13}, eta {eta})")
+            .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(100);
     bar.set_message("vmaf running,");

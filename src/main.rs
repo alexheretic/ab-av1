@@ -24,9 +24,10 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum Action {
-    SampleEncode(command::SampleEncodeArgs),
-    Vmaf(command::VmafArgs),
-    Encode(command::EncodeArgs),
+    SampleEncode(command::sample_encode::Args),
+    Vmaf(command::vmaf::Args),
+    Encode(command::encode::Args),
+    CrfSearch(command::crf_search::Args),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -34,14 +35,17 @@ async fn main() -> anyhow::Result<()> {
     let Args { action } = Args::parse();
     let mut keep = false;
 
-    let command = match action {
+    let local = tokio::task::LocalSet::new();
+
+    let command = local.run_until(match action {
         Action::SampleEncode(args) => {
             keep = args.keep;
             command::sample_encode(args).boxed_local()
         }
         Action::Vmaf(args) => command::vmaf(args).boxed_local(),
         Action::Encode(args) => command::encode(args).boxed_local(),
-    };
+        Action::CrfSearch(args) => command::crf_search(args).boxed_local(),
+    });
 
     let out = tokio::select! {
         r = command => r,
