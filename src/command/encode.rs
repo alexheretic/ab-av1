@@ -1,4 +1,4 @@
-use crate::{ffprobe, sample::FfmpegProgress, svtav1};
+use crate::{ffprobe, sample::FfmpegProgress, svtav1, temporary};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -36,6 +36,8 @@ pub async fn encode(
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
     let output = output.unwrap_or_else(|| input.with_extension("av1.mp4"));
+    // output is temporary until encoding has completed successfully
+    temporary::add(&output);
 
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
@@ -64,6 +66,9 @@ pub async fn encode(
         }
     }
     bar.finish();
+
+    // successful encode, so don't delete it!
+    temporary::unadd(&output);
 
     // print output info
     let output_size = fs::metadata(&output).await?.len();

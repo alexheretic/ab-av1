@@ -1,12 +1,22 @@
 //! temp file logic
 use once_cell::sync::Lazy;
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
-static TEMPS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(<_>::default);
+static TEMPS: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(<_>::default);
 
-/// Add a file as tempoary so it can be removed later.
+/// Add a file as temporary so it can be deleted later.
 pub fn add(file: impl Into<PathBuf>) {
-    TEMPS.lock().unwrap().push(file.into())
+    TEMPS.lock().unwrap().insert(file.into());
+}
+
+/// Remove a previously added file so that it won't be deleted later,
+/// if it hasn't already.
+pub fn unadd(file: &Path) -> bool {
+    TEMPS.lock().unwrap().remove(file)
 }
 
 /// Delete all added temporary files.
