@@ -37,7 +37,7 @@ pub async fn auto_encode(mut args: Args) -> anyhow::Result<()> {
     );
 
     bar.set_prefix("Searching");
-    bar.enable_steady_tick(100);
+    // bar.enable_steady_tick(100);
     if defaulting_output {
         bar.println(style!("Encoding {:?}", output).dim().to_string());
     }

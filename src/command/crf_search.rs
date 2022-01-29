@@ -60,7 +60,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
             .progress_chars(PROGRESS_CHARS)
     );
-    bar.enable_steady_tick(100);
+    // bar.enable_steady_tick(100);
 
     let best = run(&args, bar.clone()).await?;
 
@@ -114,13 +114,12 @@ pub async fn run(
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
-        // how much we're prepared to go higher than the min-vmaf
-        let higher_tolerance = run as f32 * 0.2;
+        // how much we're prepared to go higher than the min-vmaf: +0.2, +0.4, +0.8, +1.6 ...
+        let higher_tolerance = 2_f32.powi(run as _) * 0.1;
         bar.set_message(format!("sampling crf {}, ", args.crf));
         let mut sample_task =
             tokio::task::spawn_local(sample_encode::run(args.clone(), sample_bar.clone()));
 
-        // TODO replace with channel updates
         let sample_task = loop {
             match tokio::time::timeout(Duration::from_millis(100), &mut sample_task).await {
                 Err(_) => {
@@ -143,8 +142,7 @@ pub async fn run(
 
         if sample.enc.vmaf > *min_vmaf {
             // good
-            if run > 2
-                && sample.enc.predicted_encode_percent < *max_encoded_percent as _
+            if sample.enc.predicted_encode_percent < *max_encoded_percent as _
                 && sample.enc.vmaf < min_vmaf + higher_tolerance
             {
                 return Ok(sample);
