@@ -29,6 +29,7 @@ pub fn run(original: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Item
     });
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
+        .kill_on_drop(true)
         .arg("-i")
         .arg(distorted)
         .arg("-i")
