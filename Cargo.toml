@@ -14,8 +14,8 @@ clap = { version = "3.0.10", features = ["derive"] }
 ffprobe = "0.3"
 anyhow = "1.0.53"
 tokio = { version = "1.15", features = ["rt", "macros", "process", "fs", "signal"] }
-tokio-stream = { version = "0.1" }
-tokio-process-stream = { git = "https://github.com/alexheretic/tokio-process-stream", branch = "chunk" }
+tokio-stream = "0.1"
+tokio-process-stream = "0.2"
 indicatif = "0.16.2"
 console = "0.15"
 once_cell = "1.9"
