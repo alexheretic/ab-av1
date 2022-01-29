@@ -1,6 +1,7 @@
 use crate::{
-    command::PROGRESS_CHARS, console_ext::style, ffprobe, ffprobe::Ffprobe, sample,
-    sample::FfmpegProgress, svtav1, temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE, SAMPLE_SIZE_S,
+    command::PROGRESS_CHARS, console_ext::style, ffprobe, ffprobe::Ffprobe,
+    process::FfmpegProgress, sample, svtav1, temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE,
+    SAMPLE_SIZE_S,
 };
 use clap::Parser;
 use console::style;

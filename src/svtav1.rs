@@ -1,6 +1,9 @@
 //! svt-av1 logic
-use crate::{process::exit_ok_option, sample::FfmpegProgress, temporary};
-use anyhow::{anyhow, Context};
+use crate::{
+    process::{exit_ok_option, FfmpegProgress},
+    temporary, yuv,
+};
+use anyhow::Context;
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
@@ -18,32 +21,10 @@ pub fn encode_ivf(
     let dest = sample.with_extension(format!("crf{crf}.p{preset}.ivf"));
     temporary::add(&dest);
 
-    let mut yuv4mpegpipe = Command::new("ffmpeg")
-        .kill_on_drop(true)
-        .arg("-i")
-        .arg(sample)
-        .arg("-strict")
-        .arg("-1")
-        .arg("-f")
-        .arg("yuv4mpegpipe")
-        .arg("-")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg yuv4mpegpipe")?;
-
-    let yuv4mpegpipe_out: Stdio = yuv4mpegpipe.stdout.take().unwrap().try_into().unwrap();
-    let yuv4mpegpipe = ProcessChunkStream::from(yuv4mpegpipe).filter_map(|item| match item {
-        Item::Stderr(chunk) => FfmpegProgress::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),
-        Item::Stdout(_) => None,
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(Err(anyhow!("ffmpeg yuv4mpegpipe exit code {:?}", c.code()))),
-            Err(err) => Some(Err(err.into())),
-        },
-    });
+    let (yuv_out, yuv_pipe) = yuv::yuv4mpegpipe(sample)?;
 
     let svt = Command::new("SvtAv1EncApp")
+        .kill_on_drop(true)
         .arg("-i")
         .arg("stdin")
         .arg("--crf")
@@ -52,21 +33,17 @@ pub fn encode_ivf(
         .arg(preset.to_string())
         .arg("-b")
         .arg(&dest)
-        .stdin(yuv4mpegpipe_out)
+        .stdin(yuv_out)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .context("SvtAv1EncApp")?;
     let svt = ProcessChunkStream::from(svt).filter_map(|item| match item {
-        Item::Done(code) => match code {
-            Ok(c) if c.success() => None,
-            Ok(c) => Some(Err(anyhow!("SvtAv1EncApp exit code {:?}", c.code()))),
-            Err(err) => Some(Err(err.into())),
-        },
+        Item::Done(code) => exit_ok_option("SvtAv1EncApp", code),
         _ => None,
     });
 
-    Ok((dest, yuv4mpegpipe.merge(svt)))
+    Ok((dest, yuv_pipe.merge(svt)))
 }
 
 /// Encode to mp4 including re-encoding audio with libopus, if present.
@@ -82,23 +59,10 @@ pub fn encode(
         "Only mp4 output is supported"
     );
 
-    let mut yuv4mpegpipe = Command::new("ffmpeg")
-        .kill_on_drop(true)
-        .arg("-i")
-        .arg(input)
-        .arg("-strict")
-        .arg("-1")
-        .arg("-f")
-        .arg("yuv4mpegpipe")
-        .arg("-")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("ffmpeg yuv4mpegpipe")?;
-    let yuv4mpegpipe_out: Stdio = yuv4mpegpipe.stdout.take().unwrap().try_into().unwrap();
-    let yuv4mpegpipe = ProcessChunkStream::from(yuv4mpegpipe).filter_map(|item| match item {
-        Item::Done(code) => exit_ok_option("ffmpeg yuv4mpegpipe", code),
-        _ => None,
+    let (yuv_out, yuv_pipe) = yuv::yuv4mpegpipe(input)?;
+    let yuv_pipe = yuv_pipe.filter_map(|p| match p {
+        Ok(_) => None,
+        Err(_) => Some(p),
     });
 
     let mut svt = Command::new("SvtAv1EncApp")
@@ -111,7 +75,7 @@ pub fn encode(
         .arg(preset.to_string())
         .arg("-b")
         .arg("stdout")
-        .stdin(yuv4mpegpipe_out)
+        .stdin(yuv_out)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -162,11 +126,7 @@ pub fn encode(
     }
     .context("ffmpeg to-mp4")?;
 
-    let to_mp4 = ProcessChunkStream::from(to_mp4).filter_map(|item| match item {
-        Item::Stderr(chunk) => FfmpegProgress::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),
-        Item::Stdout(_) => None,
-        Item::Done(code) => exit_ok_option("ffmpeg to-mp4", code),
-    });
+    let to_mp4 = FfmpegProgress::stream(to_mp4, "ffmpeg to-mp4");
 
-    Ok(yuv4mpegpipe.merge(svt).merge(to_mp4))
+    Ok(yuv_pipe.merge(svt).merge(to_mp4))
 }

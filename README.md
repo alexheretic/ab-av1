@@ -1,10 +1,10 @@
 # ab-av1
-AV1 encoding using _ffmpeg_, _svt-av1_ & _vmaf_.
+AV1 encoding with fast VMAF sampling. Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 
 ### Example
-Encode a video using high quality av1 pretty fast.
+Encode a video to AV1 with VMAF quality score 95 pretty fast.
 ```sh
-ab-av1 auto-encode -i vid.mp4 --preset 8
+ab-av1 auto-encode -i vid.mp4 --preset 8 
 ```
 
 ## Command: auto-encode
