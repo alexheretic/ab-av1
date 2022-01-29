@@ -104,7 +104,7 @@ pub async fn run(
         input: input.clone(),
         crf: (min_crf + max_crf) / 2,
         preset: *preset,
-        samples: 1,
+        samples: *samples,
         keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,
     };
@@ -112,23 +112,10 @@ pub async fn run(
     bar.set_length(BAR_LEN);
     let sample_bar = ProgressBar::hidden();
     let mut crf_attempts = Vec::new();
-    // if we're doing/did a 1-sample 3rd run
-    let mut quick_3rd_run = false;
 
     for run in 1.. {
         // how much we're prepared to go higher than the min-vmaf
         let higher_tolerance = run as f32 * 0.2;
-        args.samples = match run {
-            // use a single sample on the first 2 runs for speed
-            1 | 2 => 1,
-            // use a single sample to test 3rd run on the boundary for speed
-            3 if args.crf == *min_crf || args.crf == *max_crf => {
-                quick_3rd_run = true;
-                1
-            }
-            _ => *samples,
-        };
-
         bar.set_message(format!("sampling crf {}, ", args.crf));
         let mut sample_task =
             tokio::task::spawn_local(sample_encode::run(args.clone(), sample_bar.clone()));
@@ -139,7 +126,7 @@ pub async fn run(
                 Err(_) => {
                     let sample_progress =
                         sample_bar.position() as f64 / sample_bar.length().max(1) as f64;
-                    bar.set_position(guess_progress(run, sample_progress, quick_3rd_run) as _);
+                    bar.set_position(guess_progress(run, sample_progress) as _);
                 }
                 Ok(o) => {
                     sample_bar.set_position(0);
@@ -150,7 +137,6 @@ pub async fn run(
 
         let sample = Sample {
             crf: args.crf,
-            samples: args.samples,
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
@@ -220,7 +206,6 @@ pub async fn run(
 pub struct Sample {
     pub enc: sample_encode::Output,
     pub crf: u8,
-    pub samples: u64,
 }
 
 impl Sample {
@@ -237,11 +222,6 @@ impl Sample {
 
         let crf_label = style("- crf").dim();
         let mut crf = style(self.crf);
-        let samples = style(match self.samples {
-            1 => ", 1 sample",
-            _ => "",
-        })
-        .dim();
         let vmaf_label = style("VMAF").dim();
         let mut vmaf = style(self.enc.vmaf);
         let mut percent = style!("{:.0}%", self.enc.predicted_encode_percent);
@@ -258,7 +238,7 @@ impl Sample {
         }
 
         bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{samples}{close}"
+            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}"
         ));
     }
 }
@@ -306,22 +286,13 @@ fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
     lerp.max(better_q.crf + 1).min(worse_q.crf - 1)
 }
 
-fn guess_progress(run: usize, sample_progress: f64, quick_3rd_run: bool) -> f64 {
-    let guess_total_samples = match run {
+/// sample_progress: [0, 1]
+fn guess_progress(run: usize, sample_progress: f64) -> f64 {
+    let total_runs_guess = match () {
         // Guess 4 iterations initially
-        1 | 2 | 3 | 4 if quick_3rd_run => 1 + 1 + 1 + 3,
-        1 | 2 | 3 | 4 => 1 + 1 + 3 + 3,
-        // Otherwise guess this iteration is the last
-        _ if quick_3rd_run => 3 + (run - 3) * 3,
-        _ => 2 + (run - 2) * 3,
+        _ if run < 5 => 4.0,
+        // Otherwise guess next will work
+        _ => run as f64,
     };
-
-    (match run {
-        1 => sample_progress,
-        2 => 1.0 + sample_progress,
-        3 if quick_3rd_run => 2.0 + sample_progress,
-        _ if quick_3rd_run => 3.0 + (run - 4) as f64 * 3.0 + sample_progress * 3.0,
-        _ => 2.0 + (run - 3) as f64 * 3.0 + sample_progress * 3.0,
-    }) * BAR_LEN as f64
-        / guess_total_samples as f64
+    ((run - 1) as f64 + sample_progress) * BAR_LEN as f64 / total_runs_guess
 }
