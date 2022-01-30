@@ -7,7 +7,7 @@ AV1 encoding tool with fast VMAF sampling. Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 Automatically determining the best crf & use it to encode a video.
 
 Two phases:
-* [crf-search](#crf-search) to determine the best --crf value
+* [crf-search](#command-crf-search) to determine the best --crf value
 * ffmpeg & SvtAv1EncApp to encode using the settings
 
 ```
@@ -15,7 +15,7 @@ ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET>
 ```
 
 ## Command: crf-search
-Pseudo binary search using [sample-encode](#sample-encode) to find the best 
+Pseudo binary search using [sample-encode](#command-sample-encode) to find the best 
 crf value delivering **min-vmaf** & **max-encoded-percent**.
 
 Outputs:
