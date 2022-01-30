@@ -1,11 +1,7 @@
 # ab-av1
-AV1 encoding with fast VMAF sampling. Uses _ffmpeg_, _svt-av1_ & _vmaf_.
+AV1 encoding tool with fast VMAF sampling. Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 
-### Example
-Encode a video to AV1 with VMAF quality score 95 pretty fast.
-```sh
-ab-av1 auto-encode -i vid.mp4 --preset 8 
-```
+![](https://user-images.githubusercontent.com/2331607/151695971-d36f55a7-a157-4d5d-ae06-4cc9e2c0d46f.png "Find the best crf encoding setting for VMAF 95 quality")
 
 ## Command: auto-encode
 Automatically determining the best crf & use it to encode a video.
