@@ -1,6 +1,6 @@
 //! svt-av1 logic
 use crate::{
-    process::{exit_ok_option, FfmpegProgress},
+    process::{exit_ok_option, CommandExt, FfmpegProgress},
     temporary, yuv,
 };
 use anyhow::Context;
@@ -21,18 +21,15 @@ pub fn encode_ivf(
     let dest = sample.with_extension(format!("crf{crf}.p{preset}.ivf"));
     temporary::add(&dest);
 
-    let (yuv_out, yuv_pipe) = yuv::yuv4mpegpipe(sample)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(sample)?;
 
     let svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
-        .arg("-i")
-        .arg("stdin")
-        .arg("--crf")
-        .arg(crf.to_string())
-        .arg("--preset")
-        .arg(preset.to_string())
-        .arg("-b")
-        .arg(&dest)
+        .arg2("-i", "stdin")
+        .arg2("--crf", crf.to_string())
+        .arg2("--preset", preset.to_string())
+        .arg2("--input-depth", "10")
+        .arg2("-b", &dest)
         .stdin(yuv_out)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -59,7 +56,7 @@ pub fn encode(
         "Only mp4 output is supported"
     );
 
-    let (yuv_out, yuv_pipe) = yuv::yuv4mpegpipe(input)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
     let yuv_pipe = yuv_pipe.filter_map(|p| match p {
         Ok(_) => None,
         Err(_) => Some(p),
@@ -67,14 +64,11 @@ pub fn encode(
 
     let mut svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
-        .arg("-i")
-        .arg("stdin")
-        .arg("--crf")
-        .arg(crf.to_string())
-        .arg("--preset")
-        .arg(preset.to_string())
-        .arg("-b")
-        .arg("stdout")
+        .arg2("-i", "stdin")
+        .arg2("--crf", crf.to_string())
+        .arg2("--preset", preset.to_string())
+        .arg2("--input-depth", "10")
+        .arg2("-b", "stdout")
         .stdin(yuv_out)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -93,12 +87,9 @@ pub fn encode(
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .arg("-y")
-            .arg("-i")
-            .arg("-")
-            .arg("-c:v")
-            .arg("copy")
-            .arg("-movflags")
-            .arg("+faststart")
+            .arg2("-i", "-")
+            .arg2("-c:v", "copy")
+            .arg2("-movflags", "+faststart")
             .arg(output)
             .spawn(),
         true => Command::new("ffmpeg")
@@ -107,20 +98,13 @@ pub fn encode(
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .arg("-y")
-            .arg("-i")
-            .arg("-")
-            .arg("-i")
-            .arg(input)
-            .arg("-map")
-            .arg("0:v")
-            .arg("-map")
-            .arg("1:a:0")
-            .arg("-c:v")
-            .arg("copy")
-            .arg("-c:a")
-            .arg("libopus")
-            .arg("-movflags")
-            .arg("+faststart")
+            .arg2("-i", "-")
+            .arg2("-i", input)
+            .arg2("-map", "0:v")
+            .arg2("-map", "1:a:0")
+            .arg2("-c:v", "copy")
+            .arg2("-c:a", "libopus")
+            .arg2("-movflags", "+faststart")
             .arg(output)
             .spawn(),
     }

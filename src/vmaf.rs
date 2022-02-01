@@ -1,6 +1,6 @@
 //! vmaf logic
 use crate::{
-    process::{exit_ok, FfmpegProgress},
+    process::{exit_ok, CommandExt, FfmpegProgress},
     yuv,
 };
 use anyhow::Context;
@@ -12,19 +12,15 @@ use tokio_stream::{Stream, StreamExt};
 /// Calculate VMAF score by converting the original first to yuv.
 /// This can produce more accurate results than testing directly from original source.
 pub fn run(original: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let (yuv_out, yuv_pipe) = yuv::yuv4mpegpipe(original)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(original)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
         .kill_on_drop(true)
-        .arg("-i")
-        .arg(distorted)
-        .arg("-i")
-        .arg("-")
-        .arg("-lavfi")
-        .arg("libvmaf")
-        .arg("-f")
-        .arg("null")
+        .arg2("-i", distorted)
+        .arg2("-i", "-")
+        .arg2("-lavfi", "libvmaf")
+        .arg2("-f", "null")
         .arg("-")
         .stdin(yuv_out)
         .try_into()

@@ -1,5 +1,8 @@
 //! ffmpeg logic
-use crate::{process::ensure_success, temporary, SAMPLE_SIZE_S};
+use crate::{
+    process::{ensure_success, CommandExt},
+    temporary, SAMPLE_SIZE_S,
+};
 use anyhow::Context;
 use std::{
     path::{Path, PathBuf},
@@ -24,14 +27,10 @@ pub async fn copy(input: &Path, sample_start: Duration) -> anyhow::Result<PathBu
 
     let out = Command::new("ffmpeg")
         .arg("-y")
-        .arg("-i")
-        .arg(input)
-        .arg("-ss")
-        .arg(sample_start.as_secs().to_string())
-        .arg("-t")
-        .arg(SAMPLE_SIZE_S.to_string())
-        .arg("-c:v")
-        .arg("copy")
+        .arg2("-i", input)
+        .arg2("-ss", sample_start.as_secs().to_string())
+        .arg2("-t", SAMPLE_SIZE_S.to_string())
+        .arg2("-c:v", "copy")
         .arg("-an")
         .arg(&dest)
         .output()

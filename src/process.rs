@@ -1,5 +1,6 @@
 use anyhow::ensure;
 use std::{
+    ffi::OsStr,
     io,
     process::{ExitStatus, Output},
     time::Duration,
@@ -103,4 +104,14 @@ fn parse_ffmpeg_out() {
             time: Duration::new(60 * 60 + 23 * 60 + 12, 340_000_000),
         })
     );
+}
+
+pub trait CommandExt {
+    /// Adds two arguments.
+    fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self;
+}
+impl CommandExt for tokio::process::Command {
+    fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self {
+        self.arg(a).arg(b)
+    }
 }
