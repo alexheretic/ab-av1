@@ -15,7 +15,7 @@ ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET>
 ```
 
 ### Command: crf-search
-Pseudo binary search using [sample-encode](#command-sample-encode) to find the best 
+Interpolated binary search using [sample-encode](#command-sample-encode) to find the best 
 crf value delivering **min-vmaf** & **max-encoded-percent**.
 
 Outputs:

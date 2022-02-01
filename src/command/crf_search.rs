@@ -10,7 +10,7 @@ use std::{path::PathBuf, time::Duration};
 
 const BAR_LEN: u64 = 1000;
 
-/// Pseudo binary search using sample-encode to find the best crf value
+/// Interpolated binary search using sample-encode to find the best crf value
 /// delivering min-vmaf & max-encoded-percent.
 ///
 /// Outputs:
