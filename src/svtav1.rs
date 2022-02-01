@@ -57,10 +57,7 @@ pub fn encode(
     );
 
     let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
-    let yuv_pipe = yuv_pipe.filter_map(|p| match p {
-        Ok(_) => None,
-        Err(_) => Some(p),
-    });
+    let yuv_pipe = yuv_pipe.filter(Result::is_err);
 
     let mut svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
