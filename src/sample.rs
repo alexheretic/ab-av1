@@ -16,8 +16,8 @@ use tokio::process::Command;
 pub async fn copy(input: &Path, sample_start: Duration) -> anyhow::Result<PathBuf> {
     let ext = input
         .extension()
-        .context("input has no extension")?
-        .to_string_lossy();
+        .and_then(|e| e.to_str())
+        .context("input has no extension")?;
     let dest = input.with_extension(format!(
         "sample{}+{SAMPLE_SIZE_S}.{ext}",
         sample_start.as_secs()

@@ -5,7 +5,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -24,7 +24,9 @@ pub struct Args {
     #[clap(long)]
     pub preset: u8,
 
-    /// Output file, by default the same as input with `.av1.mp4` extension.
+    /// Output file, by default the same as input with `.av1` before the extension.
+    ///
+    /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
     #[clap(short, long)]
     pub output: Option<PathBuf>,
 }
@@ -50,7 +52,7 @@ pub async fn run(
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    let output = output.unwrap_or_else(|| input.with_extension("av1.mp4"));
+    let output = output.unwrap_or_else(|| default_output_from(&input));
     // output is temporary until encoding has completed successfully
     temporary::add(&output);
 
@@ -93,4 +95,12 @@ pub async fn run(
         style(")").dim(),
     );
     Ok(())
+}
+
+/// * input: vid.ext -> output: vid.av1.ext
+pub fn default_output_from(input: &Path) -> PathBuf {
+    match input.extension().and_then(|e| e.to_str()) {
+        Some(ext) => input.with_extension(format!("av1.{ext}")),
+        _ => input.with_extension("av1.mp4"),
+    }
 }

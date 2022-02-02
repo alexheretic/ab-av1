@@ -1,5 +1,9 @@
 use crate::{
-    command::{crf_search, encode, PROGRESS_CHARS},
+    command::{
+        crf_search,
+        encode::{self, default_output_from},
+        PROGRESS_CHARS,
+    },
     console_ext::style,
 };
 use clap::Parser;
@@ -18,7 +22,9 @@ pub struct Args {
     #[clap(flatten)]
     pub crf_search: crf_search::Args,
 
-    /// Output file, by default the same as input with `.av1.mp4` extension.
+    /// Output file, by default the same as input with `.av1` before the extension.
+    ///
+    /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
     #[clap(short, long)]
     pub output: Option<PathBuf>,
 }
@@ -28,7 +34,7 @@ pub async fn auto_encode(mut args: Args) -> anyhow::Result<()> {
     let defaulting_output = args.output.is_none();
     let output = args
         .output
-        .unwrap_or_else(|| args.crf_search.input.with_extension("av1.mp4"));
+        .unwrap_or_else(|| default_output_from(&args.crf_search.input));
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()

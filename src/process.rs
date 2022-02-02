@@ -107,11 +107,32 @@ fn parse_ffmpeg_out() {
 }
 
 pub trait CommandExt {
+    /// Adds an argument if `condition` otherwise noop.
+    fn arg_if(&mut self, condition: bool, a: impl AsRef<OsStr>) -> &mut Self;
+
     /// Adds two arguments.
     fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self;
+
+    /// Adds two arguments if `condition` otherwise noop.
+    fn arg2_if(&mut self, condition: bool, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>)
+        -> &mut Self;
 }
 impl CommandExt for tokio::process::Command {
+    fn arg_if(&mut self, c: bool, arg: impl AsRef<OsStr>) -> &mut Self {
+        match c {
+            true => self.arg(arg),
+            false => self,
+        }
+    }
+
     fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self {
         self.arg(a).arg(b)
+    }
+
+    fn arg2_if(&mut self, c: bool, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self {
+        match c {
+            true => self.arg2(a, b),
+            false => self,
+        }
     }
 }

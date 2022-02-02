@@ -51,10 +51,13 @@ pub fn encode(
     output: &Path,
     audio: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
-    anyhow::ensure!(
-        output.extension().and_then(|e| e.to_str()) == Some("mp4"),
-        "Only mp4 output is supported"
-    );
+    let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
+
+    // use `-c:a copy` if the extensions are the same, otherwise reencode with opus
+    let audio_codec = match input.extension() {
+        ext if ext.is_some() && ext == output.extension() => "copy",
+        _ => "libopus",
+    };
 
     let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
@@ -77,37 +80,24 @@ pub fn encode(
         _ => None,
     });
 
-    let to_mp4 = match audio {
-        false => Command::new("ffmpeg")
-            .kill_on_drop(true)
-            .stdin(svt_out)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .arg("-y")
-            .arg2("-i", "-")
-            .arg2("-c:v", "copy")
-            .arg2("-movflags", "+faststart")
-            .arg(output)
-            .spawn(),
-        true => Command::new("ffmpeg")
-            .kill_on_drop(true)
-            .stdin(svt_out)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .arg("-y")
-            .arg2("-i", "-")
-            .arg2("-i", input)
-            .arg2("-map", "0:v")
-            .arg2("-map", "1:a:0")
-            .arg2("-c:v", "copy")
-            .arg2("-c:a", "libopus")
-            .arg2("-movflags", "+faststart")
-            .arg(output)
-            .spawn(),
-    }
-    .context("ffmpeg to-mp4")?;
+    let to_output = Command::new("ffmpeg")
+        .kill_on_drop(true)
+        .stdin(svt_out)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .arg("-y")
+        .arg2("-i", "-")
+        .arg2_if(audio, "-i", input)
+        .arg2_if(audio, "-map", "0:v")
+        .arg2_if(audio, "-map", "1:a:0")
+        .arg2_if(audio, "-c:a", audio_codec)
+        .arg2("-c:v", "copy")
+        .arg2_if(output_mp4, "-movflags", "+faststart")
+        .arg(output)
+        .spawn()
+        .context("ffmpeg to-output")?;
 
-    let to_mp4 = FfmpegProgress::stream(to_mp4, "ffmpeg to-mp4");
+    let to_mp4 = FfmpegProgress::stream(to_output, "ffmpeg to-output");
 
     Ok(yuv_pipe.merge(svt).merge(to_mp4))
 }
