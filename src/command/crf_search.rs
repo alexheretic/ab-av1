@@ -114,8 +114,8 @@ pub async fn run(
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
-        // how much we're prepared to go higher than the min-vmaf: +0.2, +0.4, +0.8, +1.6 ...
-        let higher_tolerance = 2_f32.powi(run as _) * 0.1;
+        // how much we're prepared to go higher than the min-vmaf: +0.1, +0.2, +0.4, +0.8 ...
+        let higher_tolerance = 2_f32.powi(run as i32 - 1) * 0.1;
         bar.set_message(format!("sampling crf {}, ", args.crf));
         let mut sample_task =
             tokio::task::spawn_local(sample_encode::run(args.clone(), sample_bar.clone()));
@@ -184,6 +184,10 @@ pub async fn run(
             match l_bound {
                 Some(lower) if lower.crf + 1 == sample.crf => {
                     sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
+                    ensure!(
+                        lower.enc.predicted_encode_percent <= *max_encoded_percent as _,
+                        "Failed to find a suitable crf"
+                    );
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
