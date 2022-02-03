@@ -49,15 +49,17 @@ pub fn encode(
     crf: u8,
     preset: u8,
     output: &Path,
-    audio: bool,
+    has_audio: bool,
+    audio_codec: Option<&str>,
+    audio_quality: Option<&str>,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
-    // use `-c:a copy` if the extensions are the same, otherwise reencode with opus
-    let audio_codec = match input.extension() {
+    let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
+        // use `-c:a copy` if the extensions are the same, otherwise reencode with opus
         ext if ext.is_some() && ext == output.extension() => "copy",
         _ => "libopus",
-    };
+    });
 
     let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
@@ -87,10 +89,11 @@ pub fn encode(
         .stderr(Stdio::piped())
         .arg("-y")
         .arg2("-i", "-")
-        .arg2_if(audio, "-i", input)
-        .arg2_if(audio, "-map", "0:v")
-        .arg2_if(audio, "-map", "1:a:0")
-        .arg2_if(audio, "-c:a", audio_codec)
+        .arg2_if(has_audio, "-i", input)
+        .arg2_if(has_audio, "-map", "0:v")
+        .arg2_if(has_audio, "-map", "1:a:0")
+        .arg2_if(has_audio, "-c:a", audio_codec)
+        .arg2_opt("-aq", audio_quality)
         .arg2("-c:v", "copy")
         .arg2_if(output_mp4, "-movflags", "+faststart")
         .arg(output)

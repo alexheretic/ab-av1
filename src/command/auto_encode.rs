@@ -20,21 +20,39 @@ use std::path::PathBuf;
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(flatten)]
-    pub crf_search: crf_search::Args,
+    pub search: crf_search::Args,
 
+    #[clap(flatten)]
+    pub encode: EncodeArgs,
+}
+
+/// Encoding args that also apply to command encode.
+#[derive(Parser)]
+pub struct EncodeArgs {
     /// Output file, by default the same as input with `.av1` before the extension.
     ///
     /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
     #[clap(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Set the output ffmpeg audio codec. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
+    ///
+    /// By default when the input & output file extension match 'copy' is used, otherwise
+    /// 'libopus' is used.
+    #[clap(long = "acodec")]
+    pub audio_codec: Option<String>,
+
+    /// Set the output audio quality. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
+    #[clap(long = "aq")]
+    pub audio_quality: Option<String>,
 }
 
-pub async fn auto_encode(mut args: Args) -> anyhow::Result<()> {
-    args.crf_search.quiet = true;
-    let defaulting_output = args.output.is_none();
-    let output = args
+pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
+    search.quiet = true;
+    let defaulting_output = encode.output.is_none();
+    let output = encode
         .output
-        .unwrap_or_else(|| default_output_from(&args.crf_search.input));
+        .unwrap_or_else(|| default_output_from(&search.input));
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
@@ -48,7 +66,7 @@ pub async fn auto_encode(mut args: Args) -> anyhow::Result<()> {
         bar.println(style!("Encoding {:?}", output).dim().to_string());
     }
 
-    let best = crf_search::run(&args.crf_search, bar.clone()).await?;
+    let best = crf_search::run(&search, bar.clone()).await?;
 
     bar.finish_with_message(format!(
         "crf {}, VMAF {:.2}, ",
@@ -66,10 +84,13 @@ pub async fn auto_encode(mut args: Args) -> anyhow::Result<()> {
 
     encode::run(
         encode::Args {
-            input: args.crf_search.input,
+            input: search.input,
             crf: best.crf,
-            preset: args.crf_search.preset,
-            output: Some(output),
+            preset: search.preset,
+            encode: EncodeArgs {
+                output: Some(output),
+                ..encode
+            },
         },
         &bar,
     )

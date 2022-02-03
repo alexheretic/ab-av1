@@ -113,6 +113,9 @@ pub trait CommandExt {
     /// Adds two arguments.
     fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self;
 
+    /// Adds two arguments, the 2nd an option. `None` mean noop.
+    fn arg2_opt(&mut self, a: impl AsRef<OsStr>, b: Option<impl AsRef<OsStr>>) -> &mut Self;
+
     /// Adds two arguments if `condition` otherwise noop.
     fn arg2_if(&mut self, condition: bool, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>)
         -> &mut Self;
@@ -127,6 +130,13 @@ impl CommandExt for tokio::process::Command {
 
     fn arg2(&mut self, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self {
         self.arg(a).arg(b)
+    }
+
+    fn arg2_opt(&mut self, a: impl AsRef<OsStr>, b: Option<impl AsRef<OsStr>>) -> &mut Self {
+        match b {
+            Some(b) => self.arg2(a, b),
+            None => self,
+        }
     }
 
     fn arg2_if(&mut self, c: bool, a: impl AsRef<OsStr>, b: impl AsRef<OsStr>) -> &mut Self {

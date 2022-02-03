@@ -1,6 +1,9 @@
 use crate::{
-    command::PROGRESS_CHARS, console_ext::style, ffprobe, process::FfmpegProgress, svtav1,
-    temporary,
+    command::{auto_encode, PROGRESS_CHARS},
+    console_ext::style,
+    ffprobe,
+    process::FfmpegProgress,
+    svtav1, temporary,
 };
 use clap::Parser;
 use console::style;
@@ -24,11 +27,8 @@ pub struct Args {
     #[clap(long)]
     pub preset: u8,
 
-    /// Output file, by default the same as input with `.av1` before the extension.
-    ///
-    /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
-    #[clap(short, long)]
-    pub output: Option<PathBuf>,
+    #[clap(flatten)]
+    pub encode: auto_encode::EncodeArgs,
 }
 
 pub async fn encode(args: Args) -> anyhow::Result<()> {
@@ -47,7 +47,12 @@ pub async fn run(
         input,
         crf,
         preset,
-        output,
+        encode:
+            auto_encode::EncodeArgs {
+                output,
+                audio_codec,
+                audio_quality,
+            },
     }: Args,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
@@ -62,13 +67,21 @@ pub async fn run(
     bar.set_message("encoding, ");
 
     let probe = ffprobe::probe(&input);
-    let audio = probe.as_ref().map_or(true, |p| p.has_audio);
+    let has_audio = probe.as_ref().map_or(true, |p| p.has_audio);
     let duration = probe.as_ref().map(|p| p.duration);
     if let Ok(d) = duration {
         bar.set_length(d.as_secs());
     }
 
-    let mut enc = svtav1::encode(&input, crf, preset, &output, audio)?;
+    let mut enc = svtav1::encode(
+        &input,
+        crf,
+        preset,
+        &output,
+        has_audio,
+        audio_codec.as_deref(),
+        audio_quality.as_deref(),
+    )?;
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {
