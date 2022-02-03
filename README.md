@@ -56,6 +56,9 @@ ab-av1 vmaf --original <ORIGINAL> --distorted <DISTORTED>
 ```
 
 ## Install
+### Arch Linux
+Available in the AUR [ab-av1](https://aur.archlinux.org/packages/ab-av1).
+
 ### Using cargo
 ```sh
 cargo install ab-av1
