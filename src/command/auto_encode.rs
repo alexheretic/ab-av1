@@ -11,7 +11,8 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
-/// Automatically determining the best crf & use it to encode a video.
+/// Automatically determine the best crf to deliver the min-vmaf and use it to
+/// encode a video.
 ///
 /// Two phases:
 /// * crf-search to determine the best --crf value

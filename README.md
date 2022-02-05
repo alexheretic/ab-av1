@@ -4,7 +4,7 @@ AV1 encoding tool with fast VMAF sampling. Uses _svt-av1_, _ffmpeg_ & _vmaf_.
 ![](https://user-images.githubusercontent.com/2331607/151695971-d36f55a7-a157-4d5d-ae06-4cc9e2c0d46f.png "Find the best crf encoding setting for VMAF 95 quality")
 
 ### Command: auto-encode
-Automatically determining the best crf & use it to encode a video.
+Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
 
 Two phases:
 * [crf-search](#command-crf-search) to determine the best --crf value

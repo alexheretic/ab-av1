@@ -29,7 +29,7 @@ pub struct Args {
     #[clap(long)]
     pub preset: u8,
 
-    /// Desired VMAF score for the
+    /// Desired min VMAF score to deliver.
     #[clap(long, default_value_t = 95.0)]
     pub min_vmaf: f32,
 

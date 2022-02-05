@@ -31,6 +31,7 @@ enum Action {
     Encode(command::encode::Args),
     CrfSearch(command::crf_search::Args),
     AutoEncode(command::auto_encode::Args),
+    PrintCompletions(command::print_completions::Args),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
         Action::Encode(args) => command::encode(args).boxed_local(),
         Action::CrfSearch(args) => command::crf_search(args).boxed_local(),
         Action::AutoEncode(args) => command::auto_encode(args).boxed_local(),
+        Action::PrintCompletions(args) => return command::print_completions(args),
     });
 
     let out = tokio::select! {
