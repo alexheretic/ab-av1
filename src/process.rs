@@ -107,7 +107,7 @@ fn parse_ffmpeg_out() {
 }
 
 #[test]
-fn parse_ffmpeg_out2() {
+fn parse_ffmpeg_out_na_time() {
     let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=N/A bitrate=N/A speed=3.94x    \r";
     assert_eq!(FfmpegProgress::try_parse(out), None);
 }
