@@ -74,7 +74,16 @@ pub async fn run(
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
     let Ffprobe { duration, .. } = ffprobe::probe(&input)?;
-    let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
+    let (samples, full_pass) = {
+        let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
+        if SAMPLE_SIZE * samples.max(1) as _ >= duration {
+            // if the input is lower duration than samples just encode the whole thing
+            (1, true)
+        } else {
+            (samples, false)
+        }
+    };
+
     bar.set_length(SAMPLE_SIZE_S * samples * 2);
 
     let mut results = Vec::new();
@@ -82,20 +91,27 @@ pub async fn run(
         let sample_idx = sample_n - 1;
         bar.set_prefix(format!("Sample {sample_n}/{samples}"));
 
-        let sample_start =
-            Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
-                * sample_n as _
-                + SAMPLE_SIZE * sample_idx as _;
+        let (sample, sample_size) = if full_pass {
+            // use the entire video as a single sample
+            let input_size = fs::metadata(&input).await?.len();
+            (input.clone(), input_size)
+        } else {
+            let sample_start =
+                Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
+                    * sample_n as _
+                    + SAMPLE_SIZE * sample_idx as _;
 
-        // cut sample
-        bar.set_message("sampling,");
-        let sample = sample::copy(&input, sample_start).await?;
-        let sample_size = fs::metadata(&sample).await?.len();
-        ensure!(
-            // ffmpeg copy may fail sucessfully and give us a small/empty output
-            sample_size > 1024,
-            "ffmpeg copy failed: encoded sample too small"
-        );
+            // cut sample
+            bar.set_message("sampling,");
+            let sample = sample::copy(&input, sample_start).await?;
+            let sample_size = fs::metadata(&sample).await?.len();
+            ensure!(
+                // ffmpeg copy may fail sucessfully and give us a small/empty output
+                sample_size > 1024,
+                "ffmpeg copy failed: encoded sample too small"
+            );
+            (sample, sample_size)
+        };
 
         // encode sample
         bar.set_message("encoding,");
@@ -199,16 +215,25 @@ trait EncodeResults {
 }
 impl EncodeResults for Vec<EncodeResult> {
     fn encoded_percent_size(&self) -> f64 {
+        if self.is_empty() {
+            return 100.0;
+        }
         let encoded = self.iter().map(|r| r.encoded_size).sum::<u64>() as f64;
         let sample = self.iter().map(|r| r.sample_size).sum::<u64>() as f64;
         encoded * 100.0 / sample
     }
 
     fn mean_vmaf(&self) -> f32 {
+        if self.is_empty() {
+            return 0.0;
+        }
         self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
     }
 
     fn estimate_encode_time(&self, input_duration: Duration) -> Duration {
+        if self.is_empty() {
+            return Duration::ZERO;
+        }
         let sample_factor =
             input_duration.as_secs_f64() / (SAMPLE_SIZE_S as f64 * self.len() as f64);
 

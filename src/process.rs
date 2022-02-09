@@ -54,7 +54,7 @@ impl FfmpegProgress {
                 parse_label_substr("time=", out)?,
                 &format_description!("[hour]:[minute]:[second].[subsecond]"),
             )
-            .unwrap()
+            .ok()?
             .as_hms_nano();
             return Some(Self {
                 frame,
@@ -104,6 +104,12 @@ fn parse_ffmpeg_out() {
             time: Duration::new(60 * 60 + 23 * 60 + 12, 340_000_000),
         })
     );
+}
+
+#[test]
+fn parse_ffmpeg_out2() {
+    let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=N/A bitrate=N/A speed=3.94x    \r";
+    assert_eq!(FfmpegProgress::try_parse(out), None);
 }
 
 pub trait CommandExt {
