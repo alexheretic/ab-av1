@@ -42,7 +42,7 @@ ab-av1 sample-encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
 
 ### Command: encode
-Simple invocation of ffmpeg & SvtAv1EncApp to reencode a video.
+Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
 
 ```
 ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>

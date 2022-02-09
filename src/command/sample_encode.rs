@@ -3,6 +3,7 @@ use crate::{
     process::FfmpegProgress, sample, svtav1, temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE,
     SAMPLE_SIZE_S,
 };
+use anyhow::ensure;
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
@@ -90,6 +91,11 @@ pub async fn run(
         bar.set_message("sampling,");
         let sample = sample::copy(&input, sample_start).await?;
         let sample_size = fs::metadata(&sample).await?.len();
+        ensure!(
+            // ffmpeg copy may fail sucessfully and give us a small/empty output
+            sample_size > 1024,
+            "ffmpeg copy failed: encoded sample too small"
+        );
 
         // encode sample
         bar.set_message("encoding,");

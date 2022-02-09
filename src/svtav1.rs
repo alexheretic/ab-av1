@@ -56,7 +56,7 @@ pub fn encode(
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
     let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
-        // use `-c:a copy` if the extensions are the same, otherwise reencode with opus
+        // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
         ext if ext.is_some() && ext == output.extension() => "copy",
         _ => "libopus",
     });
@@ -93,7 +93,7 @@ pub fn encode(
         .arg2_if(has_audio, "-map", "0:v")
         .arg2_if(has_audio, "-map", "1:a:0")
         .arg2_if(has_audio, "-c:a", audio_codec)
-        .arg2_opt("-aq", audio_quality)
+        .arg2_opt("-aq", audio_quality.filter(|_| has_audio))
         .arg2("-c:v", "copy")
         .arg2_if(output_mp4, "-movflags", "+faststart")
         .arg(output)
