@@ -12,11 +12,11 @@ use tokio_stream::{Stream, StreamExt};
 /// Calculate VMAF score by converting the original first to yuv.
 /// This can produce more accurate results than testing directly from original source.
 pub fn run(
-    original: &Path,
+    reference: &Path,
     distorted: &Path,
     options: Option<&str>,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(original)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(reference)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
 
     let libvmaf_options = match options {

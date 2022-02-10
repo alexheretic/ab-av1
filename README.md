@@ -49,10 +49,10 @@ ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
 
 ### Command: vmaf
-Simple full calculation of VMAF score distorted file vs original file.
+Simple full calculation of VMAF score distorted file vs reference file.
 
 ```
-ab-av1 vmaf --original <ORIGINAL> --distorted <DISTORTED>
+ab-av1 vmaf --reference <REFERENCE> --distorted <DISTORTED>
 ```
 
 ## Install

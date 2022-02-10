@@ -7,9 +7,9 @@ use tokio_stream::StreamExt;
 /// Simple full calculation of VMAF score distorted file vs original file.
 #[derive(Parser)]
 pub struct Args {
-    /// Original video file.
+    /// Reference video file.
     #[clap(long)]
-    pub original: PathBuf,
+    pub reference: PathBuf,
 
     /// Re-encoded/distorted video file.
     #[clap(long)]
@@ -23,7 +23,7 @@ pub struct Args {
 
 pub async fn vmaf(
     Args {
-        original,
+        reference: original,
         distorted,
         vmaf_options,
     }: Args,

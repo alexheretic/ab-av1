@@ -1,4 +1,5 @@
 # Unreleased (v0.2.0)
+* Rename _vmaf_ command argument `--reference` (was `--original`).
 * Add optional `--vmaf-options` argument to _vmaf, sample-encode, crf-search, auto-encode_ commands.
 * Fail fast if ffmpeg cut samples are empty (< 1K).
 * Handle input durations lower than the sample duration by using the whole input as a single sample.
