@@ -37,15 +37,12 @@ enum Action {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let Args { action } = Args::parse();
-    let mut keep = false;
+    let keep = action.keep_temp_files();
 
     let local = tokio::task::LocalSet::new();
 
     let command = local.run_until(match action {
-        Action::SampleEncode(args) => {
-            keep = args.keep;
-            command::sample_encode(args).boxed_local()
-        }
+        Action::SampleEncode(args) => command::sample_encode(args).boxed_local(),
         Action::Vmaf(args) => command::vmaf(args).boxed_local(),
         Action::Encode(args) => command::encode(args).boxed_local(),
         Action::CrfSearch(args) => command::crf_search(args).boxed_local(),
@@ -63,4 +60,13 @@ async fn main() -> anyhow::Result<()> {
     }
 
     out
+}
+
+impl Action {
+    fn keep_temp_files(&self) -> bool {
+        match self {
+            Self::SampleEncode(args) => args.keep,
+            _ => false,
+        }
+    }
 }
