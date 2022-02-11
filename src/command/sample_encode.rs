@@ -1,16 +1,19 @@
 use crate::{
-    command::PROGRESS_CHARS, console_ext::style, ffprobe, ffprobe::Ffprobe,
-    process::FfmpegProgress, sample, svtav1, temporary, vmaf, vmaf::VmafOut, SAMPLE_SIZE,
-    SAMPLE_SIZE_S,
+    command::{args, PROGRESS_CHARS},
+    console_ext::style,
+    ffprobe,
+    process::FfmpegProgress,
+    sample,
+    svtav1::{self, SvtArgs},
+    temporary, vmaf,
+    vmaf::VmafOut,
+    SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -24,17 +27,12 @@ use tokio_stream::StreamExt;
 #[derive(Parser, Clone)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
-    /// Input video file.
-    #[clap(short, long)]
-    pub input: PathBuf,
+    #[clap(flatten)]
+    pub svt: args::SvtEncode,
 
     /// Encoder constant rate factor. Lower means better quality.
     #[clap(long)]
     pub crf: u8,
-
-    /// Encoder preset. Higher presets means faster encodes, but with a quality tradeoff.
-    #[clap(long)]
-    pub preset: u8,
 
     /// Number of 20s samples to use across the input video.
     /// More samples take longer but may provide a more accurate result.
@@ -69,9 +67,8 @@ pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
 
 pub async fn run(
     Args {
-        input,
+        svt,
         crf,
-        preset,
         samples,
         keep,
         stdout_format,
@@ -79,7 +76,11 @@ pub async fn run(
     }: Args,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
-    let Ffprobe { duration, .. } = ffprobe::probe(&input)?;
+    let input = &svt.input;
+    let probe = ffprobe::probe(input);
+    let duration = probe.duration?;
+    let svt_args = svt.to_svt_args(crf, probe.fps)?;
+
     let (samples, full_pass) = {
         let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
         if SAMPLE_SIZE * samples.max(1) as _ >= duration {
@@ -99,8 +100,8 @@ pub async fn run(
 
         let (sample, sample_size) = if full_pass {
             // use the entire video as a single sample
-            let input_size = fs::metadata(&input).await?.len();
-            (input.clone(), input_size)
+            let input_size = fs::metadata(input).await?.len();
+            (svt.input.clone(), input_size)
         } else {
             let sample_start =
                 Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
@@ -109,7 +110,7 @@ pub async fn run(
 
             // cut sample
             bar.set_message("sampling,");
-            let sample = sample::copy(&input, sample_start).await?;
+            let sample = sample::copy(input, sample_start).await?;
             let sample_size = fs::metadata(&sample).await?.len();
             ensure!(
                 // ffmpeg copy may fail sucessfully and give us a small/empty output
@@ -122,7 +123,10 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
-        let (encoded_sample, mut output) = svtav1::encode_ivf(&sample, crf, preset)?;
+        let (encoded_sample, mut output) = svtav1::encode_ivf(SvtArgs {
+            input: &sample,
+            ..svt_args.clone()
+        })?;
         while let Some(progress) = output.next().await {
             let FfmpegProgress { time, fps, .. } = progress?;
             bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
@@ -177,7 +181,7 @@ pub async fn run(
     }
     bar.finish();
 
-    let input_size = fs::metadata(&input).await?.len();
+    let input_size = fs::metadata(input).await?.len();
     let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
     let output = Output {
         vmaf: results.mean_vmaf(),
@@ -191,9 +195,12 @@ pub async fn run(
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
-            style!("ab-av1 encode -i {input:?} --crf {crf} --preset {preset}")
-                .dim()
-                .italic()
+            style!(
+                "ab-av1 encode -i {input:?} --crf {crf} --preset {}",
+                svt.preset
+            )
+            .dim()
+            .italic()
         );
         // stdout result
         stdout_format.print_result(

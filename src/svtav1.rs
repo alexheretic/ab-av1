@@ -12,24 +12,45 @@ use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
+/// Exposed SvtAv1EncApp args.
+///
+/// See <https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md>
+#[derive(Debug, Clone)]
+pub struct SvtArgs<'a> {
+    pub input: &'a Path,
+    pub crf: u8,
+    pub preset: u8,
+    pub keyint: Option<i32>,
+    pub scd: u8,
+    pub args: Vec<&'a str>,
+}
+
 /// Encode to ivf. Used for sample encoding.
 pub fn encode_ivf(
-    sample: &Path,
-    crf: u8,
-    preset: u8,
+    SvtArgs {
+        input,
+        crf,
+        preset,
+        keyint,
+        scd,
+        args,
+    }: SvtArgs,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
-    let dest = sample.with_extension(format!("crf{crf}.p{preset}.ivf"));
+    let dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
     temporary::add(&dest);
 
-    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(sample)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
 
     let svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
         .arg2("-i", "stdin")
-        .arg2("--crf", crf.to_string())
-        .arg2("--preset", preset.to_string())
+        .arg2("--crf", crf)
+        .arg2("--preset", preset)
         .arg2("--input-depth", "10")
+        .arg2_opt("--keyint", keyint)
+        .arg2("--scd", scd)
         .arg2("-b", &dest)
+        .args(args)
         .stdin(yuv_out)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -45,9 +66,14 @@ pub fn encode_ivf(
 
 /// Encode to mp4 including re-encoding audio with libopus, if present.
 pub fn encode(
-    input: &Path,
-    crf: u8,
-    preset: u8,
+    SvtArgs {
+        input,
+        crf,
+        preset,
+        keyint,
+        scd,
+        args,
+    }: SvtArgs,
     output: &Path,
     has_audio: bool,
     audio_codec: Option<&str>,
@@ -55,8 +81,8 @@ pub fn encode(
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
+    // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
     let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
-        // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
         ext if ext.is_some() && ext == output.extension() => "copy",
         _ => "libopus",
     });
@@ -67,10 +93,13 @@ pub fn encode(
     let mut svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
         .arg2("-i", "stdin")
-        .arg2("--crf", crf.to_string())
-        .arg2("--preset", preset.to_string())
+        .arg2("--crf", crf)
+        .arg2("--preset", preset)
         .arg2("--input-depth", "10")
+        .arg2_opt("--keyint", keyint)
+        .arg2("--scd", scd)
         .arg2("-b", "stdout")
+        .args(args)
         .stdin(yuv_out)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
