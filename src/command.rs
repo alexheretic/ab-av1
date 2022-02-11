@@ -1,3 +1,4 @@
+pub mod args;
 pub mod auto_encode;
 pub mod crf_search;
 pub mod encode;

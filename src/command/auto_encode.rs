@@ -1,6 +1,6 @@
 use crate::{
     command::{
-        crf_search,
+        args, crf_search,
         encode::{self, default_output_from},
         PROGRESS_CHARS,
     },
@@ -9,10 +9,8 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::path::PathBuf;
 
-/// Automatically determine the best crf to deliver the min-vmaf and use it to
-/// encode a video.
+/// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
 ///
 /// Two phases:
 /// * crf-search to determine the best --crf value
@@ -24,28 +22,7 @@ pub struct Args {
     pub search: crf_search::Args,
 
     #[clap(flatten)]
-    pub encode: EncodeArgs,
-}
-
-/// Encoding args that also apply to command encode.
-#[derive(Parser)]
-pub struct EncodeArgs {
-    /// Output file, by default the same as input with `.av1` before the extension.
-    ///
-    /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
-    #[clap(short, long)]
-    pub output: Option<PathBuf>,
-
-    /// Set the output ffmpeg audio codec. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
-    ///
-    /// By default when the input & output file extension match 'copy' is used, otherwise
-    /// 'libopus' is used.
-    #[clap(long = "acodec")]
-    pub audio_codec: Option<String>,
-
-    /// Set the output audio quality. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
-    #[clap(long = "aq")]
-    pub audio_quality: Option<String>,
+    pub encode: args::EncodeToOutput,
 }
 
 pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
@@ -53,7 +30,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let defaulting_output = encode.output.is_none();
     let output = encode
         .output
-        .unwrap_or_else(|| default_output_from(&search.input));
+        .unwrap_or_else(|| default_output_from(&search.svt.input));
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
@@ -85,10 +62,9 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     encode::run(
         encode::Args {
-            input: search.input,
+            svt: search.svt,
             crf: best.crf,
-            preset: search.preset,
-            encode: EncodeArgs {
+            encode: args::EncodeToOutput {
                 output: Some(output),
                 ..encode
             },

@@ -1,17 +1,17 @@
 use crate::{
-    command::{sample_encode, PROGRESS_CHARS},
+    command::{args, sample_encode, PROGRESS_CHARS},
     console_ext::style,
 };
 use anyhow::{bail, ensure};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 const BAR_LEN: u64 = 1000;
 
-/// Interpolated binary search using sample-encode to find the best crf value
-/// delivering min-vmaf & max-encoded-percent.
+/// Interpolated binary search using sample-encode to find the best crf
+/// value delivering min-vmaf & max-encoded-percent.
 ///
 /// Outputs:
 /// * Best crf value
@@ -21,13 +21,8 @@ const BAR_LEN: u64 = 1000;
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
-    /// Input video file.
-    #[clap(short, long)]
-    pub input: PathBuf,
-
-    /// Encoder preset. Higher presets means faster encodes, but with a quality tradeoff.
-    #[clap(long)]
-    pub preset: u8,
+    #[clap(flatten)]
+    pub svt: args::SvtEncode,
 
     /// Desired min VMAF score to deliver.
     #[clap(long, default_value_t = 95.0)]
@@ -77,9 +72,9 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
         style("Encode with:").dim(),
         style!(
             "ab-av1 encode -i {:?} --crf {} --preset {}",
-            args.input,
+            args.svt.input,
             best.crf,
-            args.preset,
+            args.svt.preset,
         )
         .dim()
         .italic()
@@ -92,8 +87,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
 
 pub async fn run(
     Args {
-        input,
-        preset,
+        svt,
         min_vmaf,
         max_encoded_percent,
         min_crf,
@@ -107,9 +101,8 @@ pub async fn run(
     ensure!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
 
     let mut args = sample_encode::Args {
-        input: input.clone(),
+        svt: svt.clone(),
         crf: (min_crf + max_crf) / 2,
-        preset: *preset,
         samples: *samples,
         keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,

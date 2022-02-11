@@ -36,7 +36,7 @@ pub async fn vmaf(
     bar.enable_steady_tick(100);
     bar.set_message("vmaf running, ");
 
-    let duration = ffprobe::probe(&original).map(|p| p.duration);
+    let duration = ffprobe::probe(&original).duration;
     if let Ok(d) = duration {
         bar.set_length(d.as_secs());
     }
