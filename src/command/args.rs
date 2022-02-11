@@ -32,7 +32,7 @@ pub struct SvtEncode {
     #[clap(short, long)]
     pub input: PathBuf,
 
-    /// Encoder preset. Higher presets means faster encodes, but with a quality tradeoff.
+    /// Encoder preset (0-13). Higher presets means faster encodes, but with a quality tradeoff.
     #[clap(long)]
     pub preset: u8,
 
