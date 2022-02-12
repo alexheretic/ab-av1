@@ -16,13 +16,9 @@ pub struct EncodeToOutput {
     /// Set the output ffmpeg audio codec. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
     ///
     /// By default when the input & output file extension match 'copy' is used, otherwise
-    /// 'libopus' is used.
+    /// libopus is used.
     #[clap(long = "acodec")]
     pub audio_codec: Option<String>,
-
-    /// Set the output audio quality. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
-    #[clap(long = "aq")]
-    pub audio_quality: Option<String>,
 }
 
 /// Common encoding args that apply when using svt-av1.

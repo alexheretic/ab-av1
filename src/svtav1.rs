@@ -77,7 +77,6 @@ pub fn encode(
     output: &Path,
     has_audio: bool,
     audio_codec: Option<&str>,
-    audio_quality: Option<&str>,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
@@ -122,7 +121,7 @@ pub fn encode(
         .arg2_if(has_audio, "-map", "0:v")
         .arg2_if(has_audio, "-map", "1:a:0")
         .arg2_if(has_audio, "-c:a", audio_codec)
-        .arg2_opt("-aq", audio_quality.filter(|_| has_audio))
+        .arg2_if(has_audio && audio_codec == "libopus", "-b:a", "128k")
         .arg2("-c:v", "copy")
         .arg2_if(output_mp4, "-movflags", "+faststart")
         .arg(output)

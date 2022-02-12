@@ -42,12 +42,10 @@ pub async fn run(
     Args {
         svt,
         crf,
-        encode:
-            args::EncodeToOutput {
-                output,
-                audio_codec,
-                audio_quality,
-            },
+        encode: args::EncodeToOutput {
+            output,
+            audio_codec,
+        },
     }: Args,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
@@ -68,13 +66,7 @@ pub async fn run(
         bar.set_length(d.as_secs());
     }
 
-    let mut enc = svtav1::encode(
-        svt_args,
-        &output,
-        has_audio,
-        audio_codec.as_deref(),
-        audio_quality.as_deref(),
-    )?;
+    let mut enc = svtav1::encode(svt_args, &output, has_audio, audio_codec.as_deref())?;
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {
