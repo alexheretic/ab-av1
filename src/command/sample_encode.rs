@@ -76,8 +76,8 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = &svt.input;
     let probe = ffprobe::probe(input);
+    let svt_args = svt.to_svt_args(crf, &probe)?;
     let duration = probe.duration?;
-    let svt_args = svt.to_svt_args(crf, probe.fps)?;
 
     let (samples, full_pass) = {
         let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
