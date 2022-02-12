@@ -39,10 +39,12 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 
 impl Vmaf {
     pub fn ffmpeg_lavfi(&self) -> String {
-        if self.args.is_empty() {
-            return "libvmaf".into();
+        let mut args = self.args.clone();
+        if !args.iter().any(|a| a.contains("n_threads")) {
+            // default n_threads to all cores
+            args.push(format!("n_threads={}", num_cpus::get()).into());
         }
-        let mut combined = self.args.clone().join(":");
+        let mut combined = args.join(":");
         combined.insert_str(0, "libvmaf=");
         combined
     }
@@ -59,5 +61,15 @@ fn vmaf_lavfi() {
 #[test]
 fn vmaf_lavfi_default() {
     let vmaf = Vmaf { args: vec![] };
-    assert_eq!(vmaf.ffmpeg_lavfi(), "libvmaf");
+    let expected = format!("libvmaf=n_threads={}", num_cpus::get());
+    assert_eq!(vmaf.ffmpeg_lavfi(), expected);
+}
+
+#[test]
+fn vmaf_lavfi_include_n_threads() {
+    let vmaf = Vmaf {
+        args: vec!["log_path=output.xml".into()],
+    };
+    let expected = format!("libvmaf=log_path=output.xml:n_threads={}", num_cpus::get());
+    assert_eq!(vmaf.ffmpeg_lavfi(), expected);
 }
