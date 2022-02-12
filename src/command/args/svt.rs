@@ -1,4 +1,7 @@
-use crate::svtav1::SvtArgs;
+use crate::{
+    ffprobe::{Ffprobe, ProbeError},
+    svtav1::SvtArgs,
+};
 use anyhow::ensure;
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -15,15 +18,17 @@ pub struct SvtEncode {
     pub preset: u8,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
-    /// E.g. "300" or "10s". Longer intervals can give better compression but make seeking
-    /// more coarse. Duration will be converted to frames using the input fps.
+    /// E.g. "300" or "10s". Defaults to 10s if the input duration is over 3m.
+    ///
+    /// Longer intervals can give better compression but make seeking more coarse.
+    /// Durations will be converted to frames using the input fps.
     #[clap(long)]
     pub keyint: Option<KeyInterval>,
 
-    /// Enable scene change detection. Inserts keyframes at scene changes.
-    /// Useful for higher keyframe intervals.
+    /// Scene change detection, inserts keyframes at scene changes.
+    /// Defaults on if using default keyint & the input duration is over 3m. Otherwise off.
     #[clap(long)]
-    pub scd: bool,
+    pub scd: Option<bool>,
 
     /// Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=30
     ///
@@ -58,7 +63,10 @@ fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl SvtEncode {
-    pub fn to_svt_args(&self, crf: u8, fps: anyhow::Result<f64>) -> anyhow::Result<SvtArgs<'_>> {
+    pub fn to_svt_args(&self, crf: u8, probe: &Ffprobe) -> Result<SvtArgs<'_>, ProbeError> {
+        const KEYINT_DEFAULT_INPUT_MIN: Duration = Duration::from_secs(60 * 3);
+        const KEYINT_DEFAULT: Duration = Duration::from_secs(10);
+
         let args = self
             .args
             .iter()
@@ -68,18 +76,25 @@ impl SvtEncode {
             })
             .collect();
 
+        let keyint = match (self.keyint, &probe.duration, &probe.fps) {
+            (Some(ki), _, fps) => Some(ki.svt_keyint(fps.clone())?),
+            (None, Ok(duration), Ok(fps)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
+                Some(KeyInterval::Duration(KEYINT_DEFAULT).svt_keyint(Ok(*fps))?)
+            }
+            _ => None,
+        };
+        let scd = match (self.scd, self.keyint, &probe.duration, &probe.fps) {
+            (Some(true), ..) => 1,
+            (None, None, Ok(duration), Ok(_)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => 1,
+            _ => 0,
+        };
+
         Ok(SvtArgs {
             crf,
             input: &self.input,
             preset: self.preset,
-            keyint: match self.keyint {
-                Some(ki) => Some(ki.svt_keyint(fps)?),
-                None => None,
-            },
-            scd: match self.scd {
-                true => 1,
-                false => 0,
-            },
+            keyint,
+            scd,
             args,
         })
     }
@@ -92,7 +107,7 @@ pub enum KeyInterval {
 }
 
 impl KeyInterval {
-    pub fn svt_keyint(&self, fps: anyhow::Result<f64>) -> anyhow::Result<i32> {
+    pub fn svt_keyint(&self, fps: Result<f64, ProbeError>) -> Result<i32, ProbeError> {
         Ok(match self {
             Self::Frames(keyint) => *keyint,
             Self::Duration(duration) => (duration.as_secs_f64() * fps?).round() as i32,
@@ -128,4 +143,71 @@ fn duration_interval_from_str() {
     use std::{str::FromStr, time::Duration};
     let from_10s = KeyInterval::from_str("10s").unwrap();
     assert_eq!(from_10s, KeyInterval::Duration(Duration::from_secs(10)));
+}
+
+/// Should use keyint & scd defaults for >3m inputs.
+#[test]
+fn to_svt_args_default_over_3m() {
+    let svt = SvtEncode {
+        input: "vid.mp4".into(),
+        preset: 8,
+        keyint: None,
+        scd: None,
+        args: vec!["film-grain=30".into()],
+    };
+
+    let probe = Ffprobe {
+        duration: Ok(Duration::from_secs(300)),
+        has_audio: true,
+        fps: Ok(24.0),
+    };
+
+    let SvtArgs {
+        input,
+        crf,
+        preset,
+        keyint,
+        scd,
+        args,
+    } = svt.to_svt_args(32, &probe).expect("to_svt_args");
+
+    assert_eq!(input, svt.input);
+    assert_eq!(crf, 32);
+    assert_eq!(preset, svt.preset);
+    assert_eq!(keyint, Some(240));
+    assert_eq!(scd, 1);
+    assert_eq!(args, vec!["film-grain", "30"]);
+}
+
+#[test]
+fn to_svt_args_default_under_3m() {
+    let svt = SvtEncode {
+        input: "vid.mp4".into(),
+        preset: 8,
+        keyint: None,
+        scd: None,
+        args: vec![],
+    };
+
+    let probe = Ffprobe {
+        duration: Ok(Duration::from_secs(179)),
+        has_audio: true,
+        fps: Ok(24.0),
+    };
+
+    let SvtArgs {
+        input,
+        crf,
+        preset,
+        keyint,
+        scd,
+        args,
+    } = svt.to_svt_args(32, &probe).expect("to_svt_args");
+
+    assert_eq!(input, svt.input);
+    assert_eq!(crf, 32);
+    assert_eq!(preset, svt.preset);
+    assert_eq!(keyint, None);
+    assert_eq!(scd, 0);
+    assert!(args.is_empty());
 }

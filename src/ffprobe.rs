@@ -1,14 +1,14 @@
 //! ffprobe logic
-use anyhow::{anyhow, Context};
-use std::{path::Path, time::Duration};
+use anyhow::Context;
+use std::{fmt, path::Path, time::Duration};
 
 pub struct Ffprobe {
     /// Duration of video.
-    pub duration: anyhow::Result<Duration>,
+    pub duration: Result<Duration, ProbeError>,
     /// The video has audio stream.
     pub has_audio: bool,
     /// Video frame rate.
-    pub fps: anyhow::Result<f64>,
+    pub fps: Result<f64, ProbeError>,
 }
 
 /// Try to ffprobe the given input.
@@ -17,8 +17,8 @@ pub fn probe(input: &Path) -> Ffprobe {
         Ok(p) => p,
         Err(err) => {
             return Ffprobe {
-                duration: Err(anyhow!("ffprobe: {err}")),
-                fps: Err(anyhow!("ffprobe: {err}")),
+                duration: Err(ProbeError(format!("ffprobe: {err}"))),
+                fps: Err(ProbeError(format!("ffprobe: {err}"))),
                 has_audio: true,
             }
         }
@@ -32,8 +32,8 @@ pub fn probe(input: &Path) -> Ffprobe {
         .any(|s| s.codec_type.as_deref() == Some("audio"));
 
     Ffprobe {
-        duration,
-        fps,
+        duration: duration.map_err(ProbeError::from),
+        fps: fps.map_err(ProbeError::from),
         has_audio,
     }
 }
@@ -71,3 +71,20 @@ fn parse_frame_rate(rate: &str) -> Option<f64> {
     }
     Some(x / y)
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProbeError(String);
+
+impl fmt::Display for ProbeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<anyhow::Error> for ProbeError {
+    fn from(err: anyhow::Error) -> Self {
+        Self(format!("{err}"))
+    }
+}
+
+impl std::error::Error for ProbeError {}

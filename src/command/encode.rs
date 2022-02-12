@@ -60,7 +60,7 @@ pub async fn run(
     bar.set_message("encoding, ");
 
     let probe = ffprobe::probe(&svt.input);
-    let svt_args = svt.to_svt_args(crf, probe.fps)?;
+    let svt_args = svt.to_svt_args(crf, &probe)?;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
         bar.set_length(d.as_secs());

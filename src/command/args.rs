@@ -29,12 +29,12 @@ pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    #[clap(long = "vmaf", parse(try_from_str = parse_vmaf_arg))]
+    #[clap(long = "vmaf", parse(from_str = parse_vmaf_arg))]
     pub args: Vec<Arc<str>>,
 }
 
-fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
-    Ok(arg.to_owned().into())
+fn parse_vmaf_arg(arg: &str) -> Arc<str> {
+    arg.to_owned().into()
 }
 
 impl Vmaf {
