@@ -1,4 +1,10 @@
-use crate::{command::PROGRESS_CHARS, ffprobe, process::FfmpegProgress, vmaf, vmaf::VmafOut};
+use crate::{
+    command::{args, PROGRESS_CHARS},
+    ffprobe,
+    process::FfmpegProgress,
+    vmaf,
+    vmaf::VmafOut,
+};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -15,17 +21,15 @@ pub struct Args {
     #[clap(long)]
     pub distorted: PathBuf,
 
-    /// Optional libvmaf options string. See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    /// E.g. "n_threads=8:n_subsample=4:log_path=./vmaf.log"
-    #[clap(long)]
-    pub vmaf_options: Option<String>,
+    #[clap(flatten)]
+    pub vmaf: args::Vmaf,
 }
 
 pub async fn vmaf(
     Args {
         reference: original,
         distorted,
-        vmaf_options,
+        vmaf,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -41,7 +45,7 @@ pub async fn vmaf(
         bar.set_length(d.as_secs());
     }
 
-    let mut vmaf = vmaf::run(&original, &distorted, vmaf_options.as_deref())?;
+    let mut vmaf = vmaf::run(&original, &distorted, &vmaf.ffmpeg_lavfi())?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {

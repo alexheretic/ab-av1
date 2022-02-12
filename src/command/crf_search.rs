@@ -48,10 +48,8 @@ pub struct Args {
     #[clap(skip)]
     pub quiet: bool,
 
-    /// Optional libvmaf options string. See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    /// E.g. "n_threads=8:n_subsample=4:log_path=./vmaf.log"
-    #[clap(long)]
-    pub vmaf_options: Option<String>,
+    #[clap(flatten)]
+    pub vmaf: args::Vmaf,
 }
 
 pub async fn crf_search(args: Args) -> anyhow::Result<()> {
@@ -94,7 +92,7 @@ pub async fn run(
         max_crf,
         samples,
         quiet,
-        vmaf_options,
+        vmaf,
     }: &Args,
     bar: ProgressBar,
 ) -> anyhow::Result<Sample> {
@@ -106,7 +104,7 @@ pub async fn run(
         samples: *samples,
         keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,
-        vmaf_options: vmaf_options.clone(),
+        vmaf: vmaf.clone(),
     };
 
     bar.set_length(BAR_LEN);

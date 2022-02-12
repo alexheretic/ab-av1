@@ -47,10 +47,8 @@ pub struct Args {
     #[clap(long, arg_enum, default_value_t = StdoutFormat::Human)]
     pub stdout_format: StdoutFormat,
 
-    /// Optional libvmaf options string. See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    /// E.g. "n_threads=8:n_subsample=4:log_path=./vmaf.log"
-    #[clap(long)]
-    pub vmaf_options: Option<String>,
+    #[clap(flatten)]
+    pub vmaf: args::Vmaf,
 }
 
 pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
@@ -72,7 +70,7 @@ pub async fn run(
         samples,
         keep,
         stdout_format,
-        vmaf_options,
+        vmaf,
     }: Args,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
@@ -139,7 +137,7 @@ pub async fn run(
 
         // calculate vmaf
         bar.set_message("vmaf running,");
-        let mut vmaf = vmaf::run(&sample, &encoded_sample, vmaf_options.as_deref())?;
+        let mut vmaf = vmaf::run(&sample, &encoded_sample, &vmaf.ffmpeg_lavfi())?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
             match vmaf {
