@@ -4,7 +4,7 @@
     _e.g. `--keyint=300` or `--keyint=10s`_.
     Default keyint to `10s` when input duration is over 3m.
   - `--scd true|false` argument enabling scene change detection.
-    Default scd on when input duration is over 3m.
+    Default scd on when using default keyint & input duration is over 3m.
   - `--svt ARG` for additional args, _e.g. `--svt mbr=2000 --svt film-grain=30`_.
 * Add vmaf configuration `--vmaf ARG`, _e.g. `--vmaf n_threads=8 --vmaf n_subsample=4`_.
 * Set vmaf n_threads to the number of logical CPUs by default.
