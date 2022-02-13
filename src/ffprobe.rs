@@ -5,7 +5,7 @@ use std::{fmt, path::Path, time::Duration};
 pub struct Ffprobe {
     /// Duration of video.
     pub duration: Result<Duration, ProbeError>,
-    /// The video has audio stream.
+    /// The video has audio stream(s).
     pub has_audio: bool,
     /// Video frame rate.
     pub fps: Result<f64, ProbeError>,

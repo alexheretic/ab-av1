@@ -83,6 +83,7 @@ pub fn encode(
     // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
     let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
         ext if ext.is_some() && ext == output.extension() => "copy",
+        _ if !has_audio => "copy",
         _ => "libopus",
     });
 
@@ -117,12 +118,14 @@ pub fn encode(
         .stderr(Stdio::piped())
         .arg("-y")
         .arg2("-i", "-")
-        .arg2_if(has_audio, "-i", input)
-        .arg2_if(has_audio, "-map", "0:v")
-        .arg2_if(has_audio, "-map", "1:a:0")
-        .arg2_if(has_audio, "-c:a", audio_codec)
-        .arg2_if(has_audio && audio_codec == "libopus", "-b:a", "128k")
+        .arg2("-i", input)
+        .arg2("-map", "0:v")
+        .arg2("-map", "1:a?")
+        .arg2("-map", "1:s?")
+        .arg2("-c:s", "copy")
+        .arg2("-c:a", audio_codec)
         .arg2("-c:v", "copy")
+        .arg2_if(audio_codec == "libopus", "-b:a", "128k")
         .arg2_if(output_mp4, "-movflags", "+faststart")
         .arg(output)
         .spawn()

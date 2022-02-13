@@ -7,6 +7,7 @@
     Default scd on when using default keyint & input duration is over 3m.
   - `--svt ARG` for additional args, _e.g. `--svt mbr=2000 --svt film-grain=30`_.
 * Add vmaf configuration `--vmaf ARG`, _e.g. `--vmaf n_threads=8 --vmaf n_subsample=4`_.
+* Support multiple audio & subtitle streams.
 * Default vmaf n_threads to the number of logical CPUs.
 * Rename _vmaf_ command argument `--reference` (was `--original`).
 * Use 128k bitrate as a default for libopus audio.
