@@ -68,14 +68,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style!(
-            "ab-av1 encode -i {:?} --crf {} --preset {}",
-            args.svt.input,
-            best.crf,
-            args.svt.preset,
-        )
-        .dim()
-        .italic()
+        style(args.svt.encode_hint(best.crf)).dim().italic(),
     );
 
     StdoutFormat::Human.print_result(&best);

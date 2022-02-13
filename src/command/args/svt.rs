@@ -4,7 +4,12 @@ use crate::{
 };
 use anyhow::ensure;
 use clap::Parser;
-use std::{fmt, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fmt::{self, Write},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 /// Common encoding args that apply when using svt-av1.
 #[derive(Parser, Clone)]
@@ -103,6 +108,34 @@ impl SvtEncode {
             args,
         })
     }
+
+    pub fn encode_hint(&self, crf: u8) -> String {
+        let Self {
+            input,
+            preset,
+            pix_format,
+            keyint,
+            scd,
+            args,
+        } = self;
+
+        let mut hint = format!("ab-av1 encode -i {input:?} --crf {crf} --preset {preset}");
+        if let Some(keyint) = keyint {
+            write!(hint, " --keyint {keyint}").unwrap();
+        }
+        if let Some(scd) = scd {
+            write!(hint, " --scd {scd}").unwrap();
+        }
+        if *pix_format != PixelFormat::Yuv420p10le {
+            write!(hint, " --pix-format {pix_format}").unwrap();
+        }
+        for arg in args {
+            let arg = arg.trim_start_matches('-');
+            write!(hint, " --svt {arg}").unwrap();
+        }
+
+        hint
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -117,6 +150,15 @@ impl KeyInterval {
             Self::Frames(keyint) => *keyint,
             Self::Duration(duration) => (duration.as_secs_f64() * fps?).round() as i32,
         })
+    }
+}
+
+impl fmt::Display for KeyInterval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Frames(frames) => write!(f, "{frames}"),
+            Self::Duration(d) => write!(f, "{}", humantime::format_duration(*d)),
+        }
     }
 }
 
