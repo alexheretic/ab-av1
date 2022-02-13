@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::ensure;
 use clap::Parser;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{fmt, path::PathBuf, sync::Arc, time::Duration};
 
 /// Common encoding args that apply when using svt-av1.
 #[derive(Parser, Clone)]
@@ -12,6 +12,10 @@ pub struct SvtEncode {
     /// Input video file.
     #[clap(short, long)]
     pub input: PathBuf,
+
+    /// Pixel format.
+    #[clap(arg_enum, long, default_value_t = PixelFormat::Yuv420p10le)]
+    pub pix_format: PixelFormat,
 
     /// Encoder preset (0-13). Higher presets means faster encodes, but with a quality tradeoff.
     #[clap(long)]
@@ -93,6 +97,7 @@ impl SvtEncode {
             crf,
             input: &self.input,
             preset: self.preset,
+            pix_fmt: self.pix_format,
             keyint,
             scd,
             args,
@@ -131,6 +136,35 @@ impl std::str::FromStr for KeyInterval {
     }
 }
 
+#[derive(clap::ArgEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[clap(rename_all = "lower")]
+pub enum PixelFormat {
+    Yuv420p10le,
+    Yuv420p,
+}
+
+impl PixelFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Yuv420p10le => "yuv420p10le",
+            Self::Yuv420p => "yuv420p",
+        }
+    }
+
+    pub fn input_depth(self) -> &'static str {
+        match self {
+            Self::Yuv420p10le => "10",
+            Self::Yuv420p => "8",
+        }
+    }
+}
+
+impl fmt::Display for PixelFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 #[test]
 fn frame_interval_from_str() {
     use std::str::FromStr;
@@ -151,6 +185,7 @@ fn to_svt_args_default_over_3m() {
     let svt = SvtEncode {
         input: "vid.mp4".into(),
         preset: 8,
+        pix_format: PixelFormat::Yuv420p10le,
         keyint: None,
         scd: None,
         args: vec!["film-grain=30".into()],
@@ -166,6 +201,7 @@ fn to_svt_args_default_over_3m() {
         input,
         crf,
         preset,
+        pix_fmt,
         keyint,
         scd,
         args,
@@ -174,6 +210,7 @@ fn to_svt_args_default_over_3m() {
     assert_eq!(input, svt.input);
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
+    assert_eq!(pix_fmt, svt.pix_format);
     assert_eq!(keyint, Some(240));
     assert_eq!(scd, 1);
     assert_eq!(args, vec!["film-grain", "30"]);
@@ -184,6 +221,7 @@ fn to_svt_args_default_under_3m() {
     let svt = SvtEncode {
         input: "vid.mp4".into(),
         preset: 8,
+        pix_format: PixelFormat::Yuv420p,
         keyint: None,
         scd: None,
         args: vec![],
@@ -199,6 +237,7 @@ fn to_svt_args_default_under_3m() {
         input,
         crf,
         preset,
+        pix_fmt,
         keyint,
         scd,
         args,
@@ -207,6 +246,7 @@ fn to_svt_args_default_under_3m() {
     assert_eq!(input, svt.input);
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
+    assert_eq!(pix_fmt, svt.pix_format);
     assert_eq!(keyint, None);
     assert_eq!(scd, 0);
     assert!(args.is_empty());
