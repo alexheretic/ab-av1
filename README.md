@@ -57,11 +57,17 @@ ab-av1 vmaf --reference <REFERENCE> --distorted <DISTORTED>
 
 ## Install
 ### Arch Linux
-Available in the AUR [ab-av1](https://aur.archlinux.org/packages/ab-av1).
+Available in the [AUR](https://aur.archlinux.org/packages/ab-av1).
 
 ### Using cargo
+Latest release
 ```sh
 cargo install ab-av1
+```
+
+Latest code direct from git
+```sh
+cargo install --git https://github.com/alexheretic/ab-av1
 ```
 
 ### Requirements
