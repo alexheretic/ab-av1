@@ -1,5 +1,6 @@
 //! svt-av1 logic
 use crate::{
+    command::args::PixelFormat,
     process::{exit_ok_option, CommandExt, FfmpegProgress},
     temporary, yuv,
 };
@@ -18,6 +19,7 @@ use tokio_stream::{Stream, StreamExt};
 #[derive(Debug, Clone)]
 pub struct SvtArgs<'a> {
     pub input: &'a Path,
+    pub pix_fmt: PixelFormat,
     pub crf: u8,
     pub preset: u8,
     pub keyint: Option<i32>,
@@ -29,6 +31,7 @@ pub struct SvtArgs<'a> {
 pub fn encode_ivf(
     SvtArgs {
         input,
+        pix_fmt,
         crf,
         preset,
         keyint,
@@ -39,14 +42,14 @@ pub fn encode_ivf(
     let dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
     temporary::add(&dest);
 
-    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt)?;
 
     let svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
         .arg2("-i", "stdin")
         .arg2("--crf", crf)
         .arg2("--preset", preset)
-        .arg2("--input-depth", "10")
+        .arg2("--input-depth", pix_fmt.input_depth())
         .arg2_opt("--keyint", keyint)
         .arg2("--scd", scd)
         .arg2("-b", &dest)
@@ -70,6 +73,7 @@ pub fn encode(
         input,
         crf,
         preset,
+        pix_fmt,
         keyint,
         scd,
         args,
@@ -87,7 +91,7 @@ pub fn encode(
         _ => "libopus",
     });
 
-    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(input)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
 
     let mut svt = Command::new("SvtAv1EncApp")
@@ -95,7 +99,7 @@ pub fn encode(
         .arg2("-i", "stdin")
         .arg2("--crf", crf)
         .arg2("--preset", preset)
-        .arg2("--input-depth", "10")
+        .arg2("--input-depth", pix_fmt.input_depth())
         .arg2_opt("--keyint", keyint)
         .arg2("--scd", scd)
         .arg2("-b", "stdout")

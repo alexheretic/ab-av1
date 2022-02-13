@@ -1,5 +1,6 @@
 //! vmaf logic
 use crate::{
+    command::args::PixelFormat,
     process::{exit_ok, CommandExt, FfmpegProgress},
     yuv,
 };
@@ -16,7 +17,7 @@ pub fn run(
     distorted: &Path,
     lavfi: &str,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let (yuv_out, yuv_pipe) = yuv::pipe420p10le(reference)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(reference, PixelFormat::Yuv420p10le)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
