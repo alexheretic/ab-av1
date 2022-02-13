@@ -193,12 +193,7 @@ pub async fn run(
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
-            style!(
-                "ab-av1 encode -i {input:?} --crf {crf} --preset {}",
-                svt.preset
-            )
-            .dim()
-            .italic()
+            style(svt.encode_hint(crf)).dim().italic(),
         );
         // stdout result
         stdout_format.print_result(
