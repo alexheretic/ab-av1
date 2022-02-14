@@ -125,7 +125,7 @@ impl SvtEncode {
     pub fn encode_hint(&self, crf: u8) -> String {
         let Self {
             input,
-            vfilter: video_filter,
+            vfilter,
             preset,
             pix_format,
             keyint,
@@ -143,7 +143,7 @@ impl SvtEncode {
         if *pix_format != PixelFormat::Yuv420p10le {
             write!(hint, " --pix-format {pix_format}").unwrap();
         }
-        if let Some(filter) = video_filter {
+        if let Some(filter) = vfilter {
             write!(hint, " --vfilter {filter:?}").unwrap();
         }
         for arg in args {
@@ -283,7 +283,7 @@ fn to_svt_args_default_over_3m() {
 
     let SvtArgs {
         input,
-        vfilter: video_filter,
+        vfilter,
         pix_fmt,
         crf,
         preset,
@@ -293,7 +293,7 @@ fn to_svt_args_default_over_3m() {
     } = svt.to_svt_args(32, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
-    assert_eq!(video_filter, Some("scale=320:-1,fps=film"));
+    assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
     assert_eq!(pix_fmt, svt.pix_format);
@@ -322,7 +322,7 @@ fn to_svt_args_default_under_3m() {
 
     let SvtArgs {
         input,
-        vfilter: video_filter,
+        vfilter,
         pix_fmt,
         crf,
         preset,
@@ -332,7 +332,7 @@ fn to_svt_args_default_under_3m() {
     } = svt.to_svt_args(32, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
-    assert_eq!(video_filter, None);
+    assert_eq!(vfilter, None);
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
     assert_eq!(pix_fmt, svt.pix_format);
