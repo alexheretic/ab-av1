@@ -14,11 +14,12 @@ use tokio_stream::{Stream, StreamExt};
 /// This can produce more accurate results than testing directly from original source.
 pub fn run(
     reference: &Path,
+    reference_video_filter: Option<&str>,
     distorted: &Path,
     lavfi: &str,
     pix_fmt: PixelFormat,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt, reference_video_filter)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
 
     // If possible convert distorted to yuv, in some cases this fixes inaccuracy

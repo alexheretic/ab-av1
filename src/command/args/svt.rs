@@ -11,12 +11,19 @@ use std::{
     time::Duration,
 };
 
-/// Common encoding args that apply when using svt-av1.
+/// Common svt-av1 input encoding arguments.
 #[derive(Parser, Clone)]
 pub struct SvtEncode {
     /// Input video file.
     #[clap(short, long)]
     pub input: PathBuf,
+
+    /// Ffmpeg video filter applied to the input before av1 encoding.
+    /// E.g. --vfilter "scale=1280:-1,fps=24".
+    ///
+    /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
+    #[clap(long)]
+    pub vfilter: Option<String>,
 
     /// Pixel format.
     #[clap(arg_enum, long, default_value_t = PixelFormat::Yuv420p10le)]
@@ -85,24 +92,30 @@ impl SvtEncode {
             })
             .collect();
 
-        let keyint = match (self.keyint, &probe.duration, &probe.fps) {
-            (Some(ki), _, fps) => Some(ki.svt_keyint(fps.clone())?),
-            (None, Ok(duration), Ok(fps)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
+        let filter_fps = self.vfilter.as_deref().and_then(try_parse_fps_vfilter);
+        let keyint = match (self.keyint, &probe.duration, &probe.fps, filter_fps) {
+            // use the filter-fps if used, otherwise the input fps
+            (Some(ki), .., Some(fps)) => Some(ki.svt_keyint(Ok(fps))?),
+            (Some(ki), _, fps, None) => Some(ki.svt_keyint(fps.clone())?),
+            (None, Ok(duration), _, Some(fps)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
+                Some(KeyInterval::Duration(KEYINT_DEFAULT).svt_keyint(Ok(fps))?)
+            }
+            (None, Ok(duration), Ok(fps), None) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
                 Some(KeyInterval::Duration(KEYINT_DEFAULT).svt_keyint(Ok(*fps))?)
             }
             _ => None,
         };
-        let scd = match (self.scd, self.keyint, &probe.duration, &probe.fps) {
-            (Some(true), ..) => 1,
-            (None, None, Ok(duration), Ok(_)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => 1,
+        let scd = match (self.scd, self.keyint, keyint) {
+            (Some(true), ..) | (_, None, Some(_)) => 1,
             _ => 0,
         };
 
         Ok(SvtArgs {
-            crf,
             input: &self.input,
-            preset: self.preset,
             pix_fmt: self.pix_format,
+            vfilter: self.vfilter.as_deref(),
+            crf,
+            preset: self.preset,
             keyint,
             scd,
             args,
@@ -112,6 +125,7 @@ impl SvtEncode {
     pub fn encode_hint(&self, crf: u8) -> String {
         let Self {
             input,
+            vfilter: video_filter,
             preset,
             pix_format,
             keyint,
@@ -128,6 +142,9 @@ impl SvtEncode {
         }
         if *pix_format != PixelFormat::Yuv420p10le {
             write!(hint, " --pix-format {pix_format}").unwrap();
+        }
+        if let Some(filter) = video_filter {
+            write!(hint, " --vfilter {filter:?}").unwrap();
         }
         for arg in args {
             let arg = arg.trim_start_matches('-');
@@ -207,6 +224,30 @@ impl fmt::Display for PixelFormat {
     }
 }
 
+fn try_parse_fps_vfilter(vfilter: &str) -> Option<f64> {
+    let fps_filter = vfilter
+        .split(',')
+        .find_map(|vf| vf.trim().strip_prefix("fps="))?
+        .trim();
+
+    match fps_filter {
+        "ntsc" => Some(30000.0 / 1001.0),
+        "pal" => Some(25.0),
+        "film" => Some(24.0),
+        "ntsc_film" => Some(24000.0 / 1001.0),
+        _ => crate::ffprobe::parse_frame_rate(fps_filter),
+    }
+}
+
+#[test]
+fn test_try_parse_fps_vfilter() {
+    let fps = try_parse_fps_vfilter("scale=1280:-1, fps=24, transpose=1").unwrap();
+    assert!((fps - 24.0).abs() < f64::EPSILON, "{:?}", fps);
+
+    let fps = try_parse_fps_vfilter("scale=1280:-1, fps=ntsc, transpose=1").unwrap();
+    assert!((fps - 30000.0 / 1001.0).abs() < f64::EPSILON, "{:?}", fps);
+}
+
 #[test]
 fn frame_interval_from_str() {
     use std::str::FromStr;
@@ -226,6 +267,7 @@ fn duration_interval_from_str() {
 fn to_svt_args_default_over_3m() {
     let svt = SvtEncode {
         input: "vid.mp4".into(),
+        vfilter: Some("scale=320:-1,fps=film".into()),
         preset: 8,
         pix_format: PixelFormat::Yuv420p10le,
         keyint: None,
@@ -236,24 +278,26 @@ fn to_svt_args_default_over_3m() {
     let probe = Ffprobe {
         duration: Ok(Duration::from_secs(300)),
         has_audio: true,
-        fps: Ok(24.0),
+        fps: Ok(30.0),
     };
 
     let SvtArgs {
         input,
+        vfilter: video_filter,
+        pix_fmt,
         crf,
         preset,
-        pix_fmt,
         keyint,
         scd,
         args,
     } = svt.to_svt_args(32, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
+    assert_eq!(video_filter, Some("scale=320:-1,fps=film"));
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
     assert_eq!(pix_fmt, svt.pix_format);
-    assert_eq!(keyint, Some(240));
+    assert_eq!(keyint, Some(240)); // based off filter fps
     assert_eq!(scd, 1);
     assert_eq!(args, vec!["film-grain", "30"]);
 }
@@ -262,6 +306,7 @@ fn to_svt_args_default_over_3m() {
 fn to_svt_args_default_under_3m() {
     let svt = SvtEncode {
         input: "vid.mp4".into(),
+        vfilter: None,
         preset: 8,
         pix_format: PixelFormat::Yuv420p,
         keyint: None,
@@ -277,15 +322,17 @@ fn to_svt_args_default_under_3m() {
 
     let SvtArgs {
         input,
+        vfilter: video_filter,
+        pix_fmt,
         crf,
         preset,
-        pix_fmt,
         keyint,
         scd,
         args,
     } = svt.to_svt_args(32, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
+    assert_eq!(video_filter, None);
     assert_eq!(crf, 32);
     assert_eq!(preset, svt.preset);
     assert_eq!(pix_fmt, svt.pix_format);
