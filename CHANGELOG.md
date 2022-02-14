@@ -11,6 +11,7 @@
 * Support multiple audio & subtitle streams.
 * Default vmaf n_threads to the number of logical CPUs.
 * Rename _vmaf_ command argument `--reference` (was `--original`).
+* Linux: _vmaf_ use fifo to convert both reference & distorted to yuv which fixes vmaf accuracy in some cases.
 * Use 128k bitrate as a default for libopus audio.
 * Remove `--aq`.
 * Fail fast if ffmpeg cut samples are empty (< 1K).

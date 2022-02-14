@@ -71,8 +71,9 @@ cargo install --git https://github.com/alexheretic/ab-av1
 ```
 
 ### Requirements
-Built for Linux, needs:
 * svt-av1
 * ffmpeg
 * vmaf
 * opus
+
+`ffmpeg`, `SvtAv1EncApp` commands should be in `$PATH`.

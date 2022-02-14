@@ -137,7 +137,12 @@ pub async fn run(
 
         // calculate vmaf
         bar.set_message("vmaf running,");
-        let mut vmaf = vmaf::run(&sample, &encoded_sample, &vmaf.ffmpeg_lavfi())?;
+        let mut vmaf = vmaf::run(
+            &sample,
+            &encoded_sample,
+            &vmaf.ffmpeg_lavfi(),
+            svt.pix_format,
+        )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
             match vmaf {
