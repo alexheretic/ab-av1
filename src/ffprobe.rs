@@ -61,15 +61,20 @@ fn read_fps(probe: &ffprobe::FfProbe) -> anyhow::Result<f64> {
         .context("invalid ffprobe video frame rate")
 }
 
-/// parse "x/y" strings.
-fn parse_frame_rate(rate: &str) -> Option<f64> {
-    let (x, y) = rate.split_once('/')?;
-    let x: f64 = x.parse().ok()?;
-    let y: f64 = y.parse().ok()?;
-    if x <= 0.0 || y <= 0.0 {
-        return None;
+/// parse "x/y" or float strings.
+pub fn parse_frame_rate(rate: &str) -> Option<f64> {
+    if let Some((x, y)) = rate.split_once('/') {
+        let x: f64 = x.parse().ok()?;
+        let y: f64 = y.parse().ok()?;
+        if x <= 0.0 || y <= 0.0 {
+            return None;
+        }
+        Some(x / y)
+    } else {
+        rate.parse()
+            .ok()
+            .filter(|f: &f64| f.is_finite() && *f > 0.0)
     }
-    Some(x / y)
 }
 
 #[derive(Debug, Clone, PartialEq)]

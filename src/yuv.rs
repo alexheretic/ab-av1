@@ -11,11 +11,13 @@ use tokio_stream::Stream;
 pub fn pipe(
     input: &Path,
     pix_fmt: PixelFormat,
+    vfilter: Option<&str>,
 ) -> anyhow::Result<(Stdio, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
     let mut yuv4mpegpipe = Command::new("ffmpeg")
         .kill_on_drop(true)
         .arg2("-i", input)
         .arg2("-pix_fmt", pix_fmt.as_str())
+        .arg2_opt("-vf", vfilter)
         .arg2("-strict", "-1")
         .arg2("-f", "yuv4mpegpipe")
         .arg("-")

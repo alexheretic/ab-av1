@@ -19,6 +19,7 @@ use tokio_stream::{Stream, StreamExt};
 #[derive(Debug, Clone)]
 pub struct SvtArgs<'a> {
     pub input: &'a Path,
+    pub vfilter: Option<&'a str>,
     pub pix_fmt: PixelFormat,
     pub crf: u8,
     pub preset: u8,
@@ -31,6 +32,7 @@ pub struct SvtArgs<'a> {
 pub fn encode_ivf(
     SvtArgs {
         input,
+        vfilter,
         pix_fmt,
         crf,
         preset,
@@ -42,7 +44,7 @@ pub fn encode_ivf(
     let dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
     temporary::add(&dest);
 
-    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
 
     let svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
@@ -71,9 +73,10 @@ pub fn encode_ivf(
 pub fn encode(
     SvtArgs {
         input,
+        vfilter,
+        pix_fmt,
         crf,
         preset,
-        pix_fmt,
         keyint,
         scd,
         args,
@@ -91,7 +94,7 @@ pub fn encode(
         _ => "libopus",
     });
 
-    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
 
     let mut svt = Command::new("SvtAv1EncApp")

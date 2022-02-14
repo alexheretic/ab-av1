@@ -12,7 +12,6 @@ jobs:
     env:
       RUST_BACKTRACE: 1
     steps:
-    - run: rustup update stable
     - uses: actions/checkout@v2
     - run: cargo test
     # check print-completions don't fail
@@ -25,13 +24,11 @@ jobs:
     env:
       RUST_BACKTRACE: 1
     steps:
-    - run: rustup update stable
     - uses: actions/checkout@v2
     - run: cargo check
 
   rustfmt:
     runs-on: ubuntu-latest
     steps:
-    - run: rustup update stable
     - uses: actions/checkout@v2
     - run: cargo fmt -- --check

@@ -20,6 +20,11 @@ pub struct Args {
     #[clap(long)]
     pub reference: PathBuf,
 
+    /// Ffmpeg video filter applied to the reference before analysis.
+    /// E.g. --vfilter "scale=1280:-1,fps=24".
+    #[clap(long)]
+    pub reference_vfilter: Option<String>,
+
     /// Re-encoded/distorted video file.
     #[clap(long)]
     pub distorted: PathBuf,
@@ -30,7 +35,8 @@ pub struct Args {
 
 pub async fn vmaf(
     Args {
-        reference: original,
+        reference,
+        reference_vfilter,
         distorted,
         vmaf,
     }: Args,
@@ -43,13 +49,14 @@ pub async fn vmaf(
     bar.enable_steady_tick(100);
     bar.set_message("vmaf running, ");
 
-    let duration = ffprobe::probe(&original).duration;
+    let duration = ffprobe::probe(&reference).duration;
     if let Ok(d) = duration {
         bar.set_length(d.as_secs());
     }
 
     let mut vmaf = vmaf::run(
-        &original,
+        &reference,
+        reference_vfilter.as_deref(),
         &distorted,
         &vmaf.ffmpeg_lavfi(),
         PixelFormat::Yuv420p10le,

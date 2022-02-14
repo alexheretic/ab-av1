@@ -139,6 +139,7 @@ pub async fn run(
         bar.set_message("vmaf running,");
         let mut vmaf = vmaf::run(
             &sample,
+            svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(),
             svt.pix_format,
