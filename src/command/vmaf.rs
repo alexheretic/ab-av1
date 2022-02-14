@@ -1,5 +1,8 @@
 use crate::{
-    command::{args, PROGRESS_CHARS},
+    command::{
+        args::{self, PixelFormat},
+        PROGRESS_CHARS,
+    },
     ffprobe,
     process::FfmpegProgress,
     vmaf,
@@ -45,7 +48,12 @@ pub async fn vmaf(
         bar.set_length(d.as_secs());
     }
 
-    let mut vmaf = vmaf::run(&original, &distorted, &vmaf.ffmpeg_lavfi())?;
+    let mut vmaf = vmaf::run(
+        &original,
+        &distorted,
+        &vmaf.ffmpeg_lavfi(),
+        PixelFormat::Yuv420p10le,
+    )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {

@@ -16,9 +16,19 @@ pub fn run(
     reference: &Path,
     distorted: &Path,
     lavfi: &str,
+    pix_fmt: PixelFormat,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let (yuv_out, yuv_pipe) = yuv::pipe(reference, PixelFormat::Yuv420p10le)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
+
+    // If possible convert distorted to yuv, in some cases this fixes inaccuracy
+    #[cfg(unix)]
+    let (distorted_fifo, distorted_yuv_pipe) = yuv::unix::pipe_to_fifo(distorted, pix_fmt)?;
+    #[cfg(unix)]
+    let (distorted, yuv_pipe) = (
+        &distorted_fifo,
+        yuv_pipe.merge(distorted_yuv_pipe.filter_map(VmafOut::ignore_ok)),
+    );
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
         .kill_on_drop(true)

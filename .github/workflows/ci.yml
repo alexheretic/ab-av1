@@ -20,6 +20,15 @@ jobs:
     - run: cargo run -- print-completions fish
     - run: cargo run -- print-completions zsh
 
+  test-windows:
+    runs-on: windows-latest
+    env:
+      RUST_BACKTRACE: 1
+    steps:
+    - run: rustup update stable
+    - uses: actions/checkout@v2
+    - run: cargo check
+
   rustfmt:
     runs-on: ubuntu-latest
     steps:
