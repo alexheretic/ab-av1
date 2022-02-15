@@ -2,7 +2,8 @@
 use crate::{
     command::args::PixelFormat,
     process::{exit_ok_option, CommandExt, FfmpegProgress},
-    temporary, yuv,
+    temporary::{self, TempKind},
+    yuv,
 };
 use anyhow::Context;
 use std::{
@@ -40,9 +41,14 @@ pub fn encode_ivf(
         scd,
         args,
     }: SvtArgs,
+    temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
-    let dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
-    temporary::add(&dest);
+    let mut dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
+    if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
+        temp.push(name);
+        dest = temp;
+    }
+    temporary::add(&dest, TempKind::Keepable);
 
     let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
 

@@ -6,6 +6,20 @@ pub use svt::*;
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 
+/// Sampling arguments.
+#[derive(Parser, Clone)]
+pub struct Sample {
+    /// Number of 20s samples to use across the input video.
+    /// More samples take longer but may provide a more accurate result.
+    #[clap(long, default_value_t = 3)]
+    pub samples: u64,
+
+    /// Directory to store temporary sample data in.
+    /// Defaults to using the input's directory.
+    #[clap(long)]
+    pub temp_dir: Option<PathBuf>,
+}
+
 /// Encoding args that apply when encoding to an output.
 #[derive(Parser, Clone)]
 pub struct EncodeToOutput {

@@ -13,7 +13,11 @@ use anyhow::ensure;
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -34,10 +38,8 @@ pub struct Args {
     #[clap(long)]
     pub crf: u8,
 
-    /// Number of 20s samples to use across the input video.
-    /// More samples take longer but may provide a more accurate result.
-    #[clap(long, default_value_t = 3)]
-    pub samples: u64,
+    #[clap(flatten)]
+    pub sample: args::Sample,
 
     /// Keep temporary files after exiting.
     #[clap(long)]
@@ -67,22 +69,22 @@ pub async fn run(
     Args {
         svt,
         crf,
-        samples,
+        sample: args::Sample { samples, temp_dir },
         keep,
         stdout_format,
         vmaf,
     }: Args,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
-    let input = &svt.input;
-    let probe = ffprobe::probe(input);
+    let input = Arc::new(svt.input.clone());
+    let probe = ffprobe::probe(&input);
     let svt_args = svt.to_svt_args(crf, &probe)?;
     let duration = probe.duration?;
 
     let (samples, full_pass) = {
-        let samples = samples.min(duration.as_secs() / SAMPLE_SIZE_S);
-        if SAMPLE_SIZE * samples.max(1) as _ >= duration {
-            // if the input is lower duration than samples just encode the whole thing
+        let samples = samples.max(1);
+        if SAMPLE_SIZE * samples as _ >= duration {
+            // if the input is a lower duration than the samples just encode the whole thing
             (1, true)
         } else {
             (samples, false)
@@ -91,40 +93,51 @@ pub async fn run(
 
     bar.set_length(SAMPLE_SIZE_S * samples * 2);
 
+    // Start creating copy samples async, this is IO bound & not cpu intensive
+    let (tx, mut sample_tasks) = tokio::sync::mpsc::channel(1);
+    let sample_temp = temp_dir.clone();
+    let sample_in = input.clone();
+    tokio::task::spawn_local(async move {
+        for sample_idx in 0..samples {
+            if full_pass {
+                let full_sample = sample_full_pass(sample_in.clone()).await;
+                let _ = tx.send((sample_idx, full_sample)).await;
+                break;
+            } else {
+                let sample = sample(
+                    sample_in.clone(),
+                    sample_idx,
+                    samples,
+                    duration,
+                    sample_temp.clone(),
+                )
+                .await;
+                if tx.send((sample_idx, sample)).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+    bar.set_message("sampling,");
+
     let mut results = Vec::new();
-    for sample_n in 1..=samples {
-        let sample_idx = sample_n - 1;
+    while let Some((sample_idx, sample)) = sample_tasks.recv().await {
+        let (sample_idx, sample_n) = (sample_idx as u64, sample_idx + 1);
         bar.set_prefix(format!("Sample {sample_n}/{samples}"));
 
-        let (sample, sample_size) = if full_pass {
-            // use the entire video as a single sample
-            let input_size = fs::metadata(input).await?.len();
-            (svt.input.clone(), input_size)
-        } else {
-            let sample_start =
-                Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
-                    * sample_n as _
-                    + SAMPLE_SIZE * sample_idx as _;
-
-            // cut sample
-            bar.set_message("sampling,");
-            let sample = sample::copy(input, sample_start).await?;
-            let sample_size = fs::metadata(&sample).await?.len();
-            ensure!(
-                // ffmpeg copy may fail sucessfully and give us a small/empty output
-                sample_size > 1024,
-                "ffmpeg copy failed: encoded sample too small"
-            );
-            (sample, sample_size)
-        };
+        bar.set_message("sampling,");
+        let (sample, sample_size) = sample?;
 
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
-        let (encoded_sample, mut output) = svtav1::encode_ivf(SvtArgs {
-            input: &sample,
-            ..svt_args.clone()
-        })?;
+        let (encoded_sample, mut output) = svtav1::encode_ivf(
+            SvtArgs {
+                input: &sample,
+                ..svt_args.clone()
+            },
+            temp_dir.clone(),
+        )?;
         while let Some(progress) = output.next().await {
             let FfmpegProgress { time, fps, .. } = progress?;
             bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
@@ -179,13 +192,11 @@ pub async fn run(
             encode_time,
         });
 
-        if !keep {
-            temporary::clean().await;
-        }
+        temporary::clean(keep).await;
     }
     bar.finish();
 
-    let input_size = fs::metadata(input).await?.len();
+    let input_size = fs::metadata(&*input).await?.len();
     let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
     let output = Output {
         vmaf: results.mean_vmaf(),
@@ -211,6 +222,37 @@ pub async fn run(
     }
 
     Ok(output)
+}
+
+/// Use the entire video as a single sample
+async fn sample_full_pass(input: Arc<PathBuf>) -> anyhow::Result<(Arc<PathBuf>, u64)> {
+    let input_size = fs::metadata(&*input).await?.len();
+    Ok((input, input_size))
+}
+
+/// Copy a sample from the input to the temp_dir (or input dir).
+async fn sample(
+    input: Arc<PathBuf>,
+    sample_idx: u64,
+    samples: u64,
+    duration: Duration,
+    temp_dir: Option<PathBuf>,
+) -> anyhow::Result<(Arc<PathBuf>, u64)> {
+    let sample_n = sample_idx + 1;
+
+    let sample_start =
+        Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
+            * sample_n as _
+            + SAMPLE_SIZE * sample_idx as _;
+
+    let sample = sample::copy(&input, sample_start, temp_dir).await?;
+    let sample_size = fs::metadata(&sample).await?.len();
+    ensure!(
+        // ffmpeg copy may fail sucessfully and give us a small/empty output
+        sample_size > 1024,
+        "ffmpeg copy failed: encoded sample too small"
+    );
+    Ok((sample.into(), sample_size))
 }
 
 struct EncodeResult {
