@@ -4,7 +4,7 @@ use crate::{
     ffprobe,
     process::FfmpegProgress,
     svtav1::{self},
-    temporary,
+    temporary::{self, TempKind},
 };
 use clap::Parser;
 use console::style;
@@ -52,7 +52,7 @@ pub async fn run(
     let defaulting_output = output.is_none();
     let output = output.unwrap_or_else(|| default_output_from(&svt.input));
     // output is temporary until encoding has completed successfully
-    temporary::add(&output);
+    temporary::add(&output, TempKind::NotKeepable);
 
     if defaulting_output {
         bar.println(style!("Encoding {output:?}").dim().to_string());

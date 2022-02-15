@@ -5,6 +5,7 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
+    temporary,
 };
 use clap::Parser;
 use console::style;
@@ -45,12 +46,12 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     }
 
     let best = crf_search::run(&search, bar.clone()).await?;
-
     bar.finish_with_message(format!(
         "crf {}, VMAF {:.2}, ",
         style(best.crf).green(),
         style(best.enc.vmaf).green()
     ));
+    temporary::clean_all().await;
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()

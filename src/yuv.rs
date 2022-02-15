@@ -33,6 +33,7 @@ pub fn pipe(
 #[cfg(unix)]
 pub mod unix {
     use super::*;
+    use crate::temporary::{self, TempKind};
     use rand::{
         distributions::{Alphanumeric, DistString},
         thread_rng,
@@ -49,7 +50,7 @@ pub mod unix {
             Alphanumeric.sample_string(&mut thread_rng(), 12)
         ));
         unix_named_pipe::create(&fifo, None)?;
-        crate::temporary::add(&fifo);
+        temporary::add(&fifo, TempKind::NotKeepable);
 
         let yuv4mpegpipe = Command::new("ffmpeg")
             .kill_on_drop(true)

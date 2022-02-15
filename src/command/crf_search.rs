@@ -40,10 +40,8 @@ pub struct Args {
     #[clap(long, default_value_t = 55)]
     pub max_crf: u8,
 
-    /// Number of 20s samples to use across the input video.
-    /// More samples take longer but may provide a more accurate result.
-    #[clap(long, default_value_t = 3)]
-    pub samples: u64,
+    #[clap(flatten)]
+    pub sample: args::Sample,
 
     #[clap(skip)]
     pub quiet: bool,
@@ -58,10 +56,8 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
             .progress_chars(PROGRESS_CHARS)
     );
-    // bar.enable_steady_tick(100);
 
     let best = run(&args, bar.clone()).await?;
-
     bar.finish();
 
     // encode how-to hint + predictions
@@ -83,7 +79,7 @@ pub async fn run(
         max_encoded_percent,
         min_crf,
         max_crf,
-        samples,
+        sample,
         quiet,
         vmaf,
     }: &Args,
@@ -94,8 +90,9 @@ pub async fn run(
     let mut args = sample_encode::Args {
         svt: svt.clone(),
         crf: (min_crf + max_crf) / 2,
-        samples: *samples,
-        keep: false,
+        sample: sample.clone(),
+        // re-use samples in subsequent runs
+        keep: true,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),
     };
