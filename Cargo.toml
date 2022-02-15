@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-clap = { version = "3.0.10", features = ["derive"] }
+clap = { version = "3.0.10", features = ["derive", "env"] }
 clap_complete = "3.0.5"
 ffprobe = "0.3"
 anyhow = "1.0.53"

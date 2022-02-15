@@ -12,7 +12,8 @@
 * Rename _vmaf_ command argument `--reference` (was `--original`).
 * Add _vmaf_ command `--reference-vfilter` argument, similar to `--vfilter`.
 * Default vmaf n_threads to the number of logical CPUs.
-* Add `--temp-dir` argument to specify storage of sample data.
+* Add `--temp-dir` argument to specify storage of sample data. 
+  May also be set with env var `AB_AV1_TEMP_DIR`.
 * Create samples concurrently while encoding to reduce io lags waiting to encode.
 * _crf-search_ re-use samples for crf analysis.
 * Linux: _vmaf_ use fifo to convert both reference & distorted to yuv which fixes vmaf accuracy in some cases.

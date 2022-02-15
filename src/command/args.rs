@@ -16,7 +16,7 @@ pub struct Sample {
 
     /// Directory to store temporary sample data in.
     /// Defaults to using the input's directory.
-    #[clap(long)]
+    #[clap(long, env = "AB_AV1_TEMP_DIR")]
     pub temp_dir: Option<PathBuf>,
 }
 
