@@ -1,24 +1,12 @@
 //! Shared argument logic.
 mod svt;
+mod vmaf;
 
 pub use svt::*;
+pub use vmaf::*;
 
 use clap::Parser;
-use std::{path::PathBuf, sync::Arc};
-
-/// Sampling arguments.
-#[derive(Parser, Clone)]
-pub struct Sample {
-    /// Number of 20s samples to use across the input video.
-    /// More samples take longer but may provide a more accurate result.
-    #[clap(long, default_value_t = 3)]
-    pub samples: u64,
-
-    /// Directory to store temporary sample data in.
-    /// Defaults to using the input's directory.
-    #[clap(long, env = "AB_AV1_TEMP_DIR")]
-    pub temp_dir: Option<PathBuf>,
-}
+use std::{path::PathBuf, time::Duration};
 
 /// Encoding args that apply when encoding to an output.
 #[derive(Parser, Clone)]
@@ -37,53 +25,34 @@ pub struct EncodeToOutput {
     pub audio_codec: Option<String>,
 }
 
-/// Common vmaf options.
+/// Sampling arguments.
 #[derive(Parser, Clone)]
-pub struct Vmaf {
-    /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
+pub struct Sample {
+    /// Number of 20s samples to use across the input video. Overrides --sample-every.
+    /// More samples take longer but may provide a more accurate result.
+    #[clap(long)]
+    pub samples: Option<u64>,
+
+    /// Calculate number of samples by dividing the input duration by this value.
+    /// So "12m" would mean with an input 25-36 minutes long, 3 samples would be used.
+    /// More samples take longer but may provide a more accurate result.
     ///
-    /// See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    #[clap(long = "vmaf", parse(from_str = parse_vmaf_arg))]
-    pub vmaf_args: Vec<Arc<str>>,
+    /// Setting --samples overrides this value.
+    #[clap(long, default_value = "12m", parse(try_from_str = humantime::parse_duration))]
+    pub sample_every: Duration,
+
+    /// Directory to store temporary sample data in.
+    /// Defaults to using the input's directory.
+    #[clap(long, env = "AB_AV1_TEMP_DIR")]
+    pub temp_dir: Option<PathBuf>,
 }
 
-fn parse_vmaf_arg(arg: &str) -> Arc<str> {
-    arg.to_owned().into()
-}
-
-impl Vmaf {
-    pub fn ffmpeg_lavfi(&self) -> String {
-        let mut args = self.vmaf_args.clone();
-        if !args.iter().any(|a| a.contains("n_threads")) {
-            // default n_threads to all cores
-            args.push(format!("n_threads={}", num_cpus::get()).into());
+impl Sample {
+    /// Calculate the desired sample count using `samples` or `sample_every`.
+    pub fn sample_count(&self, input_duration: Duration) -> u64 {
+        if let Some(s) = self.samples {
+            return s;
         }
-        let mut combined = args.join(":");
-        combined.insert_str(0, "libvmaf=");
-        combined
+        (input_duration.as_secs_f64() / self.sample_every.as_secs_f64().max(1.0)).ceil() as _
     }
-}
-
-#[test]
-fn vmaf_lavfi() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-    };
-    assert_eq!(vmaf.ffmpeg_lavfi(), "libvmaf=n_threads=5:n_subsample=4");
-}
-
-#[test]
-fn vmaf_lavfi_default() {
-    let vmaf = Vmaf { vmaf_args: vec![] };
-    let expected = format!("libvmaf=n_threads={}", num_cpus::get());
-    assert_eq!(vmaf.ffmpeg_lavfi(), expected);
-}
-
-#[test]
-fn vmaf_lavfi_include_n_threads() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["log_path=output.xml".into()],
-    };
-    let expected = format!("libvmaf=log_path=output.xml:n_threads={}", num_cpus::get());
-    assert_eq!(vmaf.ffmpeg_lavfi(), expected);
 }

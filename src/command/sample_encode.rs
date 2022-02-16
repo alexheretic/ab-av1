@@ -69,7 +69,7 @@ pub async fn run(
     Args {
         svt,
         crf,
-        sample: args::Sample { samples, temp_dir },
+        sample: sample_args,
         keep,
         stdout_format,
         vmaf,
@@ -80,9 +80,10 @@ pub async fn run(
     let probe = ffprobe::probe(&input);
     let svt_args = svt.to_svt_args(crf, &probe)?;
     let duration = probe.duration?;
+    let samples = sample_args.sample_count(duration).max(1);
+    let temp_dir = sample_args.temp_dir;
 
     let (samples, full_pass) = {
-        let samples = samples.max(1);
         if SAMPLE_SIZE * samples as _ >= duration {
             // if the input is a lower duration than the samples just encode the whole thing
             (1, true)
@@ -118,14 +119,17 @@ pub async fn run(
             }
         }
     });
-    bar.set_message("sampling,");
 
     let mut results = Vec::new();
-    while let Some((sample_idx, sample)) = sample_tasks.recv().await {
+    loop {
+        bar.set_message("sampling,");
+        let (sample_idx, sample) = match sample_tasks.recv().await {
+            Some(s) => s,
+            None => break,
+        };
         let (sample_idx, sample_n) = (sample_idx as u64, sample_idx + 1);
         bar.set_prefix(format!("Sample {sample_n}/{samples}"));
 
-        bar.set_message("sampling,");
         let (sample, sample_size) = sample?;
 
         // encode sample
@@ -192,7 +196,11 @@ pub async fn run(
             encode_time,
         });
 
-        temporary::clean(keep).await;
+        // Early clean. Note: Avoid cleaning copy samples
+        temporary::clean(true).await;
+        if !keep {
+            let _ = tokio::fs::remove_file(encoded_sample).await;
+        }
     }
     bar.finish();
 

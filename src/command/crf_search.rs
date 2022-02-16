@@ -91,8 +91,7 @@ pub async fn run(
         svt: svt.clone(),
         crf: (min_crf + max_crf) / 2,
         sample: sample.clone(),
-        // re-use samples in subsequent runs
-        keep: true,
+        keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),
     };
