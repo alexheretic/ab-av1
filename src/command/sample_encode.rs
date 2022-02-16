@@ -95,14 +95,14 @@ pub async fn run(
     bar.set_length(SAMPLE_SIZE_S * samples * 2);
 
     // Start creating copy samples async, this is IO bound & not cpu intensive
-    let (tx, mut sample_tasks) = tokio::sync::mpsc::channel(1);
+    let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
     let sample_temp = temp_dir.clone();
     let sample_in = input.clone();
     tokio::task::spawn_local(async move {
         for sample_idx in 0..samples {
             if full_pass {
                 let full_sample = sample_full_pass(sample_in.clone()).await;
-                let _ = tx.send((sample_idx, full_sample)).await;
+                let _ = tx.send((sample_idx, full_sample));
                 break;
             } else {
                 let sample = sample(
@@ -113,7 +113,7 @@ pub async fn run(
                     sample_temp.clone(),
                 )
                 .await;
-                if tx.send((sample_idx, sample)).await.is_err() {
+                if tx.send((sample_idx, sample)).is_err() {
                     break;
                 }
             }
