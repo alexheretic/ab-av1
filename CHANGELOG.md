@@ -1,4 +1,4 @@
-# Unreleased (v0.2.0)
+# v0.2.0
 * Add svt-av1 option `--keyint FRAME-OR-DURATION` argument supporting frame integer or duration string. 
   _E.g. `--keyint=300` or `--keyint=10s`_.
   Default keyint to `10s` when input duration is over 3m.
