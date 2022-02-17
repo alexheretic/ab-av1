@@ -13,7 +13,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
     - uses: actions/checkout@v2
-    - run: cargo test
+    - run: cargo test --locked
     # check print-completions don't fail
     - run: cargo run -- print-completions bash
     - run: cargo run -- print-completions fish
