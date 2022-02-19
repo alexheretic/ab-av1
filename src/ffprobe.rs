@@ -7,6 +7,8 @@ pub struct Ffprobe {
     pub duration: Result<Duration, ProbeError>,
     /// The video has audio stream(s).
     pub has_audio: bool,
+    /// Audio number of channels (if multiple channel the highest).
+    pub max_audio_channels: Option<i64>,
     /// Video frame rate.
     pub fps: Result<f64, ProbeError>,
 }
@@ -20,6 +22,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 duration: Err(ProbeError(format!("ffprobe: {err}"))),
                 fps: Err(ProbeError(format!("ffprobe: {err}"))),
                 has_audio: true,
+                max_audio_channels: None,
             }
         }
     };
@@ -30,11 +33,18 @@ pub fn probe(input: &Path) -> Ffprobe {
         .streams
         .iter()
         .any(|s| s.codec_type.as_deref() == Some("audio"));
+    let max_audio_channels = probe
+        .streams
+        .iter()
+        .filter(|s| s.codec_type.as_deref() == Some("audio"))
+        .filter_map(|a| a.channels)
+        .max();
 
     Ffprobe {
         duration: duration.map_err(ProbeError::from),
         fps: fps.map_err(ProbeError::from),
         has_audio,
+        max_audio_channels,
     }
 }
 

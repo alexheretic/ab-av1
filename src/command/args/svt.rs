@@ -278,6 +278,7 @@ fn to_svt_args_default_over_3m() {
     let probe = Ffprobe {
         duration: Ok(Duration::from_secs(300)),
         has_audio: true,
+        max_audio_channels: None,
         fps: Ok(30.0),
     };
 
@@ -317,6 +318,7 @@ fn to_svt_args_default_under_3m() {
     let probe = Ffprobe {
         duration: Ok(Duration::from_secs(179)),
         has_audio: true,
+        max_audio_channels: None,
         fps: Ok(24.0),
     };
 

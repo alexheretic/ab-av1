@@ -17,12 +17,20 @@ pub struct EncodeToOutput {
     #[clap(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Set the output ffmpeg audio codec. See https://ffmpeg.org/ffmpeg.html#Audio-Options.
+    /// Set the output ffmpeg audio codec.
+    /// By default when the input & output file extension match 'copy' is used,
+    /// otherwise 'libopus'.
     ///
-    /// By default when the input & output file extension match 'copy' is used, otherwise
-    /// libopus is used.
+    /// See https://ffmpeg.org/ffmpeg.html#Audio-Options.
     #[clap(long = "acodec")]
     pub audio_codec: Option<String>,
+
+    /// Downmix input audio streams to stereo if input streams use greater than
+    /// 3 channels.
+    ///
+    /// No effect if the input audio has 3 or fewer channels.
+    #[clap(long)]
+    pub downmix_to_stereo: bool,
 }
 
 /// Sampling arguments.

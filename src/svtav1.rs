@@ -90,11 +90,13 @@ pub fn encode(
     output: &Path,
     has_audio: bool,
     audio_codec: Option<&str>,
+    downmix_to_stereo: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
     // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
     let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
+        _ if downmix_to_stereo => "libopus",
         ext if ext.is_some() && ext == output.extension() => "copy",
         _ if !has_audio => "copy",
         _ => "libopus",
@@ -137,6 +139,7 @@ pub fn encode(
         .arg2("-map", "1:s?")
         .arg2("-c:s", "copy")
         .arg2("-c:a", audio_codec)
+        .arg2_if(downmix_to_stereo, "-ac", 2)
         .arg2("-c:v", "copy")
         .arg2_if(audio_codec == "libopus", "-b:a", "128k")
         .arg2_if(output_mp4, "-movflags", "+faststart")
