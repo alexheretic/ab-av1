@@ -42,10 +42,12 @@ pub async fn run(
     Args {
         svt,
         crf,
-        encode: args::EncodeToOutput {
-            output,
-            audio_codec,
-        },
+        encode:
+            args::EncodeToOutput {
+                output,
+                audio_codec,
+                downmix_to_stereo,
+            },
     }: Args,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
@@ -66,7 +68,14 @@ pub async fn run(
         bar.set_length(d.as_secs());
     }
 
-    let mut enc = svtav1::encode(svt_args, &output, has_audio, audio_codec.as_deref())?;
+    // only downmix if achannels > 3
+    let stereo_downmix = downmix_to_stereo && probe.max_audio_channels.map_or(false, |c| c > 3);
+    let audio_codec = audio_codec.as_deref();
+    if stereo_downmix && audio_codec == Some("copy") {
+        anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
+    }
+
+    let mut enc = svtav1::encode(svt_args, &output, has_audio, audio_codec, stereo_downmix)?;
     while let Some(progress) = enc.next().await {
         let FfmpegProgress { fps, time, .. } = progress?;
         if fps > 0.0 {
