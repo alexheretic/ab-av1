@@ -2,7 +2,7 @@ use crate::{
     command::{args, PROGRESS_CHARS},
     console_ext::style,
     ffprobe,
-    process::FfmpegProgress,
+    process::FfmpegOut,
     sample,
     svtav1::{self, SvtArgs},
     temporary, vmaf,
@@ -143,10 +143,11 @@ pub async fn run(
             temp_dir.clone(),
         )?;
         while let Some(progress) = output.next().await {
-            let FfmpegProgress { time, fps, .. } = progress?;
-            bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
-            if fps > 0.0 {
-                bar.set_message(format!("enc {fps} fps,"));
+            if let FfmpegOut::Progress { time, fps, .. } = progress? {
+                bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
+                if fps > 0.0 {
+                    bar.set_message(format!("enc {fps} fps,"));
+                }
             }
         }
         let encode_time = b.elapsed();
@@ -168,7 +169,7 @@ pub async fn run(
                     vmaf_score = score;
                     break;
                 }
-                VmafOut::Progress(FfmpegProgress { time, fps, .. }) => {
+                VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                     bar.set_position(
                         SAMPLE_SIZE_S + time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2,
                     );
@@ -176,6 +177,7 @@ pub async fn run(
                         bar.set_message(format!("vmaf {fps} fps,"));
                     }
                 }
+                VmafOut::Progress(_) => {}
                 VmafOut::Err(e) => return Err(e),
             }
         }

@@ -1,7 +1,7 @@
 //! svt-av1 logic
 use crate::{
     command::args::PixelFormat,
-    process::{exit_ok_option, CommandExt, FfmpegProgress},
+    process::{exit_ok_option, CommandExt, FfmpegOut},
     temporary::{self, TempKind},
     yuv,
 };
@@ -42,7 +42,7 @@ pub fn encode_ivf(
         args,
     }: SvtArgs,
     temp_dir: Option<PathBuf>,
-) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
+) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
     let mut dest = input.with_extension(format!("crf{crf}.p{preset}.ivf"));
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
         temp.push(name);
@@ -91,7 +91,7 @@ pub fn encode(
     has_audio: bool,
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegProgress>>> {
+) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
     let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
     // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
@@ -147,7 +147,7 @@ pub fn encode(
         .spawn()
         .context("ffmpeg to-output")?;
 
-    let to_mp4 = FfmpegProgress::stream(to_output, "ffmpeg to-output");
+    let to_mp4 = FfmpegOut::stream(to_output, "ffmpeg to-output");
 
     Ok(yuv_pipe.merge(svt).merge(to_mp4))
 }
