@@ -2,7 +2,7 @@ use crate::{
     command::{args, PROGRESS_CHARS},
     console_ext::style,
     ffprobe,
-    process::FfmpegProgress,
+    process::FfmpegOut,
     svtav1::{self},
     temporary::{self, TempKind},
 };
@@ -76,13 +76,23 @@ pub async fn run(
     }
 
     let mut enc = svtav1::encode(svt_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
-        let FfmpegProgress { fps, time, .. } = progress?;
-        if fps > 0.0 {
-            bar.set_message(format!("{fps} fps, "));
-        }
-        if probe.duration.is_ok() {
-            bar.set_position(time.as_secs());
+        match progress? {
+            FfmpegOut::Progress { fps, time, .. } => {
+                if fps > 0.0 {
+                    bar.set_message(format!("{fps} fps, "));
+                }
+                if probe.duration.is_ok() {
+                    bar.set_position(time.as_secs());
+                }
+            }
+            FfmpegOut::StreamSizes {
+                video,
+                audio,
+                subtitle,
+                other,
+            } => stream_sizes = Some((video, audio, subtitle, other)),
         }
     }
     bar.finish();
@@ -95,12 +105,28 @@ pub async fn run(
     let output_percent = 100.0 * output_size as f64 / fs::metadata(&svt.input).await?.len() as f64;
     let output_size = style(HumanBytes(output_size)).dim().bold();
     let output_percent = style!("{}%", output_percent.round()).dim().bold();
-    eprintln!(
-        "{} {output_size} {}{output_percent}{}",
+    eprint!(
+        "{} {output_size} {}{output_percent}",
         style("Encoded").dim(),
         style("(").dim(),
-        style(")").dim(),
     );
+    if let Some((video, audio, subtitle, other)) = stream_sizes {
+        if audio > 0 || subtitle > 0 || other > 0 {
+            for (label, size) in [
+                ("video:", video),
+                ("audio:", audio),
+                ("subs:", subtitle),
+                ("other:", other),
+            ] {
+                if size > 0 {
+                    let size = style(HumanBytes(size)).dim();
+                    eprint!("{} {}{size}", style(",").dim(), style(label).dim(),);
+                }
+            }
+        }
+    }
+    eprintln!("{}", style(")").dim());
+
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     command::args::PixelFormat,
-    process::{CommandExt, FfmpegProgress},
+    process::{CommandExt, FfmpegOut},
 };
 use anyhow::Context;
 use std::{path::Path, process::Stdio};
@@ -12,7 +12,7 @@ pub fn pipe(
     input: &Path,
     pix_fmt: PixelFormat,
     vfilter: Option<&str>,
-) -> anyhow::Result<(Stdio, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
+) -> anyhow::Result<(Stdio, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
     let mut yuv4mpegpipe = Command::new("ffmpeg")
         .kill_on_drop(true)
         .arg2("-i", input)
@@ -26,7 +26,7 @@ pub fn pipe(
         .spawn()
         .context("ffmpeg yuv4mpegpipe")?;
     let stdout = yuv4mpegpipe.stdout.take().unwrap().try_into().unwrap();
-    let stream = FfmpegProgress::stream(yuv4mpegpipe, "ffmpeg yuv4mpegpipe");
+    let stream = FfmpegOut::stream(yuv4mpegpipe, "ffmpeg yuv4mpegpipe");
     Ok((stdout, stream))
 }
 
@@ -44,7 +44,7 @@ pub mod unix {
     pub fn pipe_to_fifo(
         input: &Path,
         pix_fmt: PixelFormat,
-    ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegProgress>>)> {
+    ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
         let fifo = PathBuf::from(format!(
             "/tmp/ab-av1-{}.fifo",
             Alphanumeric.sample_string(&mut thread_rng(), 12)
@@ -64,7 +64,7 @@ pub mod unix {
             .stderr(Stdio::piped())
             .spawn()
             .context("ffmpeg yuv4mpegpipe")?;
-        let stream = FfmpegProgress::stream(yuv4mpegpipe, "ffmpeg yuv4mpegpipe");
+        let stream = FfmpegOut::stream(yuv4mpegpipe, "ffmpeg yuv4mpegpipe");
         Ok((fifo, stream))
     }
 }

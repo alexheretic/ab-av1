@@ -40,13 +40,21 @@ pub fn exit_ok_option<T>(
 }
 
 #[derive(Debug, PartialEq)]
-pub struct FfmpegProgress {
-    pub frame: u64,
-    pub fps: f32,
-    pub time: Duration,
+pub enum FfmpegOut {
+    Progress {
+        frame: u64,
+        fps: f32,
+        time: Duration,
+    },
+    StreamSizes {
+        video: u64,
+        audio: u64,
+        subtitle: u64,
+        other: u64,
+    },
 }
 
-impl FfmpegProgress {
+impl FfmpegOut {
     pub fn try_parse(out: &str) -> Option<Self> {
         if out.starts_with("frame=") && out.ends_with('\r') {
             let frame: u64 = parse_label_substr("frame=", out)?.parse().ok()?;
@@ -57,10 +65,25 @@ impl FfmpegProgress {
             )
             .ok()?
             .as_hms_nano();
-            return Some(Self {
+            return Some(Self::Progress {
                 frame,
                 fps,
                 time: Duration::new(h as u64 * 60 * 60 + m as u64 * 60 + s as u64, ns),
+            });
+        }
+        if let Some(line) = out
+            .lines()
+            .find(|l| l.starts_with("video:") && l.contains("muxing overhead"))
+        {
+            let video = parse_label_size("video:", line)?;
+            let audio = parse_label_size("audio:", line)?;
+            let subtitle = parse_label_size("subtitle:", line)?;
+            let other = parse_label_size("other streams:", line)?;
+            return Some(Self::StreamSizes {
+                video,
+                audio,
+                subtitle,
+                other,
             });
         }
         None
@@ -69,11 +92,9 @@ impl FfmpegProgress {
     pub fn stream(
         child: Child,
         name: &'static str,
-    ) -> impl Stream<Item = anyhow::Result<FfmpegProgress>> {
+    ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
         ProcessChunkStream::from(child).filter_map(move |item| match item {
-            Item::Stderr(chunk) => {
-                FfmpegProgress::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok)
-            }
+            Item::Stderr(chunk) => FfmpegOut::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),
             Item::Stdout(_) => None,
             Item::Done(code) => exit_ok_option(name, code),
         })
@@ -94,12 +115,18 @@ fn parse_label_substr<'a>(label: &str, line: &'a str) -> Option<&'a str> {
     Some(&line[val_start..val_end])
 }
 
+fn parse_label_size(label: &str, line: &str) -> Option<u64> {
+    let size = parse_label_substr(label, line)?;
+    let kbs: u64 = size.strip_suffix("kB")?.parse().ok()?;
+    Some(kbs * 1024)
+}
+
 #[test]
-fn parse_ffmpeg_out() {
+fn parse_ffmpeg_progress() {
     let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=01:23:12.34 bitrate=N/A speed=3.94x    \r";
     assert_eq!(
-        FfmpegProgress::try_parse(out),
-        Some(FfmpegProgress {
+        FfmpegOut::try_parse(out),
+        Some(FfmpegOut::Progress {
             frame: 288,
             fps: 94.0,
             time: Duration::new(60 * 60 + 23 * 60 + 12, 340_000_000),
@@ -108,9 +135,23 @@ fn parse_ffmpeg_out() {
 }
 
 #[test]
-fn parse_ffmpeg_out_na_time() {
+fn parse_ffmpeg_progress_na_time() {
     let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=N/A bitrate=N/A speed=3.94x    \r";
-    assert_eq!(FfmpegProgress::try_parse(out), None);
+    assert_eq!(FfmpegOut::try_parse(out), None);
+}
+
+#[test]
+fn parse_ffmpeg_stream_sizes() {
+    let out = "frame=  112 fps=0.0 q=-1.0 Lsize=     358kB time=00:00:03.70 bitrate= 791.1kbits/s speed=6.54x    \nvideo:2897022kB audio:537162kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.289700%\n";
+    assert_eq!(
+        FfmpegOut::try_parse(out),
+        Some(FfmpegOut::StreamSizes {
+            video: 2897022 * 1024,
+            audio: 537162 * 1024,
+            subtitle: 0,
+            other: 0,
+        })
+    );
 }
 
 pub trait CommandExt {

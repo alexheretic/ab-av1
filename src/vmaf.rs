@@ -1,7 +1,7 @@
 //! vmaf logic
 use crate::{
     command::args::PixelFormat,
-    process::{exit_ok, CommandExt, FfmpegProgress},
+    process::{exit_ok, CommandExt, FfmpegOut},
     yuv,
 };
 use anyhow::Context;
@@ -52,7 +52,7 @@ pub fn run(
 
 #[derive(Debug)]
 pub enum VmafOut {
-    Progress(FfmpegProgress),
+    Progress(FfmpegOut),
     Done(f32),
     Err(anyhow::Error),
 }
@@ -72,7 +72,7 @@ impl VmafOut {
                 out[idx + "VMAF score: ".len()..].trim().parse().ok()?,
             ));
         }
-        if let Some(progress) = FfmpegProgress::try_parse(&out) {
+        if let Some(progress) = FfmpegOut::try_parse(&out) {
             return Some(Self::Progress(progress));
         }
         None

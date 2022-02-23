@@ -4,7 +4,7 @@ use crate::{
         PROGRESS_CHARS,
     },
     ffprobe,
-    process::FfmpegProgress,
+    process::FfmpegOut,
     vmaf,
     vmaf::VmafOut,
 };
@@ -68,7 +68,7 @@ pub async fn vmaf(
                 vmaf_score = score;
                 break;
             }
-            VmafOut::Progress(FfmpegProgress { time, fps, .. }) => {
+            VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                 if fps > 0.0 {
                     bar.set_message(format!("vmaf {fps} fps, "));
                 }
@@ -76,6 +76,7 @@ pub async fn vmaf(
                     bar.set_position(time.as_secs());
                 }
             }
+            VmafOut::Progress(_) => {}
             VmafOut::Err(e) => return Err(e),
         }
     }
