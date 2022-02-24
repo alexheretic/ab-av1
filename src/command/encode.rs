@@ -132,7 +132,12 @@ pub async fn run(
 
 /// * input: vid.ext -> output: vid.av1.ext
 pub fn default_output_from(input: &Path) -> PathBuf {
-    match input.extension().and_then(|e| e.to_str()) {
+    match input
+        .extension()
+        .and_then(|e| e.to_str())
+        // don't use extensions that won't work
+        .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
+    {
         Some(ext) => input.with_extension(format!("av1.{ext}")),
         _ => input.with_extension("av1.mp4"),
     }
