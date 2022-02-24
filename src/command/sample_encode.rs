@@ -159,7 +159,7 @@ pub async fn run(
             &sample,
             svt.vfilter.as_deref(),
             &encoded_sample,
-            &vmaf.ffmpeg_lavfi(),
+            &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).width),
             svt.pix_format,
         )?;
         let mut vmaf_score = -1.0;
