@@ -2,6 +2,7 @@
 * Add `--downmix-to-stereo` option, if enabled & the input streams use > 3 channels (dts 5.1 etc), 
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
+* When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
 
 # v0.2.0
 * Add svt-av1 option `--keyint FRAME-OR-DURATION` argument supporting frame integer or duration string. 
