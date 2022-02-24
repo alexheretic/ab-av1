@@ -77,3 +77,6 @@ cargo install --git https://github.com/alexheretic/ab-av1
 * opus
 
 `ffmpeg`, `SvtAv1EncApp` commands should be in `$PATH`.
+
+## Minimum supported rust compiler
+Maintained with [latest stable rust](https://gist.github.com/alexheretic/d1e98d8433b602e57f5d0a9637927e0c).
