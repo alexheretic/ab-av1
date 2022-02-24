@@ -3,6 +3,8 @@
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
 * When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
+* Improve VMAF accuracy for lower than 1080p resolutions by bicubic upscaling the streams to 1080p
+  for the VMAF calculation. This will result in lower scores than were previously reported for such videos.
 
 # v0.2.0
 * Add svt-av1 option `--keyint FRAME-OR-DURATION` argument supporting frame integer or duration string. 
