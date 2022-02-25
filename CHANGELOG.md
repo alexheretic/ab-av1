@@ -1,8 +1,13 @@
-# Unreleased (v0.2.1)
+# Unreleased (v0.3.0)
 * Add `--downmix-to-stereo` option, if enabled & the input streams use > 3 channels (dts 5.1 etc), 
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
 * When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
+* Add `--vmaf-width` option which sets the video resolution width to use in VMAF analysis.
+* When using the default VMAF model, improve VMAF accuracy for sub-1k resolutions by defaulting
+  `--vmaf-width=1920` whenever video resolution width is less than 1728. This will result in lower 
+  VMAF scores than were reported for such videos in previous versions.
+* Strip debug symbols in release builds by default which reduces binary size _(requires rustc 1.59)_.
 
 # v0.2.0
 * Add svt-av1 option `--keyint FRAME-OR-DURATION` argument supporting frame integer or duration string. 

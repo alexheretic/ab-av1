@@ -49,7 +49,10 @@ pub async fn vmaf(
     bar.enable_steady_tick(100);
     bar.set_message("vmaf running, ");
 
-    let duration = ffprobe::probe(&reference).duration;
+    let dprobe = ffprobe::probe(&distorted);
+    let duration = dprobe
+        .duration
+        .or_else(|_| ffprobe::probe(&reference).duration);
     if let Ok(d) = duration {
         bar.set_length(d.as_secs());
     }
@@ -58,7 +61,7 @@ pub async fn vmaf(
         &reference,
         reference_vfilter.as_deref(),
         &distorted,
-        &vmaf.ffmpeg_lavfi(),
+        &vmaf.ffmpeg_lavfi(dprobe.width),
         PixelFormat::Yuv420p10le,
     )?;
     let mut vmaf_score = -1.0;

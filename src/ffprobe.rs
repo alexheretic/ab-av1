@@ -11,6 +11,7 @@ pub struct Ffprobe {
     pub max_audio_channels: Option<i64>,
     /// Video frame rate.
     pub fps: Result<f64, ProbeError>,
+    pub width: Option<u32>,
 }
 
 /// Try to ffprobe the given input.
@@ -23,6 +24,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 fps: Err(ProbeError(format!("ffprobe: {err}"))),
                 has_audio: true,
                 max_audio_channels: None,
+                width: None,
             }
         }
     };
@@ -40,11 +42,18 @@ pub fn probe(input: &Path) -> Ffprobe {
         .filter_map(|a| a.channels)
         .max();
 
+    let width = probe
+        .streams
+        .iter()
+        .filter(|s| s.codec_type.as_deref() == Some("video"))
+        .find_map(|s| s.width.and_then(|w| u32::try_from(w).ok()));
+
     Ffprobe {
         duration: duration.map_err(ProbeError::from),
         fps: fps.map_err(ProbeError::from),
         has_audio,
         max_audio_channels,
+        width,
     }
 }
 

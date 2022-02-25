@@ -280,6 +280,7 @@ fn to_svt_args_default_over_3m() {
         has_audio: true,
         max_audio_channels: None,
         fps: Ok(30.0),
+        width: Some(720),
     };
 
     let SvtArgs {
@@ -320,6 +321,7 @@ fn to_svt_args_default_under_3m() {
         has_audio: true,
         max_audio_channels: None,
         fps: Ok(24.0),
+        width: Some(720),
     };
 
     let SvtArgs {

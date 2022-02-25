@@ -33,3 +33,4 @@ rand = "0.8.5"
 [profile.release]
 lto = true
 opt-level = "s"
+strip = true

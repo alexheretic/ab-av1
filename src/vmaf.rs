@@ -16,7 +16,7 @@ pub fn run(
     reference: &Path,
     reference_vfilter: Option<&str>,
     distorted: &Path,
-    lavfi: &str,
+    filter_complex: &str,
     pix_fmt: PixelFormat,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
     let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt, reference_vfilter)?;
@@ -35,7 +35,7 @@ pub fn run(
         .kill_on_drop(true)
         .arg2("-i", distorted)
         .arg2("-i", "-")
-        .arg2("-lavfi", lavfi)
+        .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
         .arg("-")
         .stdin(yuv_out)
