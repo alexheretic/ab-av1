@@ -57,8 +57,9 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
             .progress_chars(PROGRESS_CHARS)
     );
 
-    let best = run(&args, bar.clone()).await?;
+    let best = run(&args, bar.clone()).await;
     bar.finish();
+    let best = best?;
 
     // encode how-to hint + predictions
     eprintln!(
