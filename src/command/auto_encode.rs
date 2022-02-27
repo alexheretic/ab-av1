@@ -45,11 +45,21 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         bar.println(style!("Encoding {:?}", output).dim().to_string());
     }
 
-    let best = crf_search::run(&search, bar.clone()).await?;
+    let best = match crf_search::run(&search, bar.clone()).await {
+        Ok(best) => best,
+        Err(err) => {
+            bar.finish();
+            return Err(err);
+        }
+    };
+    bar.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg})")
+        .progress_chars(PROGRESS_CHARS));
     bar.finish_with_message(format!(
-        "crf {}, VMAF {:.2}, ",
+        "crf {}, VMAF {:.2}, {}",
         style(best.crf).green(),
-        style(best.enc.vmaf).green()
+        style(best.enc.vmaf).green(),
+        style(format!("{:.0}%", best.enc.predicted_encode_percent)).green(),
     ));
     temporary::clean_all().await;
 

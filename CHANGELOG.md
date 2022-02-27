@@ -7,6 +7,8 @@
 * When using the default VMAF model, improve VMAF accuracy for sub-1k resolutions by defaulting
   `--vmaf-width=1920` whenever video resolution width is less than 1728. This will result in lower 
   VMAF scores than were reported for such videos in previous versions.
+* Fix clearing _crf-search_ progress bar output on error.
+* Add predicted video stream percent reduction to _auto-encode_ search progress bar after a successful search.
 * Strip debug symbols in release builds by default which reduces binary size _(requires rustc 1.59)_.
 
 # v0.2.0
