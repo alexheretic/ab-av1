@@ -40,7 +40,6 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
 
     bar.set_prefix("Searching");
-    // bar.enable_steady_tick(100);
     if defaulting_output {
         bar.println(style!("Encoding {:?}", output).dim().to_string());
     }
@@ -56,7 +55,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg})")
         .progress_chars(PROGRESS_CHARS));
     bar.finish_with_message(format!(
-        "crf {}, VMAF {:.2}, {}",
+        "crf {}, VMAF {:.2}, size {}",
         style(best.crf).green(),
         style(best.enc.vmaf).green(),
         style(format!("{:.0}%", best.enc.predicted_encode_percent)).green(),
