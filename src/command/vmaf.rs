@@ -61,7 +61,7 @@ pub async fn vmaf(
         &reference,
         reference_vfilter.as_deref(),
         &distorted,
-        &vmaf.ffmpeg_lavfi(dprobe.width),
+        &vmaf.ffmpeg_lavfi(dprobe.resolution),
         PixelFormat::Yuv420p10le,
     )?;
     let mut vmaf_score = -1.0;
