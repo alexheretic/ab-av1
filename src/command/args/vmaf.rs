@@ -16,9 +16,11 @@ pub struct Vmaf {
     /// based on the model and input video resolution. `none` disables any scaling.
     /// `WxH` format may be used to specify custom scaling, e.g. `1920x1080`.
     ///
-    /// Default automatic behaviour:
-    /// * w < 1728 and h < 972 => scale to 1080p (without changing aspect)
-    /// * w >= 1728 or h >= 972 => no scaling
+    /// auto behaviour:
+    /// * 1k model (default for resolutions <= 2560x1440) if width and height
+    ///   are less than 1728 & 972 respectively upscale to 1080p. Otherwise no scaling.
+    /// * 4k model (default for resolutions > 2560x1440) if width and height
+    ///   are less than 3456 & 1944 respectively upscale to 4k. Otherwise no scaling.
     ///
     /// Scaling happens after any input/reference vfilters.
     #[clap(long, default_value_t = VmafScale::Auto, parse(try_from_str = parse_vmaf_scale))]
@@ -40,7 +42,16 @@ impl Vmaf {
         let mut lavfi = args.join(":");
         lavfi.insert_str(0, "libvmaf=");
 
-        if let Some((w, h)) = self.vf_scale(&args, distorted_res) {
+        let mut model = VmafModel::from_args(&args);
+        if let (None, Some((w, h))) = (model, distorted_res) {
+            if w > 2560 && h > 1440 {
+                // for >2k resoultions use 4k model
+                lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
+                model = Some(VmafModel::Vmaf4K);
+            }
+        }
+
+        if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
             // scale both streams to the vmaf width
             lavfi.insert_str(
                 0,
@@ -51,12 +62,16 @@ impl Vmaf {
         lavfi
     }
 
-    fn vf_scale(&self, args: &[Arc<str>], distorted_res: Option<(u32, u32)>) -> Option<(i32, i32)> {
+    fn vf_scale(&self, model: VmafModel, distorted_res: Option<(u32, u32)>) -> Option<(i32, i32)> {
         match (self.vmaf_scale, distorted_res) {
-            (VmafScale::Auto, Some((w, h))) => match VmafModel::from_args(args) {
+            (VmafScale::Auto, Some((w, h))) => match model {
                 // upscale small resolutions to 1k for use with the 1k model
                 VmafModel::Vmaf1K if w < 1728 && h < 972 => {
                     Some(minimally_scale((w, h), (1920, 1080)))
+                }
+                // upscale small resolutions to 4k for use with the 4k model
+                VmafModel::Vmaf4K if w < 3456 && h < 1944 => {
+                    Some(minimally_scale((w, h), (3840, 2160)))
                 }
                 _ => None,
             },
@@ -115,19 +130,30 @@ impl Display for VmafScale {
 enum VmafModel {
     /// Default 1080p model.
     Vmaf1K,
+    /// 4k model.
+    Vmaf4K,
     /// Some other user specified model.
     Custom,
 }
 
+impl Default for VmafModel {
+    fn default() -> Self {
+        Self::Vmaf1K
+    }
+}
+
 impl VmafModel {
-    fn from_args(args: &[Arc<str>]) -> Self {
-        let using_custom_model = args
-            .iter()
-            .filter(|v| !v.ends_with("version=vmaf_v0.6.1"))
-            .any(|v| v.contains("model"));
-        match using_custom_model {
-            true => Self::Custom,
-            false => Self::Vmaf1K,
+    fn from_args(args: &[Arc<str>]) -> Option<Self> {
+        let mut using_custom_model: Vec<_> = args.iter().filter(|v| v.contains("model")).collect();
+
+        match using_custom_model.len() {
+            0 => None,
+            1 => Some(match using_custom_model.remove(0) {
+                v if v.ends_with("version=vmaf_v0.6.1") => Self::Vmaf1K,
+                v if v.ends_with("version=vmaf_4k_v0.6.1") => Self::Vmaf4K,
+                _ => Self::Custom,
+            }),
+            _ => Some(Self::Custom),
         }
     }
 }
@@ -173,6 +199,34 @@ fn vmaf_lavfi_small_width() {
         "[0:v]scale=1920:-1:flags=bicubic[dis];\
          [1:v]scale=1920:-1:flags=bicubic[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
+    );
+}
+
+/// 4k videos should use 4k model
+#[test]
+fn vmaf_lavfi_4k() {
+    let vmaf = Vmaf {
+        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+        vmaf_scale: VmafScale::Auto,
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((3840, 2160))),
+        "libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
+    );
+}
+
+/// >2k videos should be upscaled to 4k & use 4k model
+#[test]
+fn vmaf_lavfi_3k_upscale_to_4k() {
+    let vmaf = Vmaf {
+        vmaf_args: vec!["n_threads=5".into()],
+        vmaf_scale: VmafScale::Auto,
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((3008, 1692))),
+        "[0:v]scale=3840:-1:flags=bicubic[dis];\
+         [1:v]scale=3840:-1:flags=bicubic[ref];\
+         [dis][ref]libvmaf=n_threads=5:model=version=vmaf_4k_v0.6.1"
     );
 }
 

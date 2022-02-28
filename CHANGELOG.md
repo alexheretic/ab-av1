@@ -3,6 +3,7 @@
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
 * When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
+* Select vmaf model `model=version=vmaf_4k_v0.6.1` for videos larger than 2560x1440 if no other model is specified. 
 * Add `--vmaf-scale` option which sets the video resolution scale to use in VMAF analysis.
   May be set to `auto` auto scale based on model & resolution, `none` no scaling or custom `WxH`
   format, e.g. `1920x1080`. `auto` should be best unless a custom model is being used.
