@@ -1,14 +1,18 @@
 # Unreleased (v0.3.0)
+* Select vmaf model `model=version=vmaf_4k_v0.6.1` for videos larger than 2560x1440 if no other model is specified.
+  This will raise VMAF scores for 4k videos that previously were getting harsher treatment from the 1k model.
+* Add `--vmaf-scale` option which sets the video resolution scale to use in VMAF analysis.
+  `auto` (default) auto scales based on model & resolution, `none` no scaling or custom `WxH`
+  format, e.g. `1920x1080`.
+  - `auto` upscale 1728x972 & smaller to 1080p, preserving aspect, when using the default 1k VMAF model.
+    This will lower lower VMAF scores that previously were getting more generous treatment from the 1k model.
+  - `auto` upscale 3456x1944 & smaller to 4k, preserving aspect, when using the 4k VMAF model.
 * Add `--downmix-to-stereo` option, if enabled & the input streams use > 3 channels (dts 5.1 etc), 
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
-* When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
-* Select vmaf model `model=version=vmaf_4k_v0.6.1` for videos larger than 2560x1440 if no other model is specified. 
-* Add `--vmaf-scale` option which sets the video resolution scale to use in VMAF analysis.
-  May be set to `auto` auto scale based on model & resolution, `none` no scaling or custom `WxH`
-  format, e.g. `1920x1080`. `auto` should be best unless a custom model is being used.
-* Fix clearing _crf-search_ progress bar output on error.
 * Add predicted video stream percent reduction to _auto-encode_ search progress bar after a successful search.
+* When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
+* Fix clearing _crf-search_ progress bar output on error.
 * Strip debug symbols in release builds by default which reduces binary size _(requires rustc 1.59)_.
 
 # v0.2.0
