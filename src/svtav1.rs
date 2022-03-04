@@ -134,9 +134,11 @@ pub fn encode(
         .arg("-y")
         .arg2("-i", "-")
         .arg2("-i", input)
+        // use av1 video
         .arg2("-map", "0:v")
-        .arg2("-map", "1:a?")
-        .arg2("-map", "1:s?")
+        // map everything but video from input
+        .arg2("-map", "1")
+        .arg2("-map", "-1:v")
         .arg2("-c:s", "copy")
         .arg2("-c:a", audio_codec)
         .arg2_if(downmix_to_stereo, "-ac", 2)

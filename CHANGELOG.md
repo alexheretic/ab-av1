@@ -11,6 +11,7 @@
   downmix input audio streams to stereo.
 * After encoding print per-stream sizes in addition to the file size & percent.
 * Add predicted video stream percent reduction to _auto-encode_ search progress bar after a successful search.
+* Support non-video/audio/subtitle streams from input to output, e.g. attachments.
 * When defaulting the output file don't use input extension if it is _avi, y4m, ivf_, use mp4 instead.
 * Fix clearing _crf-search_ progress bar output on error.
 * Strip debug symbols in release builds by default which reduces binary size _(requires rustc 1.59)_.
