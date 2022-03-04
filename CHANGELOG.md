@@ -5,7 +5,7 @@
   `auto` (default) auto scales based on model & resolution, `none` no scaling or custom `WxH`
   format, e.g. `1920x1080`.
   - `auto` upscale 1728x972 & smaller to 1080p, preserving aspect, when using the default 1k VMAF model.
-    This will lower lower VMAF scores that previously were getting more generous treatment from the 1k model.
+    This will reduce VMAF scores that previously were getting more generous treatment from the 1k model.
   - `auto` upscale 3456x1944 & smaller to 4k, preserving aspect, when using the 4k VMAF model.
 * Add `--downmix-to-stereo` option, if enabled & the input streams use > 3 channels (dts 5.1 etc), 
   downmix input audio streams to stereo.
