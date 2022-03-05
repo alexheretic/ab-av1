@@ -1,4 +1,4 @@
-# Unreleased (v0.3.0)
+# v0.3.0
 * Select vmaf model `model=version=vmaf_4k_v0.6.1` for videos larger than 2560x1440 if no other model is specified.
   This will raise VMAF scores for 4k videos that previously were getting harsher treatment from the 1k model.
 * Add `--vmaf-scale` option which sets the video resolution scale to use in VMAF analysis.
