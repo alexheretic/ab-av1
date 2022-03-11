@@ -127,12 +127,11 @@ pub async fn run(
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
+        let sample_small_enough = sample.enc.predicted_encode_percent <= *max_encoded_percent as _;
 
         if sample.enc.vmaf > *min_vmaf {
             // good
-            if sample.enc.predicted_encode_percent < *max_encoded_percent as _
-                && sample.enc.vmaf < min_vmaf + higher_tolerance
-            {
+            if sample_small_enough && sample.enc.vmaf < min_vmaf + higher_tolerance {
                 return Ok(sample);
             }
             let u_bound = crf_attempts
@@ -142,12 +141,14 @@ pub async fn run(
 
             match u_bound {
                 Some(upper) if upper.crf == sample.crf + 1 => {
+                    ensure!(sample_small_enough, "Failed to find a suitable crf");
                     return Ok(sample);
                 }
                 Some(upper) => {
                     args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample);
                 }
                 None if sample.crf == *max_crf => {
+                    ensure!(sample_small_enough, "Failed to find a suitable crf");
                     return Ok(sample);
                 }
                 None if run == 1 && sample.crf + 1 < *max_crf => {
@@ -157,9 +158,7 @@ pub async fn run(
             };
         } else {
             // not good enough
-            if sample.enc.predicted_encode_percent > *max_encoded_percent as _
-                || sample.crf == *min_crf
-            {
+            if !sample_small_enough || sample.crf == *min_crf {
                 sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
                 bail!("Failed to find a suitable crf");
             }
@@ -172,10 +171,7 @@ pub async fn run(
             match l_bound {
                 Some(lower) if lower.crf + 1 == sample.crf => {
                     sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
-                    ensure!(
-                        lower.enc.predicted_encode_percent <= *max_encoded_percent as _,
-                        "Failed to find a suitable crf"
-                    );
+                    ensure!(sample_small_enough, "Failed to find a suitable crf");
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
