@@ -1,11 +1,11 @@
 //! vmaf logic
 use crate::{
     command::args::PixelFormat,
-    process::{exit_ok, CommandExt, FfmpegOut},
+    process::{exit_ok, Chunks, CommandExt, FfmpegOut},
     yuv,
 };
 use anyhow::Context;
-use std::path::Path;
+use std::{path::Path, sync::Mutex};
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
@@ -41,8 +41,10 @@ pub fn run(
         .stdin(yuv_out)
         .try_into()
         .context("ffmpeg vmaf")?;
-    let vmaf = vmaf.filter_map(|item| match item {
-        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk),
+
+    let chunks: Mutex<Chunks> = <_>::default();
+    let vmaf = vmaf.filter_map(move |item| match item {
+        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &chunks),
         Item::Stdout(_) => None,
         Item::Done(code) => VmafOut::ignore_ok(exit_ok("ffmpeg vmaf", code)),
     });
@@ -65,14 +67,17 @@ impl VmafOut {
         }
     }
 
-    fn try_from_chunk(chunk: &[u8]) -> Option<Self> {
-        let out = String::from_utf8_lossy(chunk);
-        if let Some(idx) = out.find("VMAF score: ") {
+    fn try_from_chunk(chunk: &[u8], chunks: &Mutex<Chunks>) -> Option<Self> {
+        let mut chunks = chunks.lock().unwrap();
+        chunks.push(chunk);
+        let line = chunks.last_line();
+
+        if let Some(idx) = line.find("VMAF score: ") {
             return Some(Self::Done(
-                out[idx + "VMAF score: ".len()..].trim().parse().ok()?,
+                line[idx + "VMAF score: ".len()..].trim().parse().ok()?,
             ));
         }
-        if let Some(progress) = FfmpegOut::try_parse(&out) {
+        if let Some(progress) = FfmpegOut::try_parse(line) {
             return Some(Self::Progress(progress));
         }
         None

@@ -4,6 +4,7 @@ use std::{
     ffi::OsStr,
     io,
     process::{ExitStatus, Output},
+    sync::Mutex,
     time::Duration,
 };
 use time::macros::format_description;
@@ -55,12 +56,12 @@ pub enum FfmpegOut {
 }
 
 impl FfmpegOut {
-    pub fn try_parse(out: &str) -> Option<Self> {
-        if out.starts_with("frame=") && out.ends_with('\r') {
-            let frame: u64 = parse_label_substr("frame=", out)?.parse().ok()?;
-            let fps: f32 = parse_label_substr("fps=", out)?.parse().ok()?;
+    pub fn try_parse(line: &str) -> Option<Self> {
+        if line.starts_with("frame=") {
+            let frame: u64 = parse_label_substr("frame=", line)?.parse().ok()?;
+            let fps: f32 = parse_label_substr("fps=", line)?.parse().ok()?;
             let (h, m, s, ns) = time::Time::parse(
-                parse_label_substr("time=", out)?,
+                parse_label_substr("time=", line)?,
                 &format_description!("[hour]:[minute]:[second].[subsecond]"),
             )
             .ok()?
@@ -71,10 +72,7 @@ impl FfmpegOut {
                 time: Duration::new(h as u64 * 60 * 60 + m as u64 * 60 + s as u64, ns),
             });
         }
-        if let Some(line) = out
-            .lines()
-            .find(|l| l.starts_with("video:") && l.contains("muxing overhead"))
-        {
+        if line.starts_with("video:") && line.contains("muxing overhead") {
             let video = parse_label_size("video:", line)?;
             let audio = parse_label_size("audio:", line)?;
             let subtitle = parse_label_size("subtitle:", line)?;
@@ -93,8 +91,13 @@ impl FfmpegOut {
         child: Child,
         name: &'static str,
     ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
+        let chunks: Mutex<Chunks> = <_>::default();
         ProcessChunkStream::from(child).filter_map(move |item| match item {
-            Item::Stderr(chunk) => FfmpegOut::try_parse(&String::from_utf8_lossy(&chunk)).map(Ok),
+            Item::Stderr(chunk) => {
+                let mut chunks = chunks.lock().unwrap();
+                chunks.push(&chunk);
+                FfmpegOut::try_parse(chunks.last_line()).map(Ok)
+            }
             Item::Stdout(_) => None,
             Item::Done(code) => exit_ok_option(name, code),
         })
@@ -121,8 +124,51 @@ fn parse_label_size(label: &str, line: &str) -> Option<u64> {
     Some(kbs * 1024)
 }
 
+/// Output chunk storage.
+///
+/// Stores up to ~4k chunk data on the heap.
+#[derive(Default)]
+pub struct Chunks {
+    out: String,
+}
+
+impl Chunks {
+    /// Append a chunk.
+    pub fn push(&mut self, chunk: &[u8]) {
+        const MAX_LEN: usize = 4000;
+
+        self.out.push_str(&String::from_utf8_lossy(chunk));
+
+        // truncate beginning if too long
+        let len = self.out.len();
+        if len > MAX_LEN + 100 {
+            self.out = String::from_utf8_lossy(&self.out.as_bytes()[len - MAX_LEN..]).into();
+        }
+    }
+
+    fn rlines(&self) -> impl Iterator<Item = &'_ str> {
+        self.out
+            .rsplit_terminator('\n')
+            .flat_map(|l| l.rsplit_terminator('\r'))
+    }
+
+    /// Returns last non-empty line, if any.
+    pub fn last_line(&self) -> &str {
+        self.rlines().find(|l| !l.is_empty()).unwrap_or_default()
+    }
+}
+
 #[test]
-fn parse_ffmpeg_progress() {
+fn rlines_rn() {
+    let mut chunks = Chunks::default();
+    chunks.push(b"something \r fooo    \r\n");
+    let mut rlines = chunks.rlines();
+    assert_eq!(rlines.next(), Some(" fooo    "));
+    assert_eq!(rlines.next(), Some("something "));
+}
+
+#[test]
+fn parse_ffmpeg_progress_chunk() {
     let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=01:23:12.34 bitrate=N/A speed=3.94x    \r";
     assert_eq!(
         FfmpegOut::try_parse(out),
@@ -135,14 +181,27 @@ fn parse_ffmpeg_progress() {
 }
 
 #[test]
+fn parse_ffmpeg_progress_line() {
+    let out = "frame=  161 fps= 73 q=-0.0 size=  978076kB time=00:00:06.71 bitrate=1193201.6kbits/s dup=13 drop=0 speed=3.03x    ";
+    assert_eq!(
+        FfmpegOut::try_parse(out),
+        Some(FfmpegOut::Progress {
+            frame: 161,
+            fps: 73.0,
+            time: Duration::new(6, 710_000_000),
+        })
+    );
+}
+
+#[test]
 fn parse_ffmpeg_progress_na_time() {
-    let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=N/A bitrate=N/A speed=3.94x    \r";
+    let out = "frame=  288 fps= 94 q=-0.0 size=N/A time=N/A bitrate=N/A speed=3.94x    ";
     assert_eq!(FfmpegOut::try_parse(out), None);
 }
 
 #[test]
 fn parse_ffmpeg_stream_sizes() {
-    let out = "frame=  112 fps=0.0 q=-1.0 Lsize=     358kB time=00:00:03.70 bitrate= 791.1kbits/s speed=6.54x    \nvideo:2897022kB audio:537162kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.289700%\n";
+    let out = "video:2897022kB audio:537162kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.289700%\n";
     assert_eq!(
         FfmpegOut::try_parse(out),
         Some(FfmpegOut::StreamSizes {
