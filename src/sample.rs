@@ -38,8 +38,8 @@ pub async fn copy(
 
     let out = Command::new("ffmpeg")
         .arg("-y")
-        .arg2("-i", input)
         .arg2("-ss", sample_start.as_secs().to_string())
+        .arg2("-i", input)
         .arg2("-t", SAMPLE_SIZE_S.to_string())
         .arg2("-c:v", "copy")
         .arg("-an")
