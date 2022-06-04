@@ -38,7 +38,8 @@ pub async fn clean(keep_keepables: bool) {
 
 /// Delete all added temporary files.
 pub async fn clean_all() {
-    for (file, _) in std::mem::take(&mut *TEMPS.lock().unwrap()) {
+    let files = std::mem::take(&mut *TEMPS.lock().unwrap());
+    for (file, _) in files {
         let _ = tokio::fs::remove_file(file).await;
     }
 }
