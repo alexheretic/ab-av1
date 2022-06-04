@@ -80,6 +80,7 @@ pub async fn run(
     let probe = ffprobe::probe(&input);
     let svt_args = svt.to_svt_args(crf, &probe)?;
     let duration = probe.duration?;
+    let fps = probe.fps?;
     let samples = sample_args.sample_count(duration).max(1);
     let temp_dir = sample_args.temp_dir;
 
@@ -110,6 +111,7 @@ pub async fn run(
                     sample_idx,
                     samples,
                     duration,
+                    fps,
                     sample_temp.clone(),
                 )
                 .await;
@@ -246,6 +248,7 @@ async fn sample(
     sample_idx: u64,
     samples: u64,
     duration: Duration,
+    fps: f64,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(Arc<PathBuf>, u64)> {
     let sample_n = sample_idx + 1;
@@ -254,8 +257,9 @@ async fn sample(
         Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
             * sample_n as _
             + SAMPLE_SIZE * sample_idx as _;
+    let sample_frames = (SAMPLE_SIZE_S as f64 * fps).round() as u32;
 
-    let sample = sample::copy(&input, sample_start, temp_dir).await?;
+    let sample = sample::copy(&input, sample_start, sample_frames, temp_dir).await?;
     let sample_size = fs::metadata(&sample).await?.len();
     ensure!(
         // ffmpeg copy may fail sucessfully and give us a small/empty output

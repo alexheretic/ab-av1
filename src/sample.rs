@@ -2,7 +2,6 @@
 use crate::{
     process::{ensure_success, CommandExt},
     temporary::{self, TempKind},
-    SAMPLE_SIZE_S,
 };
 use anyhow::Context;
 use std::{
@@ -17,16 +16,15 @@ use tokio::process::Command;
 pub async fn copy(
     input: &Path,
     sample_start: Duration,
+    frames: u32,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<PathBuf> {
     let ext = input
         .extension()
         .and_then(|e| e.to_str())
         .context("input has no extension")?;
-    let mut dest = input.with_extension(format!(
-        "sample{}+{SAMPLE_SIZE_S}.{ext}",
-        sample_start.as_secs()
-    ));
+    let mut dest =
+        input.with_extension(format!("sample{}+{frames}f.{ext}", sample_start.as_secs()));
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
         temp.push(name);
         dest = temp;
@@ -36,11 +34,13 @@ pub async fn copy(
     }
     temporary::add(&dest, TempKind::Keepable);
 
+    // Note: `-ss` before `-i` & `-frames:v` instead of `-t`
+    // See https://github.com/alexheretic/ab-av1/issues/36#issuecomment-1146634936
     let out = Command::new("ffmpeg")
         .arg("-y")
-        .arg2("-i", input)
         .arg2("-ss", sample_start.as_secs().to_string())
-        .arg2("-t", SAMPLE_SIZE_S.to_string())
+        .arg2("-i", input)
+        .arg2("-frames:v", frames)
         .arg2("-c:v", "copy")
         .arg("-an")
         .arg(&dest)

@@ -1,3 +1,6 @@
+# Unreleased (v0.3.2)
+* Improve sample generation speed & frame duration accuracy.
+
 # v0.3.1
 * Fix some cases where ffmpeg progress & VMAF score output parsing failed.
 * Fix some edge cases where crf-search would succeed exceeding the specified `--max-encoded-percent`.
