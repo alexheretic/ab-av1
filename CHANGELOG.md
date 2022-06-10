@@ -1,4 +1,4 @@
-# Unreleased (v0.3.2)
+# v0.3.2
 * Improve sample generation speed & frame duration accuracy.
 
 # v0.3.1
