@@ -19,13 +19,7 @@ const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 
 #[derive(Parser)]
 #[clap(version, about)]
-struct Args {
-    #[clap(subcommand)]
-    action: Action,
-}
-
-#[derive(clap::Subcommand)]
-enum Action {
+enum Command {
     SampleEncode(command::sample_encode::Args),
     Vmaf(command::vmaf::Args),
     Encode(command::encode::Args),
@@ -36,7 +30,7 @@ enum Action {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    let Args { action } = Args::parse();
+    let action = Command::parse();
 
     action.ensure_temp_dir_exists().await?;
     let keep = action.keep_temp_files();
@@ -44,12 +38,12 @@ async fn main() -> anyhow::Result<()> {
     let local = tokio::task::LocalSet::new();
 
     let command = local.run_until(match action {
-        Action::SampleEncode(args) => command::sample_encode(args).boxed_local(),
-        Action::Vmaf(args) => command::vmaf(args).boxed_local(),
-        Action::Encode(args) => command::encode(args).boxed_local(),
-        Action::CrfSearch(args) => command::crf_search(args).boxed_local(),
-        Action::AutoEncode(args) => command::auto_encode(args).boxed_local(),
-        Action::PrintCompletions(args) => return command::print_completions(args),
+        Command::SampleEncode(args) => command::sample_encode(args).boxed_local(),
+        Command::Vmaf(args) => command::vmaf(args).boxed_local(),
+        Command::Encode(args) => command::encode(args).boxed_local(),
+        Command::CrfSearch(args) => command::crf_search(args).boxed_local(),
+        Command::AutoEncode(args) => command::auto_encode(args).boxed_local(),
+        Command::PrintCompletions(args) => return command::print_completions(args),
     });
 
     let out = tokio::select! {
@@ -62,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     out
 }
 
-impl Action {
+impl Command {
     fn keep_temp_files(&self) -> bool {
         match self {
             Self::SampleEncode(args) => args.keep,

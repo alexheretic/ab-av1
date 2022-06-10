@@ -15,7 +15,7 @@ pub struct Args {
 pub fn print_completions(Args { shell }: Args) -> anyhow::Result<()> {
     clap_complete::generate(
         Shell::from_str(&shell).map_err(|e| anyhow!("Shell {e}"))?,
-        &mut crate::Args::command(),
+        &mut crate::Command::command(),
         "ab-av1",
         &mut std::io::stdout(),
     );
