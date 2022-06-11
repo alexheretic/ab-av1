@@ -1,3 +1,6 @@
+# Unreleased (v0.3.3)
+* Show more info auto-encode fails to find a suitable crf.
+
 # v0.3.2
 * Improve sample generation speed & frame duration accuracy.
 
