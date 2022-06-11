@@ -27,6 +27,11 @@ pub struct Args {
 }
 
 pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
+    const SPINNER_RUNNING: &str =
+        "{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})";
+    const SPINNER_FINISHED: &str =
+        "{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg})";
+
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
     let output = encode
@@ -35,8 +40,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
-            .progress_chars(PROGRESS_CHARS)
+            .template(SPINNER_RUNNING)
+            .progress_chars(PROGRESS_CHARS),
     );
 
     bar.set_prefix("Searching");
@@ -47,21 +52,35 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let best = match crf_search::run(&search, bar.clone()).await {
         Ok(best) => best,
         Err(err) => {
-            bar.finish();
-            return match err {
-                crf_search::Error::NoGoodCrf { last } => {
-                    let attempt = last.attempt_string(search.min_vmaf, search.max_encoded_percent);
-                    Err(anyhow::anyhow!(
-                        "Failed to find a suitable crf, last attempt {attempt}"
-                    ))
+            if let crf_search::Error::NoGoodCrf { last } = &err {
+                // show last sample attempt in progress bar
+                bar.set_style(
+                    ProgressStyle::default_bar()
+                        .template(SPINNER_FINISHED)
+                        .progress_chars(PROGRESS_CHARS),
+                );
+                let mut vmaf = style(last.enc.vmaf);
+                if last.enc.vmaf < search.min_vmaf {
+                    vmaf = vmaf.red();
                 }
-                crf_search::Error::Other(err) => Err(err),
-            };
+                let mut percent = style!("{:.0}%", last.enc.predicted_encode_percent);
+                if last.enc.predicted_encode_percent > search.max_encoded_percent as _ {
+                    percent = percent.red();
+                }
+                bar.finish_with_message(format!(
+                    "crf {}, VMAF {vmaf:.2}, size {percent}",
+                    style(last.crf).red(),
+                ));
+            }
+            bar.finish();
+            return Err(err.into());
         }
     };
-    bar.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg})")
-        .progress_chars(PROGRESS_CHARS));
+    bar.set_style(
+        ProgressStyle::default_bar()
+            .template(SPINNER_FINISHED)
+            .progress_chars(PROGRESS_CHARS),
+    );
     bar.finish_with_message(format!(
         "crf {}, VMAF {:.2}, size {}",
         style(best.crf).green(),

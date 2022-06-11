@@ -209,10 +209,6 @@ impl Sample {
         if quiet {
             return;
         }
-        bar.println(self.attempt_string(min_vmaf, max_encoded_percent));
-    }
-
-    pub fn attempt_string(&self, min_vmaf: f32, max_encoded_percent: f32) -> String {
         let crf_label = style("- crf").dim();
         let mut crf = style(self.crf);
         let vmaf_label = style("VMAF").dim();
@@ -230,7 +226,9 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}")
+        bar.println(format!(
+            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}"
+        ))
     }
 }
 
