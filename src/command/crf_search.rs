@@ -1,10 +1,14 @@
+mod err;
+
+pub use err::Error;
+
 use crate::{
-    command::{args, sample_encode, PROGRESS_CHARS},
+    command::{args, crf_search::err::ensure_or_no_good_crf, sample_encode, PROGRESS_CHARS},
     console_ext::style,
 };
-use anyhow::{bail, ensure};
 use clap::Parser;
 use console::style;
+use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::time::Duration;
 
@@ -85,8 +89,8 @@ pub async fn run(
         vmaf,
     }: &Args,
     bar: ProgressBar,
-) -> anyhow::Result<Sample> {
-    ensure!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
+) -> Result<Sample, Error> {
+    ensure_other!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
 
     let mut args = sample_encode::Args {
         svt: svt.clone(),
@@ -141,14 +145,14 @@ pub async fn run(
 
             match u_bound {
                 Some(upper) if upper.crf == sample.crf + 1 => {
-                    ensure!(sample_small_enough, "Failed to find a suitable crf");
+                    ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
                 Some(upper) => {
                     args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample);
                 }
                 None if sample.crf == *max_crf => {
-                    ensure!(sample_small_enough, "Failed to find a suitable crf");
+                    ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
                 None if run == 1 && sample.crf + 1 < *max_crf => {
@@ -160,7 +164,7 @@ pub async fn run(
             // not good enough
             if !sample_small_enough || sample.crf == *min_crf {
                 sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
-                bail!("Failed to find a suitable crf");
+                ensure_or_no_good_crf!(false, sample);
             }
 
             let l_bound = crf_attempts
@@ -171,7 +175,7 @@ pub async fn run(
             match l_bound {
                 Some(lower) if lower.crf + 1 == sample.crf => {
                     sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
-                    ensure!(sample_small_enough, "Failed to find a suitable crf");
+                    ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
@@ -205,7 +209,10 @@ impl Sample {
         if quiet {
             return;
         }
+        bar.println(self.attempt_string(min_vmaf, max_encoded_percent));
+    }
 
+    pub fn attempt_string(&self, min_vmaf: f32, max_encoded_percent: f32) -> String {
         let crf_label = style("- crf").dim();
         let mut crf = style(self.crf);
         let vmaf_label = style("VMAF").dim();
@@ -223,9 +230,7 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}"
-        ));
+        format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}")
     }
 }
 

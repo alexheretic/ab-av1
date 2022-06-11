@@ -48,7 +48,15 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         Ok(best) => best,
         Err(err) => {
             bar.finish();
-            return Err(err);
+            return match err {
+                crf_search::Error::NoGoodCrf { last } => {
+                    let attempt = last.attempt_string(search.min_vmaf, search.max_encoded_percent);
+                    Err(anyhow::anyhow!(
+                        "Failed to find a suitable crf, last attempt {attempt}"
+                    ))
+                }
+                crf_search::Error::Other(err) => Err(err),
+            };
         }
     };
     bar.set_style(ProgressStyle::default_bar()
