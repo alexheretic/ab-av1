@@ -35,18 +35,18 @@ pub struct Args {
     pub svt: args::SvtEncode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[clap(long)]
+    #[clap(value_parser, long)]
     pub crf: u8,
 
     #[clap(flatten)]
     pub sample: args::Sample,
 
     /// Keep temporary files after exiting.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub keep: bool,
 
     /// Stdout message format `human` or `json`.
-    #[clap(long, arg_enum, default_value_t = StdoutFormat::Human)]
+    #[clap(long, value_parser, arg_enum, default_value_t = StdoutFormat::Human)]
     pub stdout_format: StdoutFormat,
 
     #[clap(flatten)]

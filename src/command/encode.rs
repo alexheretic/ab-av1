@@ -20,7 +20,7 @@ pub struct Args {
     pub svt: args::SvtEncode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub crf: u8,
 
     #[clap(flatten)]

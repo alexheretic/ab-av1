@@ -14,7 +14,7 @@ pub struct EncodeToOutput {
     /// Output file, by default the same as input with `.av1` before the extension.
     ///
     /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
-    #[clap(short, long)]
+    #[clap(short, long, value_parser)]
     pub output: Option<PathBuf>,
 
     /// Set the output ffmpeg audio codec.
@@ -22,14 +22,14 @@ pub struct EncodeToOutput {
     /// otherwise 'libopus'.
     ///
     /// See https://ffmpeg.org/ffmpeg.html#Audio-Options.
-    #[clap(long = "acodec")]
+    #[clap(long = "acodec", value_parser)]
     pub audio_codec: Option<String>,
 
     /// Downmix input audio streams to stereo if input streams use greater than
     /// 3 channels.
     ///
     /// No effect if the input audio has 3 or fewer channels.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub downmix_to_stereo: bool,
 }
 
@@ -38,7 +38,7 @@ pub struct EncodeToOutput {
 pub struct Sample {
     /// Number of 20s samples to use across the input video. Overrides --sample-every.
     /// More samples take longer but may provide a more accurate result.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub samples: Option<u64>,
 
     /// Calculate number of samples by dividing the input duration by this value.
@@ -46,12 +46,12 @@ pub struct Sample {
     /// More samples take longer but may provide a more accurate result.
     ///
     /// Setting --samples overrides this value.
-    #[clap(long, default_value = "12m", parse(try_from_str = humantime::parse_duration))]
+    #[clap(long, default_value = "12m", value_parser = humantime::parse_duration)]
     pub sample_every: Duration,
 
     /// Directory to store temporary sample data in.
     /// Defaults to using the input's directory.
-    #[clap(long, env = "AB_AV1_TEMP_DIR")]
+    #[clap(long, env = "AB_AV1_TEMP_DIR", value_parser)]
     pub temp_dir: Option<PathBuf>,
 }
 

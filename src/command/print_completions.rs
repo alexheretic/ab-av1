@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 pub struct Args {
     /// Shell.
-    #[clap(default_value = "bash")]
+    #[clap(value_parser, default_value = "bash")]
     shell: String,
 }
 

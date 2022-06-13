@@ -15,22 +15,22 @@ use std::{
 #[derive(Parser, Clone)]
 pub struct SvtEncode {
     /// Input video file.
-    #[clap(short, long)]
+    #[clap(short, long, value_parser)]
     pub input: PathBuf,
 
     /// Ffmpeg video filter applied to the input before av1 encoding.
     /// E.g. --vfilter "scale=1280:-1,fps=24".
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub vfilter: Option<String>,
 
     /// Pixel format.
-    #[clap(arg_enum, long, default_value_t = PixelFormat::Yuv420p10le)]
+    #[clap(arg_enum, long, value_parser, default_value_t = PixelFormat::Yuv420p10le)]
     pub pix_format: PixelFormat,
 
     /// Encoder preset (0-13). Higher presets means faster encodes, but with a quality tradeoff.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub preset: u8,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
@@ -38,18 +38,18 @@ pub struct SvtEncode {
     ///
     /// Longer intervals can give better compression but make seeking more coarse.
     /// Durations will be converted to frames using the input fps.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub keyint: Option<KeyInterval>,
 
     /// Scene change detection, inserts keyframes at scene changes.
     /// Defaults on if using default keyint & the input duration is over 3m. Otherwise off.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub scd: Option<bool>,
 
     /// Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=30
     ///
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
-    #[clap(long = "svt", parse(try_from_str = parse_svt_arg))]
+    #[clap(long = "svt", value_parser = parse_svt_arg)]
     pub args: Vec<Arc<str>>,
 }
 

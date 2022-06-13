@@ -29,19 +29,19 @@ pub struct Args {
     pub svt: args::SvtEncode,
 
     /// Desired min VMAF score to deliver.
-    #[clap(long, default_value_t = 95.0)]
+    #[clap(long, value_parser, default_value_t = 95.0)]
     pub min_vmaf: f32,
 
     /// Maximum desired encoded size percentage of the input size.
-    #[clap(long, default_value_t = 80.0)]
+    #[clap(long, value_parser, default_value_t = 80.0)]
     pub max_encoded_percent: f32,
 
     /// Minimum (highest quality) crf value to try.
-    #[clap(long, default_value_t = 10)]
+    #[clap(long, value_parser, default_value_t = 10)]
     pub min_crf: u8,
 
     /// Maximum (lowest quality) crf value to try.
-    #[clap(long, default_value_t = 55)]
+    #[clap(long, value_parser, default_value_t = 55)]
     pub max_crf: u8,
 
     #[clap(flatten)]

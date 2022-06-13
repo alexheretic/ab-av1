@@ -17,16 +17,16 @@ use tokio_stream::StreamExt;
 #[derive(Parser)]
 pub struct Args {
     /// Reference video file.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub reference: PathBuf,
 
     /// Ffmpeg video filter applied to the reference before analysis.
     /// E.g. --vfilter "scale=1280:-1,fps=24".
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub reference_vfilter: Option<String>,
 
     /// Re-encoded/distorted video file.
-    #[clap(long)]
+    #[clap(long, value_parser)]
     pub distorted: PathBuf,
 
     #[clap(flatten)]
