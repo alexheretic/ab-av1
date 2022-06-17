@@ -133,7 +133,9 @@ impl SvtEncode {
             args,
         } = self;
 
-        let mut hint = format!("ab-av1 encode -i {input:?} --crf {crf} --preset {preset}");
+        let input = shell_escape::escape(input.display().to_string().into());
+
+        let mut hint = format!("ab-av1 encode -i {input} --crf {crf} --preset {preset}");
         if let Some(keyint) = keyint {
             write!(hint, " --keyint {keyint}").unwrap();
         }
