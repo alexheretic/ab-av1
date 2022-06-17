@@ -1,4 +1,4 @@
-# Unreleased (v0.3.3)
+# v0.3.3
 * Show more info when auto-encode fails to find a suitable crf.
 
 # v0.3.2
