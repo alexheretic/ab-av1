@@ -1,4 +1,4 @@
-# Unreleased (v0.3.4)
+# v0.3.4
 * Shell escape file names when hinting commands.
 
 # v0.3.3
