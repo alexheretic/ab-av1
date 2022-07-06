@@ -57,7 +57,8 @@ pub async fn run(
     temporary::add(&output, TempKind::NotKeepable);
 
     if defaulting_output {
-        bar.println(style!("Encoding {output:?}").dim().to_string());
+        let out = shell_escape::escape(output.display().to_string().into());
+        bar.println(style!("Encoding {out}").dim().to_string());
     }
     bar.set_message("encoding, ");
 

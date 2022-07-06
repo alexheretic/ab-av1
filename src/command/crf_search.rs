@@ -262,9 +262,7 @@ fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
         worse_q.enc.vmaf <= min_vmaf
             && worse_q.enc.vmaf < better_q.enc.vmaf
             && better_q.crf < worse_q.crf + 1,
-        "invalid vmaf_lerp_crf usage: {:?}, {:?}",
-        worse_q,
-        better_q
+        "invalid vmaf_lerp_crf usage: {worse_q:?}, {better_q:?}"
     );
 
     let vmaf_diff = better_q.enc.vmaf - worse_q.enc.vmaf;

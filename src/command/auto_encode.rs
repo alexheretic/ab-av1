@@ -46,7 +46,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     bar.set_prefix("Searching");
     if defaulting_output {
-        bar.println(style!("Encoding {:?}", output).dim().to_string());
+        let out = shell_escape::escape(output.display().to_string().into());
+        bar.println(style!("Encoding {out}").dim().to_string());
     }
 
     let best = match crf_search::run(&search, bar.clone()).await {

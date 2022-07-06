@@ -1,3 +1,6 @@
+# Unreleased (v0.3.5)
+* Shell escape file name in "Encoding ..." output.
+
 # v0.3.4
 * Shell escape file names when hinting commands.
 

@@ -244,10 +244,10 @@ fn try_parse_fps_vfilter(vfilter: &str) -> Option<f64> {
 #[test]
 fn test_try_parse_fps_vfilter() {
     let fps = try_parse_fps_vfilter("scale=1280:-1, fps=24, transpose=1").unwrap();
-    assert!((fps - 24.0).abs() < f64::EPSILON, "{:?}", fps);
+    assert!((fps - 24.0).abs() < f64::EPSILON, "{fps:?}");
 
     let fps = try_parse_fps_vfilter("scale=1280:-1, fps=ntsc, transpose=1").unwrap();
-    assert!((fps - 30000.0 / 1001.0).abs() < f64::EPSILON, "{:?}", fps);
+    assert!((fps - 30000.0 / 1001.0).abs() < f64::EPSILON, "{fps:?}");
 }
 
 #[test]
