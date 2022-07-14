@@ -4,16 +4,15 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
-    ffprobe,
+    ffmpeg, ffprobe,
     process::FfmpegOut,
     svtav1::{self},
     temporary::{self, TempKind},
-    x264, x265,
 };
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -21,7 +20,7 @@ use tokio_stream::StreamExt;
 #[derive(Parser)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::Encode,
+    pub args: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
     #[clap(long, value_parser)]
@@ -44,7 +43,7 @@ pub async fn encode(args: Args) -> anyhow::Result<()> {
 
 pub async fn run(
     Args {
-        svt,
+        args,
         crf,
         encode:
             args::EncodeToOutput {
@@ -56,7 +55,7 @@ pub async fn run(
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    let output = output.unwrap_or_else(|| default_output_from(&svt.input));
+    let output = output.unwrap_or_else(|| default_output_from(&args));
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -66,8 +65,8 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let probe = ffprobe::probe(&svt.input);
-    let enc_args = svt.to_encoder_args(crf, &probe)?;
+    let probe = ffprobe::probe(&args.input);
+    let enc_args = args.to_encoder_args(crf, &probe)?;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
         bar.set_length(d.as_secs());
@@ -85,12 +84,8 @@ pub async fn run(
             let enc = svtav1::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
             futures::StreamExt::boxed_local(enc)
         }
-        EncoderArgs::X264(args) => {
-            let enc = x264::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
-            futures::StreamExt::boxed_local(enc)
-        }
-        EncoderArgs::X265(args) => {
-            let enc = x265::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
+        EncoderArgs::Ffmpeg(args) => {
+            let enc = ffmpeg::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
             futures::StreamExt::boxed_local(enc)
         }
     };
@@ -120,7 +115,7 @@ pub async fn run(
 
     // print output info
     let output_size = fs::metadata(&output).await?.len();
-    let output_percent = 100.0 * output_size as f64 / fs::metadata(&svt.input).await?.len() as f64;
+    let output_percent = 100.0 * output_size as f64 / fs::metadata(&args.input).await?.len() as f64;
     let output_size = style(HumanBytes(output_size)).dim().bold();
     let output_percent = style!("{}%", output_percent.round()).dim().bold();
     eprint!(
@@ -149,14 +144,17 @@ pub async fn run(
 }
 
 /// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(input: &Path) -> PathBuf {
-    match input
+pub fn default_output_from(enc: &args::Encode) -> PathBuf {
+    let pre = enc.encoder.short_name();
+
+    match enc
+        .input
         .extension()
         .and_then(|e| e.to_str())
         // don't use extensions that won't work
         .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
     {
-        Some(ext) => input.with_extension(format!("av1.{ext}")),
-        _ => input.with_extension("av1.mp4"),
+        Some(ext) => enc.input.with_extension(format!("{pre}.{ext}")),
+        _ => enc.input.with_extension(format!("{pre}.mp4")),
     }
 }

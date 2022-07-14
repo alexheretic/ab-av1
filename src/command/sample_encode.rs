@@ -4,14 +4,14 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
+    ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe,
     process::FfmpegOut,
     sample,
     svtav1::{self, SvtArgs},
     temporary, vmaf,
     vmaf::VmafOut,
-    x264::{self, X26xArgs},
-    x265, SAMPLE_SIZE, SAMPLE_SIZE_S,
+    SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
 use clap::Parser;
@@ -152,19 +152,9 @@ pub async fn run(
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }
-            EncoderArgs::X264(args) => {
-                let (sample, output) = x264::encode_sample(
-                    X26xArgs {
-                        input: &sample,
-                        ..args
-                    },
-                    temp_dir.clone(),
-                )?;
-                (sample, futures::StreamExt::boxed_local(output))
-            }
-            EncoderArgs::X265(args) => {
-                let (sample, output) = x265::encode_sample(
-                    X26xArgs {
+            EncoderArgs::Ffmpeg(args) => {
+                let (sample, output) = ffmpeg::encode_sample(
+                    FfmpegEncodeArgs {
                         input: &sample,
                         ..args
                     },

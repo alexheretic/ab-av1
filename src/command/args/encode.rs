@@ -1,7 +1,7 @@
 use crate::{
+    ffmpeg::FfmpegEncodeArgs,
     ffprobe::{Ffprobe, ProbeError},
     svtav1::SvtArgs,
-    x264::X26xArgs,
 };
 use anyhow::ensure;
 use clap::Parser;
@@ -15,7 +15,11 @@ use std::{
 /// Common svt-av1/ffmpeg input encoding arguments.
 #[derive(Parser, Clone)]
 pub struct Encode {
-    #[clap(arg_enum, short, long, value_parser, default_value_t = Encoder::SvtAv1)]
+    /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
+    ///
+    /// [default: svt-av1]
+    /// [possible values: svt-av1, x264, x265, ...]
+    #[clap(arg_enum, short, long, value_parser)]
     pub encoder: Encoder,
 
     /// Input video file.
@@ -33,8 +37,10 @@ pub struct Encode {
     #[clap(arg_enum, long, value_parser)]
     pub pix_format: Option<PixelFormat>,
 
-    /// Encoder preset (0-13 svt-av1).
+    /// Encoder preset (0-13).
     /// Higher presets means faster encodes, but with a quality tradeoff.
+    ///
+    /// [svt-av1 default: 8]
     #[clap(long, value_parser)]
     pub preset: Option<Preset>,
 
@@ -43,10 +49,12 @@ pub struct Encode {
     ///
     /// Longer intervals can give better compression but make seeking more coarse.
     /// Durations will be converted to frames using the input fps.
+    ///
+    /// Works on encoders: svt-av1, x264, x265.
     #[clap(long, value_parser)]
     pub keyint: Option<KeyInterval>,
 
-    /// Scene change detection, inserts keyframes at scene changes.
+    /// Svt-av1 scene change detection, inserts keyframes at scene changes.
     /// Defaults on if using default keyint & the input duration is over 3m. Otherwise off.
     #[clap(long, value_parser)]
     pub scd: Option<bool>,
@@ -87,8 +95,11 @@ impl Encode {
     pub fn to_encoder_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
         match self.encoder {
             Encoder::SvtAv1 => Ok(EncoderArgs::SvtAv1(self.to_svt_args(crf, probe)?)),
-            Encoder::X264 => Ok(EncoderArgs::X264(self.to_x264_args(crf, probe)?)),
-            Encoder::X265 => Ok(EncoderArgs::X265(self.to_x264_args(crf, probe)?)),
+            Encoder::Ffmpeg(ref vcodec) => Ok(EncoderArgs::Ffmpeg(self.to_ffmpeg_args(
+                Arc::clone(vcodec),
+                crf,
+                probe,
+            )?)),
         }
     }
 
@@ -106,13 +117,14 @@ impl Encode {
 
         let input = shell_escape::escape(input.display().to_string().into());
 
-        let encoder = match encoder {
-            Encoder::SvtAv1 => "",
-            Encoder::X264 => " -e x264",
-            Encoder::X265 => " -e x265",
-        };
+        let mut hint = "ab-av1 encode".to_owned();
 
-        let mut hint = format!("ab-av1 encode{encoder} -i {input} --crf {crf}");
+        if let Encoder::Ffmpeg(_) = encoder {
+            let enc = encoder.short_name();
+            write!(hint, " -e {enc}").unwrap();
+        }
+        write!(hint, " -i {input} --crf {crf}").unwrap();
+
         if let Some(preset) = preset {
             write!(hint, " --preset {preset}").unwrap();
         }
@@ -172,23 +184,39 @@ impl Encode {
         })
     }
 
-    fn to_x264_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<X26xArgs<'_>> {
+    fn to_ffmpeg_args(
+        &self,
+        vcodec: Arc<str>,
+        crf: u8,
+        probe: &Ffprobe,
+    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
         let preset = match &self.preset {
-            Some(Preset::Number(n)) => {
-                anyhow::bail!("Invalid x264 --preset must be a word not `{n}`")
-            }
-            Some(Preset::Name(n)) => Some(&**n),
+            Some(Preset::Number(n)) => Some(n.to_string().into()),
+            Some(Preset::Name(n)) => Some(n.clone()),
             None => None,
         };
-        let keyint = self.keyint(probe)?;
 
-        Ok(X26xArgs {
+        // add keyint config for known vcodecs
+        let args = match &*vcodec {
+            "libx264" => match self.keyint(probe)? {
+                Some(keyint) => vec![("-x264-params", format!("keyint={keyint}").into())],
+                _ => <_>::default(),
+            },
+            "libx265" => match self.keyint(probe)? {
+                Some(keyint) => vec![("-x265-params", format!("keyint={keyint}").into())],
+                _ => <_>::default(),
+            },
+            _ => <_>::default(),
+        };
+
+        Ok(FfmpegEncodeArgs {
             input: &self.input,
+            vcodec,
             pix_fmt: self.pix_format.unwrap_or(PixelFormat::Yuv420p),
             vfilter: self.vfilter.as_deref(),
             crf,
             preset,
-            keyint,
+            args,
         })
     }
 
@@ -214,26 +242,50 @@ impl Encode {
     }
 }
 
-#[derive(clap::ArgEnum, Clone, Copy, Debug, PartialEq, Eq)]
-#[clap(rename_all = "kebab-case")]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub enum Encoder {
+    #[default]
     SvtAv1,
-    X264,
-    X265,
+    Ffmpeg(Arc<str>),
+}
+
+impl Encoder {
+    pub fn short_name(&self) -> &str {
+        match self {
+            Self::SvtAv1 => "av1",
+            Self::Ffmpeg(vcodec) => match &**vcodec {
+                "libx264" => "x264",
+                "libx265" => "x265",
+                vc => vc,
+            },
+        }
+    }
+}
+
+impl std::str::FromStr for Encoder {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        Ok(match s {
+            "svt-av1" => Self::SvtAv1,
+            "x264" => Self::Ffmpeg("libx264".into()),
+            "x265" => Self::Ffmpeg("libx265".into()),
+            vcodec => Self::Ffmpeg(vcodec.into()),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum EncoderArgs<'a> {
     SvtAv1(SvtArgs<'a>),
-    X264(X26xArgs<'a>),
-    X265(X26xArgs<'a>),
+    Ffmpeg(FfmpegEncodeArgs<'a>),
 }
 
 impl EncoderArgs<'_> {
     pub fn pix_fmt(&self) -> PixelFormat {
         match self {
             Self::SvtAv1(arg) => arg.pix_fmt,
-            Self::X264(arg) | Self::X265(arg) => arg.pix_fmt,
+            Self::Ffmpeg(arg) => arg.pix_fmt,
         }
     }
 }
