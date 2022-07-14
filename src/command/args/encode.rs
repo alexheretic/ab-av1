@@ -301,11 +301,7 @@ impl Encoder {
     pub fn short_name(&self) -> &str {
         match self {
             Self::SvtAv1 => "av1",
-            Self::Ffmpeg(vcodec) => match &**vcodec {
-                "libx264" => "x264",
-                "libx265" => "x265",
-                vc => vc,
-            },
+            Self::Ffmpeg(vcodec) => crate::ffmpeg::short_name(&**vcodec),
         }
     }
 }

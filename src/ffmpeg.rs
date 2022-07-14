@@ -43,9 +43,10 @@ pub fn encode_sample(
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("mp4");
+    let short_name = short_name(&vcodec);
     let mut dest = match &preset {
-        Some(p) => input.with_extension(format!("x264.crf{crf}.{p}.{dest_ext}")),
-        None => input.with_extension(format!("x264.crf{crf}.{dest_ext}")),
+        Some(p) => input.with_extension(format!("{short_name}.crf{crf}.{p}.{dest_ext}")),
+        None => input.with_extension(format!("{short_name}.crf{crf}.{dest_ext}")),
     };
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
         temp.push(name);
@@ -116,4 +117,12 @@ pub fn encode(
         .context("ffmpeg encode")?;
 
     Ok(FfmpegOut::stream(enc, "ffmpeg encode"))
+}
+
+pub fn short_name(vcodec: &str) -> &str {
+    if let Some(suffix) = vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
+        suffix
+    } else {
+        vcodec
+    }
 }
