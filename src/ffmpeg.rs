@@ -23,7 +23,7 @@ pub struct FfmpegEncodeArgs<'a> {
     pub pix_fmt: PixelFormat,
     pub crf: u8,
     pub preset: Option<Arc<str>>,
-    pub args: Vec<(&'a str, Arc<str>)>,
+    pub args: Vec<Arc<String>>,
 }
 
 /// Encode a sample.
@@ -57,7 +57,7 @@ pub fn encode_sample(
         .kill_on_drop(true)
         .arg2("-i", input)
         .arg2("-c:v", vcodec)
-        .arg2s(&args)
+        .args(args.iter().map(|a| &**a))
         .arg2("-crf", crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
         .arg2_opt("-preset", preset)
@@ -99,7 +99,7 @@ pub fn encode(
         .kill_on_drop(true)
         .arg2("-i", input)
         .arg2("-c:v", vcodec)
-        .arg2s(&args)
+        .args(args.iter().map(|a| &**a))
         .arg2("-crf", crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
         .arg2_opt("-preset", preset)

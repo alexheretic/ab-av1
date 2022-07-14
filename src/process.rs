@@ -225,12 +225,6 @@ pub trait CommandExt {
 
     /// Adds two arguments if `condition` otherwise noop.
     fn arg2_if(&mut self, condition: bool, a: impl ArgString, b: impl ArgString) -> &mut Self;
-
-    /// Adds multiple argument pairs.
-    fn arg2s<'a, A, B>(&mut self, args: &'a [(A, B)]) -> &mut Self
-    where
-        &'a A: ArgString,
-        &'a B: ArgString;
 }
 impl CommandExt for tokio::process::Command {
     fn arg_if(&mut self, c: bool, arg: impl ArgString) -> &mut Self {
@@ -256,17 +250,6 @@ impl CommandExt for tokio::process::Command {
             true => self.arg2(a, b),
             false => self,
         }
-    }
-
-    fn arg2s<'a, A, B>(&mut self, args: &'a [(A, B)]) -> &mut Self
-    where
-        &'a A: ArgString,
-        &'a B: ArgString,
-    {
-        for (a, b) in args {
-            self.arg2(a, b);
-        }
-        self
     }
 }
 
@@ -307,10 +290,5 @@ impl_arg_string_display!(i32);
 impl ArgString for Arc<str> {
     fn arg_string(&self) -> Cow<'_, OsStr> {
         Cow::Borrowed((&**self).as_ref())
-    }
-}
-impl ArgString for &'_ Arc<str> {
-    fn arg_string(&self) -> Cow<'_, OsStr> {
-        Cow::Borrowed((&***self).as_ref())
     }
 }

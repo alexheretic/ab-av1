@@ -17,9 +17,8 @@ use std::{
 pub struct Encode {
     /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
     ///
-    /// [default: svt-av1]
     /// [possible values: svt-av1, x264, x265, ...]
-    #[clap(arg_enum, short, long, value_parser)]
+    #[clap(arg_enum, short, long, value_parser, default_value = "svt-av1")]
     pub encoder: Encoder,
 
     /// Input video file.
@@ -64,6 +63,14 @@ pub struct Encode {
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
     #[clap(long = "svt", value_parser = parse_svt_arg)]
     pub svt_args: Vec<Arc<str>>,
+
+    /// Additional custom encoder arg(s) to pass to the ffmpeg encoder.
+    /// E.g. --enc x265-params=lossless=1
+    ///
+    /// The first '=' symbol will be used to infer that this is an option with a value.
+    /// Passed to ffmpeg like "x265-params=lossless=1" -> ['-x265-params', 'lossless=1']
+    #[clap(long = "enc", allow_hyphen_values = true, value_parser = parse_enc_arg)]
+    pub enc_args: Vec<String>,
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -91,6 +98,14 @@ fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
     Ok(arg.into())
 }
 
+fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
+    let mut arg = arg.to_owned();
+    if !arg.starts_with('-') {
+        arg.insert(0, '-');
+    }
+    Ok(arg)
+}
+
 impl Encode {
     pub fn to_encoder_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
         match self.encoder {
@@ -112,7 +127,8 @@ impl Encode {
             pix_format,
             keyint,
             scd,
-            svt_args: args,
+            svt_args,
+            enc_args,
         } = self;
 
         let input = shell_escape::escape(input.display().to_string().into());
@@ -140,15 +156,24 @@ impl Encode {
         if let Some(filter) = vfilter {
             write!(hint, " --vfilter {filter:?}").unwrap();
         }
-        for arg in args {
+        for arg in svt_args {
             let arg = arg.trim_start_matches('-');
             write!(hint, " --svt {arg}").unwrap();
+        }
+        for arg in enc_args {
+            let arg = arg.trim_start_matches('-');
+            write!(hint, " --enc {arg}").unwrap();
         }
 
         hint
     }
 
     fn to_svt_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<SvtArgs<'_>> {
+        ensure!(
+            self.enc_args.is_empty(),
+            "--enc args cannot be used with svt-av1, instead use --svt"
+        );
+
         let preset = match &self.preset {
             Some(Preset::Number(n)) => *n,
             Some(Preset::Name(n)) => {
@@ -190,24 +215,48 @@ impl Encode {
         crf: u8,
         probe: &Ffprobe,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        ensure!(
+            self.svt_args.is_empty(),
+            "--svt args cannot be used with other encoders, instead use --enc"
+        );
+
         let preset = match &self.preset {
             Some(Preset::Number(n)) => Some(n.to_string().into()),
             Some(Preset::Name(n)) => Some(n.clone()),
             None => None,
         };
 
+        let mut args: Vec<Arc<String>> = self
+            .enc_args
+            .iter()
+            .flat_map(|arg| {
+                if let Some((opt, val)) = arg.split_once('=') {
+                    vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                } else {
+                    vec![arg.clone().into()].into_iter()
+                }
+            })
+            .collect();
+
         // add keyint config for known vcodecs
-        let args = match &*vcodec {
-            "libx264" => match self.keyint(probe)? {
-                Some(keyint) => vec![("-x264-params", format!("keyint={keyint}").into())],
-                _ => <_>::default(),
-            },
-            "libx265" => match self.keyint(probe)? {
-                Some(keyint) => vec![("-x265-params", format!("keyint={keyint}").into())],
-                _ => <_>::default(),
-            },
-            _ => <_>::default(),
+        let add_keyint_to = match &*vcodec {
+            "libx264" => Some("-x264-params"),
+            "libx265" => Some("-x265-params"),
+            _ => None,
         };
+        if let Some(add_keyint_to) = add_keyint_to {
+            if let Some(params) = args
+                .iter()
+                .position(|a| **a == add_keyint_to)
+                .and_then(|idx| args.get_mut(idx + 1))
+            {
+                if !params.is_empty() && !params.contains("keyint") {
+                    if let Some(keyint) = self.keyint(probe)? {
+                        write!(Arc::make_mut(params), ":keyint={keyint}").unwrap();
+                    }
+                }
+            }
+        }
 
         Ok(FfmpegEncodeArgs {
             input: &self.input,
@@ -242,9 +291,8 @@ impl Encode {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Encoder {
-    #[default]
     SvtAv1,
     Ffmpeg(Arc<str>),
 }
@@ -435,6 +483,7 @@ fn to_svt_args_default_over_3m() {
         keyint: None,
         scd: None,
         svt_args: vec!["film-grain=30".into()],
+        enc_args: <_>::default(),
     };
 
     let probe = Ffprobe {
@@ -477,6 +526,7 @@ fn to_svt_args_default_under_3m() {
         keyint: None,
         scd: None,
         svt_args: vec![],
+        enc_args: <_>::default(),
     };
 
     let probe = Ffprobe {
