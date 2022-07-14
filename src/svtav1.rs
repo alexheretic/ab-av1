@@ -29,8 +29,8 @@ pub struct SvtArgs<'a> {
     pub args: Vec<&'a str>,
 }
 
-/// Encode to ivf. Used for sample encoding.
-pub fn encode_ivf(
+/// Encode to sample ivf.
+pub fn encode_sample(
     SvtArgs {
         input,
         vfilter,
@@ -92,15 +92,10 @@ pub fn encode(
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
-    let output_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
+    let output_is_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
 
-    // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
-    let audio_codec = audio_codec.unwrap_or_else(|| match input.extension() {
-        _ if downmix_to_stereo => "libopus",
-        ext if ext.is_some() && ext == output.extension() => "copy",
-        _ if !has_audio => "copy",
-        _ => "libopus",
-    });
+    let audio_codec = audio_codec
+        .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
 
     let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
@@ -144,7 +139,7 @@ pub fn encode(
         .arg2_if(downmix_to_stereo, "-ac", 2)
         .arg2("-c:v", "copy")
         .arg2_if(audio_codec == "libopus", "-b:a", "128k")
-        .arg2_if(output_mp4, "-movflags", "+faststart")
+        .arg2_if(output_is_mp4, "-movflags", "+faststart")
         .arg(output)
         .spawn()
         .context("ffmpeg to-output")?;
@@ -152,4 +147,19 @@ pub fn encode(
     let to_mp4 = FfmpegOut::stream(to_output, "ffmpeg to-output");
 
     Ok(yuv_pipe.merge(svt).merge(to_mp4))
+}
+
+pub fn default_audio_codec(
+    input: &Path,
+    output: &Path,
+    downmix_to_stereo: bool,
+    has_audio: bool,
+) -> &'static str {
+    // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
+    match input.extension() {
+        _ if downmix_to_stereo => "libopus",
+        ext if ext.is_some() && ext == output.extension() => "copy",
+        _ if !has_audio => "copy",
+        _ => "libopus",
+    }
 }

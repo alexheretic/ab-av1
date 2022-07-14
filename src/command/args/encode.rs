@@ -1,6 +1,7 @@
 use crate::{
     ffprobe::{Ffprobe, ProbeError},
     svtav1::SvtArgs,
+    x264::X26xArgs,
 };
 use anyhow::ensure;
 use clap::Parser;
@@ -11,9 +12,12 @@ use std::{
     time::Duration,
 };
 
-/// Common svt-av1 input encoding arguments.
+/// Common svt-av1/ffmpeg input encoding arguments.
 #[derive(Parser, Clone)]
-pub struct SvtEncode {
+pub struct Encode {
+    #[clap(arg_enum, short, long, value_parser, default_value_t = Encoder::SvtAv1)]
+    pub encoder: Encoder,
+
     /// Input video file.
     #[clap(short, long, value_parser)]
     pub input: PathBuf,
@@ -25,13 +29,14 @@ pub struct SvtEncode {
     #[clap(long, value_parser)]
     pub vfilter: Option<String>,
 
-    /// Pixel format.
-    #[clap(arg_enum, long, value_parser, default_value_t = PixelFormat::Yuv420p10le)]
-    pub pix_format: PixelFormat,
+    /// Pixel format. svt-av1 default yuv420p10le.
+    #[clap(arg_enum, long, value_parser)]
+    pub pix_format: Option<PixelFormat>,
 
-    /// Encoder preset (0-13). Higher presets means faster encodes, but with a quality tradeoff.
+    /// Encoder preset (0-13 svt-av1).
+    /// Higher presets means faster encodes, but with a quality tradeoff.
     #[clap(long, value_parser)]
-    pub preset: u8,
+    pub preset: Option<Preset>,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
     /// E.g. "300" or "10s". Defaults to 10s if the input duration is over 3m.
@@ -50,7 +55,7 @@ pub struct SvtEncode {
     ///
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
     #[clap(long = "svt", value_parser = parse_svt_arg)]
-    pub args: Vec<Arc<str>>,
+    pub svt_args: Vec<Arc<str>>,
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -78,72 +83,47 @@ fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
     Ok(arg.into())
 }
 
-impl SvtEncode {
-    pub fn to_svt_args(&self, crf: u8, probe: &Ffprobe) -> Result<SvtArgs<'_>, ProbeError> {
-        const KEYINT_DEFAULT_INPUT_MIN: Duration = Duration::from_secs(60 * 3);
-        const KEYINT_DEFAULT: Duration = Duration::from_secs(10);
-
-        let args = self
-            .args
-            .iter()
-            .flat_map(|arg| match arg.split_once('=') {
-                Some((a, b)) => vec![a, b],
-                None => vec![arg.as_ref()],
-            })
-            .collect();
-
-        let filter_fps = self.vfilter.as_deref().and_then(try_parse_fps_vfilter);
-        let keyint = match (self.keyint, &probe.duration, &probe.fps, filter_fps) {
-            // use the filter-fps if used, otherwise the input fps
-            (Some(ki), .., Some(fps)) => Some(ki.svt_keyint(Ok(fps))?),
-            (Some(ki), _, fps, None) => Some(ki.svt_keyint(fps.clone())?),
-            (None, Ok(duration), _, Some(fps)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
-                Some(KeyInterval::Duration(KEYINT_DEFAULT).svt_keyint(Ok(fps))?)
-            }
-            (None, Ok(duration), Ok(fps), None) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
-                Some(KeyInterval::Duration(KEYINT_DEFAULT).svt_keyint(Ok(*fps))?)
-            }
-            _ => None,
-        };
-        let scd = match (self.scd, self.keyint, keyint) {
-            (Some(true), ..) | (_, None, Some(_)) => 1,
-            _ => 0,
-        };
-
-        Ok(SvtArgs {
-            input: &self.input,
-            pix_fmt: self.pix_format,
-            vfilter: self.vfilter.as_deref(),
-            crf,
-            preset: self.preset,
-            keyint,
-            scd,
-            args,
-        })
+impl Encode {
+    pub fn to_encoder_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
+        match self.encoder {
+            Encoder::SvtAv1 => Ok(EncoderArgs::SvtAv1(self.to_svt_args(crf, probe)?)),
+            Encoder::X264 => Ok(EncoderArgs::X264(self.to_x264_args(crf, probe)?)),
+            Encoder::X265 => Ok(EncoderArgs::X265(self.to_x264_args(crf, probe)?)),
+        }
     }
 
     pub fn encode_hint(&self, crf: u8) -> String {
         let Self {
+            encoder,
             input,
             vfilter,
             preset,
             pix_format,
             keyint,
             scd,
-            args,
+            svt_args: args,
         } = self;
 
         let input = shell_escape::escape(input.display().to_string().into());
 
-        let mut hint = format!("ab-av1 encode -i {input} --crf {crf} --preset {preset}");
+        let encoder = match encoder {
+            Encoder::SvtAv1 => "",
+            Encoder::X264 => " -e x264",
+            Encoder::X265 => " -e x265",
+        };
+
+        let mut hint = format!("ab-av1 encode{encoder} -i {input} --crf {crf}");
+        if let Some(preset) = preset {
+            write!(hint, " --preset {preset}").unwrap();
+        }
         if let Some(keyint) = keyint {
             write!(hint, " --keyint {keyint}").unwrap();
         }
         if let Some(scd) = scd {
             write!(hint, " --scd {scd}").unwrap();
         }
-        if *pix_format != PixelFormat::Yuv420p10le {
-            write!(hint, " --pix-format {pix_format}").unwrap();
+        if let Some(pix_fmt) = pix_format {
+            write!(hint, " --pix-format {pix_fmt}").unwrap();
         }
         if let Some(filter) = vfilter {
             write!(hint, " --vfilter {filter:?}").unwrap();
@@ -155,6 +135,133 @@ impl SvtEncode {
 
         hint
     }
+
+    fn to_svt_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<SvtArgs<'_>> {
+        let preset = match &self.preset {
+            Some(Preset::Number(n)) => *n,
+            Some(Preset::Name(n)) => {
+                anyhow::bail!("Invalid svt-av1 --preset must be a number not `{n}`")
+            }
+            None => 8,
+        };
+
+        let args = self
+            .svt_args
+            .iter()
+            .flat_map(|arg| match arg.split_once('=') {
+                Some((a, b)) => vec![a, b],
+                None => vec![arg.as_ref()],
+            })
+            .collect();
+
+        let keyint = self.keyint(probe)?;
+        let scd = match (self.scd, self.keyint, keyint) {
+            (Some(true), ..) | (_, None, Some(_)) => 1,
+            _ => 0,
+        };
+
+        Ok(SvtArgs {
+            input: &self.input,
+            pix_fmt: self.pix_format.unwrap_or(PixelFormat::Yuv420p10le),
+            vfilter: self.vfilter.as_deref(),
+            crf,
+            preset,
+            keyint,
+            scd,
+            args,
+        })
+    }
+
+    fn to_x264_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<X26xArgs<'_>> {
+        let preset = match &self.preset {
+            Some(Preset::Number(n)) => {
+                anyhow::bail!("Invalid x264 --preset must be a word not `{n}`")
+            }
+            Some(Preset::Name(n)) => Some(&**n),
+            None => None,
+        };
+        let keyint = self.keyint(probe)?;
+
+        Ok(X26xArgs {
+            input: &self.input,
+            pix_fmt: self.pix_format.unwrap_or(PixelFormat::Yuv420p),
+            vfilter: self.vfilter.as_deref(),
+            crf,
+            preset,
+            keyint,
+        })
+    }
+
+    fn keyint(&self, probe: &Ffprobe) -> anyhow::Result<Option<i32>> {
+        const KEYINT_DEFAULT_INPUT_MIN: Duration = Duration::from_secs(60 * 3);
+        const KEYINT_DEFAULT: Duration = Duration::from_secs(10);
+
+        let filter_fps = self.vfilter.as_deref().and_then(try_parse_fps_vfilter);
+        Ok(
+            match (self.keyint, &probe.duration, &probe.fps, filter_fps) {
+                // use the filter-fps if used, otherwise the input fps
+                (Some(ki), .., Some(fps)) => Some(ki.keyint_number(Ok(fps))?),
+                (Some(ki), _, fps, None) => Some(ki.keyint_number(fps.clone())?),
+                (None, Ok(duration), _, Some(fps)) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
+                    Some(KeyInterval::Duration(KEYINT_DEFAULT).keyint_number(Ok(fps))?)
+                }
+                (None, Ok(duration), Ok(fps), None) if *duration >= KEYINT_DEFAULT_INPUT_MIN => {
+                    Some(KeyInterval::Duration(KEYINT_DEFAULT).keyint_number(Ok(*fps))?)
+                }
+                _ => None,
+            },
+        )
+    }
+}
+
+#[derive(clap::ArgEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[clap(rename_all = "kebab-case")]
+pub enum Encoder {
+    SvtAv1,
+    X264,
+    X265,
+}
+
+#[derive(Debug, Clone)]
+pub enum EncoderArgs<'a> {
+    SvtAv1(SvtArgs<'a>),
+    X264(X26xArgs<'a>),
+    X265(X26xArgs<'a>),
+}
+
+impl EncoderArgs<'_> {
+    pub fn pix_fmt(&self) -> PixelFormat {
+        match self {
+            Self::SvtAv1(arg) => arg.pix_fmt,
+            Self::X264(arg) | Self::X265(arg) => arg.pix_fmt,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Preset {
+    Number(u8),
+    Name(Arc<str>),
+}
+
+impl fmt::Display for Preset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => n.fmt(f),
+            Self::Name(name) => name.fmt(f),
+        }
+    }
+}
+
+impl std::str::FromStr for Preset {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s.parse::<u8>() {
+            Ok(n) => Ok(Self::Number(n)),
+            _ => Ok(Self::Name(s.into())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -164,7 +271,7 @@ pub enum KeyInterval {
 }
 
 impl KeyInterval {
-    pub fn svt_keyint(&self, fps: Result<f64, ProbeError>) -> Result<i32, ProbeError> {
+    pub fn keyint_number(&self, fps: Result<f64, ProbeError>) -> Result<i32, ProbeError> {
         Ok(match self {
             Self::Frames(keyint) => *keyint,
             Self::Duration(duration) => (duration.as_secs_f64() * fps?).round() as i32,
@@ -267,14 +374,15 @@ fn duration_interval_from_str() {
 /// Should use keyint & scd defaults for >3m inputs.
 #[test]
 fn to_svt_args_default_over_3m() {
-    let svt = SvtEncode {
+    let svt = Encode {
+        encoder: Encoder::SvtAv1,
         input: "vid.mp4".into(),
         vfilter: Some("scale=320:-1,fps=film".into()),
-        preset: 8,
-        pix_format: PixelFormat::Yuv420p10le,
+        preset: None,
+        pix_format: None,
         keyint: None,
         scd: None,
-        args: vec!["film-grain=30".into()],
+        svt_args: vec!["film-grain=30".into()],
     };
 
     let probe = Ffprobe {
@@ -299,8 +407,8 @@ fn to_svt_args_default_over_3m() {
     assert_eq!(input, svt.input);
     assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
     assert_eq!(crf, 32);
-    assert_eq!(preset, svt.preset);
-    assert_eq!(pix_fmt, svt.pix_format);
+    assert_eq!(preset, 8);
+    assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
     assert_eq!(keyint, Some(240)); // based off filter fps
     assert_eq!(scd, 1);
     assert_eq!(args, vec!["film-grain", "30"]);
@@ -308,14 +416,15 @@ fn to_svt_args_default_over_3m() {
 
 #[test]
 fn to_svt_args_default_under_3m() {
-    let svt = SvtEncode {
+    let svt = Encode {
+        encoder: Encoder::SvtAv1,
         input: "vid.mp4".into(),
         vfilter: None,
-        preset: 8,
-        pix_format: PixelFormat::Yuv420p,
+        preset: Some(Preset::Number(7)),
+        pix_format: Some(PixelFormat::Yuv420p),
         keyint: None,
         scd: None,
-        args: vec![],
+        svt_args: vec![],
     };
 
     let probe = Ffprobe {
@@ -340,8 +449,8 @@ fn to_svt_args_default_under_3m() {
     assert_eq!(input, svt.input);
     assert_eq!(vfilter, None);
     assert_eq!(crf, 32);
-    assert_eq!(preset, svt.preset);
-    assert_eq!(pix_fmt, svt.pix_format);
+    assert_eq!(preset, 7);
+    assert_eq!(pix_fmt, PixelFormat::Yuv420p);
     assert_eq!(keyint, None);
     assert_eq!(scd, 0);
     assert!(args.is_empty());

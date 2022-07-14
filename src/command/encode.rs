@@ -1,10 +1,14 @@
 use crate::{
-    command::{args, PROGRESS_CHARS},
+    command::{
+        args::{self, EncoderArgs},
+        PROGRESS_CHARS,
+    },
     console_ext::style,
     ffprobe,
     process::FfmpegOut,
     svtav1::{self},
     temporary::{self, TempKind},
+    x264, x265,
 };
 use clap::Parser;
 use console::style;
@@ -17,7 +21,7 @@ use tokio_stream::StreamExt;
 #[derive(Parser)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::SvtEncode,
+    pub svt: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
     #[clap(long, value_parser)]
@@ -63,7 +67,7 @@ pub async fn run(
     bar.set_message("encoding, ");
 
     let probe = ffprobe::probe(&svt.input);
-    let svt_args = svt.to_svt_args(crf, &probe)?;
+    let enc_args = svt.to_encoder_args(crf, &probe)?;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
         bar.set_length(d.as_secs());
@@ -76,7 +80,20 @@ pub async fn run(
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
     }
 
-    let mut enc = svtav1::encode(svt_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    let mut enc = match enc_args {
+        EncoderArgs::SvtAv1(args) => {
+            let enc = svtav1::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
+            futures::StreamExt::boxed_local(enc)
+        }
+        EncoderArgs::X264(args) => {
+            let enc = x264::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
+            futures::StreamExt::boxed_local(enc)
+        }
+        EncoderArgs::X265(args) => {
+            let enc = x265::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
+            futures::StreamExt::boxed_local(enc)
+        }
+    };
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
         match progress? {

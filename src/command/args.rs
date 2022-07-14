@@ -1,8 +1,8 @@
 //! Shared argument logic.
-mod svt;
+mod encode;
 mod vmaf;
 
-pub use svt::*;
+pub use encode::*;
 pub use vmaf::*;
 
 use clap::Parser;

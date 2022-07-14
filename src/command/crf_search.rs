@@ -26,7 +26,7 @@ const BAR_LEN: u64 = 1000;
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::SvtEncode,
+    pub svt: args::Encode,
 
     /// Desired min VMAF score to deliver.
     #[clap(long, value_parser, default_value_t = 95.0)]
