@@ -120,9 +120,9 @@ pub fn encode(
 }
 
 pub fn short_name(vcodec: &str) -> &str {
-    if let Some(suffix) = vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
-        suffix
-    } else {
-        vcodec
+    match vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
+        Some("vpx-vp9") => "vp9",
+        Some(suffix) => suffix,
+        None => vcodec,
     }
 }

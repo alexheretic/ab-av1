@@ -17,7 +17,7 @@ use std::{
 pub struct Encode {
     /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
     ///
-    /// [possible values: svt-av1, x264, x265, ...]
+    /// [possible values: svt-av1, x264, x265, vp9, ...]
     #[clap(arg_enum, short, long, value_parser, default_value = "svt-av1")]
     pub encoder: Encoder,
 
@@ -258,6 +258,12 @@ impl Encode {
             }
         }
 
+        // add `-b:v 0` for vp9 to use "constant quality" mode
+        if &*vcodec == "libvpx-vp9" && !args.iter().any(|arg| arg.contains("b:v")) {
+            args.push("-b:v".to_owned().into());
+            args.push("0".to_owned().into());
+        }
+
         Ok(FfmpegEncodeArgs {
             input: &self.input,
             vcodec,
@@ -314,6 +320,7 @@ impl std::str::FromStr for Encoder {
             "svt-av1" => Self::SvtAv1,
             "x264" => Self::Ffmpeg("libx264".into()),
             "x265" => Self::Ffmpeg("libx265".into()),
+            "vp9" => Self::Ffmpeg("libvpx-vp9".into()),
             vcodec => Self::Ffmpeg(vcodec.into()),
         })
     }
