@@ -1,4 +1,15 @@
-# Unreleased (v0.3.5)
+# Unreleased (v0.4.0)
+* Add `--encoder`/`-e` encoder override. 
+  Any [encoder ffmpeg supports](https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders)
+  and that may be controlled using `-crf` may be used.
+* Add `--enc $FFMPEG_ARG` for providing arbitrary arguments to the ffmpeg encoder invocation.
+  These only work when overriding the encoder with `-e`.
+  <br/>_E.g. Set libx265 params: `-e x265 --enc x265-params=lossless=1`._
+* Add built in support for x264 & x265 to set keyint in the same way as is done for av1.
+* Add built in support for setting vp9 `-b:v 0` so crf based encoding works more consistently.
+* `--preset` is **no longer required** and now supports word presets like `slow`, `veryfast` which
+  may be used when overriding the encoder with `-e`.
+* svt-av1 `--preset` now defaults to **8**.
 * Shell escape file name in "Encoding ..." output.
 
 # v0.3.4
