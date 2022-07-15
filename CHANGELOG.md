@@ -8,7 +8,7 @@
 * Add built in support for x264 & x265 to set keyint in the same way as is done for av1.
 * Add built in support for setting vp9 `-b:v 0` so crf based encoding works more consistently.
 * `--preset` is **no longer required** and now supports word presets like `slow`, `veryfast` which
-  may be used when overriding the encoder with `-e`.
+  may be used when overriding the encoder with `-e`. Preset numbers are still used for svt-av1.
 * svt-av1 `--preset` now defaults to **8**.
 * Shell escape file name in "Encoding ..." output.
 
