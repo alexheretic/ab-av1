@@ -245,15 +245,19 @@ impl Encode {
             _ => None,
         };
         if let Some(add_keyint_to) = add_keyint_to {
-            if let Some(params) = args
-                .iter()
-                .position(|a| **a == add_keyint_to)
-                .and_then(|idx| args.get_mut(idx + 1))
-            {
-                if !params.is_empty() && !params.contains("keyint") {
-                    if let Some(keyint) = self.keyint(probe)? {
+            if let Some(keyint) = self.keyint(probe)? {
+                if let Some(params) = args
+                    .iter()
+                    .position(|a| **a == add_keyint_to)
+                    .and_then(|idx| args.get_mut(idx + 1))
+                {
+                    if !params.is_empty() && !params.contains("keyint") {
                         write!(Arc::make_mut(params), ":keyint={keyint}").unwrap();
                     }
+                } else {
+                    // if no params are specified add them
+                    args.push(add_keyint_to.to_owned().into());
+                    args.push(format!("keyint={keyint}").into());
                 }
             }
         }
