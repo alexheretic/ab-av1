@@ -39,6 +39,9 @@ pub struct Encode {
     /// Encoder preset (0-13).
     /// Higher presets means faster encodes, but with a quality tradeoff.
     ///
+    /// For some ffmpeg encodes a word may be used, e.g. "fast".
+    /// libaom-av1 preset is mapped to equivalent -cpu-used argument.
+    ///
     /// [svt-av1 default: 8]
     #[clap(long, value_parser)]
     pub preset: Option<Preset>,
@@ -136,7 +139,7 @@ impl Encode {
         let mut hint = "ab-av1 encode".to_owned();
 
         if let Encoder::Ffmpeg(_) = encoder {
-            let enc = encoder.short_name();
+            let enc = encoder.name();
             write!(hint, " -e {enc}").unwrap();
         }
         write!(hint, " -i {input} --crf {crf}").unwrap();
@@ -238,7 +241,7 @@ impl Encode {
             })
             .collect();
 
-        // add keyint config for known vcodecs
+        // add keyint config for x264 & x265
         let add_keyint_to = match &*vcodec {
             "libx264" => Some("-x264-params"),
             "libx265" => Some("-x265-params"),
@@ -261,17 +264,31 @@ impl Encode {
                 }
             }
         }
+        // add keyint config for aom
+        if &*vcodec == "libaom-av1" && !args.iter().any(|a| &**a == "-g") {
+            if let Some(keyint) = self.keyint(probe)? {
+                args.push("-g".to_owned().into());
+                args.push(keyint.to_string().into());
+            }
+        }
 
-        // add `-b:v 0` for vp9 to use "constant quality" mode
-        if &*vcodec == "libvpx-vp9" && !args.iter().any(|arg| arg.contains("b:v")) {
+        // add `-b:v 0` for vp9 & aom to use "constant quality" mode
+        if (&*vcodec == "libvpx-vp9" || &*vcodec == "libaom-av1")
+            && !args.iter().any(|arg| &**arg == "-b:v")
+        {
             args.push("-b:v".to_owned().into());
             args.push("0".to_owned().into());
         }
 
+        let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
+            "libaom-av1" => PixelFormat::Yuv420p10le,
+            _ => PixelFormat::Yuv420p,
+        });
+
         Ok(FfmpegEncodeArgs {
             input: &self.input,
             vcodec,
-            pix_fmt: self.pix_format.unwrap_or(PixelFormat::Yuv420p),
+            pix_fmt,
             vfilter: self.vfilter.as_deref(),
             crf,
             preset,
@@ -308,10 +325,16 @@ pub enum Encoder {
 }
 
 impl Encoder {
-    pub fn short_name(&self) -> &str {
+    /// vcodec name that would work if you used it as the -e argument.
+    pub fn name(&self) -> &str {
         match self {
-            Self::SvtAv1 => "av1",
-            Self::Ffmpeg(vcodec) => crate::ffmpeg::short_name(&**vcodec),
+            Self::SvtAv1 => "svt-av1",
+            Self::Ffmpeg(vcodec) => match &**vcodec {
+                "libx264" => "x264",
+                "libx265" => "x265",
+                "libvpx-vp9" => "vp9",
+                vc => vc,
+            },
         }
     }
 }

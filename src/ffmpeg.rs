@@ -43,7 +43,7 @@ pub fn encode_sample(
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("mp4");
-    let short_name = short_name(&vcodec);
+    let short_name = pre_extension_name(&vcodec);
     let mut dest = match &preset {
         Some(p) => input.with_extension(format!("{short_name}.crf{crf}.{p}.{dest_ext}")),
         None => input.with_extension(format!("{short_name}.crf{crf}.{dest_ext}")),
@@ -54,6 +54,11 @@ pub fn encode_sample(
     }
     temporary::add(&dest, TempKind::Keepable);
 
+    let preset_arg = match &*vcodec {
+        "libaom-av1" => "-cpu-used",
+        _ => "-preset",
+    };
+
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
         .arg2("-i", input)
@@ -61,7 +66,7 @@ pub fn encode_sample(
         .args(args.iter().map(|a| &**a))
         .arg2("-crf", crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
-        .arg2_opt("-preset", preset)
+        .arg2_opt(preset_arg, preset)
         .arg2_opt("-vf", vfilter)
         .arg("-an")
         .arg(&dest)
@@ -119,8 +124,9 @@ pub fn encode(
     Ok(FfmpegOut::stream(enc, "ffmpeg encode"))
 }
 
-pub fn short_name(vcodec: &str) -> &str {
+pub fn pre_extension_name(vcodec: &str) -> &str {
     match vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
+        Some("svt-av1") => "av1",
         Some("vpx-vp9") => "vp9",
         Some(suffix) => suffix,
         None => vcodec,

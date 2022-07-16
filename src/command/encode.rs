@@ -145,7 +145,7 @@ pub async fn run(
 
 /// * input: vid.ext -> output: vid.av1.ext
 pub fn default_output_from(enc: &args::Encode) -> PathBuf {
-    let pre = enc.encoder.short_name();
+    let pre = ffmpeg::pre_extension_name(enc.encoder.name());
 
     match enc
         .input

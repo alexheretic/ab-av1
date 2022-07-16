@@ -1,5 +1,5 @@
 # ab-av1
-AV1 video encoding tool with fast VMAF sampling & encoder parameter calculation. 
+AV1 video encoding tool with fast VMAF sampling & automatic encoder parameter calculation. 
 Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 
 ![](https://user-images.githubusercontent.com/2331607/151695971-d36f55a7-a157-4d5d-ae06-4cc9e2c0d46f.png "Find the best crf encoding setting for VMAF 95 quality")
