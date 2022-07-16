@@ -23,7 +23,8 @@ pub struct FfmpegEncodeArgs<'a> {
     pub pix_fmt: PixelFormat,
     pub crf: u8,
     pub preset: Option<Arc<str>>,
-    pub args: Vec<Arc<String>>,
+    pub output_args: Vec<Arc<String>>,
+    pub input_args: Vec<Arc<String>>,
 }
 
 /// Encode a sample.
@@ -35,7 +36,8 @@ pub fn encode_sample(
         pix_fmt,
         crf,
         preset,
-        args,
+        output_args,
+        input_args,
     }: FfmpegEncodeArgs,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
@@ -61,9 +63,10 @@ pub fn encode_sample(
 
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
+        .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
         .arg2("-c:v", vcodec)
-        .args(args.iter().map(|a| &**a))
+        .args(output_args.iter().map(|a| &**a))
         .arg2("-crf", crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
         .arg2_opt(preset_arg, preset)
@@ -88,7 +91,8 @@ pub fn encode(
         pix_fmt,
         crf,
         preset,
-        args,
+        output_args,
+        input_args,
     }: FfmpegEncodeArgs,
     output: &Path,
     has_audio: bool,
@@ -103,9 +107,10 @@ pub fn encode(
 
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
+        .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
         .arg2("-c:v", vcodec)
-        .args(args.iter().map(|a| &**a))
+        .args(output_args.iter().map(|a| &**a))
         .arg2("-crf", crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
         .arg2_opt("-preset", preset)

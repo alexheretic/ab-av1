@@ -67,13 +67,20 @@ pub struct Encode {
     #[clap(long = "svt", value_parser = parse_svt_arg)]
     pub svt_args: Vec<Arc<str>>,
 
-    /// Additional custom encoder arg(s) to pass to the ffmpeg encoder.
-    /// E.g. --enc x265-params=lossless=1
+    /// Additional ffmpeg encoder arg(s). E.g. `--enc x265-params=lossless=1`
+    /// These are added as ffmpeg output file options.
     ///
     /// The first '=' symbol will be used to infer that this is an option with a value.
     /// Passed to ffmpeg like "x265-params=lossless=1" -> ['-x265-params', 'lossless=1']
     #[clap(long = "enc", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_args: Vec<String>,
+
+    /// Additional ffmpeg input encoder arg(s). E.g. `--enc-input r=1`
+    /// These are added as ffmpeg input file options.
+    ///
+    /// See --enc docs.
+    #[clap(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
+    pub enc_input_args: Vec<String>,
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -132,6 +139,7 @@ impl Encode {
             scd,
             svt_args,
             enc_args,
+            enc_input_args,
         } = self;
 
         let input = shell_escape::escape(input.display().to_string().into());
@@ -161,6 +169,10 @@ impl Encode {
         for arg in svt_args {
             let arg = arg.trim_start_matches('-');
             write!(hint, " --svt {arg}").unwrap();
+        }
+        for arg in enc_input_args {
+            let arg = arg.trim_start_matches('-');
+            write!(hint, " --enc-input {arg}").unwrap();
         }
         for arg in enc_args {
             let arg = arg.trim_start_matches('-');
@@ -261,6 +273,18 @@ impl Encode {
             _ => PixelFormat::Yuv420p,
         });
 
+        let input_args: Vec<Arc<String>> = self
+            .enc_input_args
+            .iter()
+            .flat_map(|arg| {
+                if let Some((opt, val)) = arg.split_once('=') {
+                    vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                } else {
+                    vec![arg.clone().into()].into_iter()
+                }
+            })
+            .collect();
+
         Ok(FfmpegEncodeArgs {
             input: &self.input,
             vcodec,
@@ -268,7 +292,8 @@ impl Encode {
             vfilter: self.vfilter.as_deref(),
             crf,
             preset,
-            args,
+            output_args: args,
+            input_args,
         })
     }
 
@@ -482,6 +507,7 @@ fn to_svt_args_default_over_3m() {
         scd: None,
         svt_args: vec!["film-grain=30".into()],
         enc_args: <_>::default(),
+        enc_input_args: <_>::default(),
     };
 
     let probe = Ffprobe {
@@ -525,6 +551,7 @@ fn to_svt_args_default_under_3m() {
         scd: None,
         svt_args: vec![],
         enc_args: <_>::default(),
+        enc_input_args: <_>::default(),
     };
 
     let probe = Ffprobe {
