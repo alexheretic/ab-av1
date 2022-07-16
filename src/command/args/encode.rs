@@ -17,7 +17,7 @@ use std::{
 pub struct Encode {
     /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
     ///
-    /// [possible values: svt-av1, x264, x265, vp9, ...]
+    /// [possible values: svt-av1, libx264, libx265, libvpx-vp9, ...]
     #[clap(arg_enum, short, long, value_parser, default_value = "svt-av1")]
     pub encoder: Encoder,
 
@@ -52,7 +52,7 @@ pub struct Encode {
     /// Longer intervals can give better compression but make seeking more coarse.
     /// Durations will be converted to frames using the input fps.
     ///
-    /// Works on encoders: svt-av1, x264, x265.
+    /// Works on svt-av1 & most ffmpeg encoders set with --encoder.
     #[clap(long, value_parser)]
     pub keyint: Option<KeyInterval>,
 
@@ -138,9 +138,8 @@ impl Encode {
 
         let mut hint = "ab-av1 encode".to_owned();
 
-        if let Encoder::Ffmpeg(_) = encoder {
-            let enc = encoder.name();
-            write!(hint, " -e {enc}").unwrap();
+        if let Encoder::Ffmpeg(vcodec) = encoder {
+            write!(hint, " -e {vcodec}").unwrap();
         }
         write!(hint, " -i {input} --crf {crf}").unwrap();
 
@@ -241,39 +240,16 @@ impl Encode {
             })
             .collect();
 
-        // add keyint config for x264 & x265
-        let add_keyint_to = match &*vcodec {
-            "libx264" => Some("-x264-params"),
-            "libx265" => Some("-x265-params"),
-            _ => None,
-        };
-        if let Some(add_keyint_to) = add_keyint_to {
-            if let Some(keyint) = self.keyint(probe)? {
-                if let Some(params) = args
-                    .iter()
-                    .position(|a| **a == add_keyint_to)
-                    .and_then(|idx| args.get_mut(idx + 1))
-                {
-                    if !params.is_empty() && !params.contains("keyint") {
-                        write!(Arc::make_mut(params), ":keyint={keyint}").unwrap();
-                    }
-                } else {
-                    // if no params are specified add them
-                    args.push(add_keyint_to.to_owned().into());
-                    args.push(format!("keyint={keyint}").into());
-                }
-            }
-        }
-        // add keyint config for aom
-        if &*vcodec == "libaom-av1" && !args.iter().any(|a| &**a == "-g") {
+        // Set keyint/-g for all vcodecs
+        if !args.iter().any(|a| &**a == "-g") {
             if let Some(keyint) = self.keyint(probe)? {
                 args.push("-g".to_owned().into());
                 args.push(keyint.to_string().into());
             }
         }
 
-        // add `-b:v 0` for vp9 & aom to use "constant quality" mode
-        if (&*vcodec == "libvpx-vp9" || &*vcodec == "libaom-av1")
+        // add `-b:v 0` for aom & vp9 to use "constant quality" mode
+        if matches!(&*vcodec, "libaom-av1" | "libvpx-vp9")
             && !args.iter().any(|arg| &**arg == "-b:v")
         {
             args.push("-b:v".to_owned().into());
@@ -326,15 +302,10 @@ pub enum Encoder {
 
 impl Encoder {
     /// vcodec name that would work if you used it as the -e argument.
-    pub fn name(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::SvtAv1 => "svt-av1",
-            Self::Ffmpeg(vcodec) => match &**vcodec {
-                "libx264" => "x264",
-                "libx265" => "x265",
-                "libvpx-vp9" => "vp9",
-                vc => vc,
-            },
+            Self::Ffmpeg(vcodec) => vcodec,
         }
     }
 }
@@ -345,9 +316,6 @@ impl std::str::FromStr for Encoder {
     fn from_str(s: &str) -> anyhow::Result<Self> {
         Ok(match s {
             "svt-av1" => Self::SvtAv1,
-            "x264" => Self::Ffmpeg("libx264".into()),
-            "x265" => Self::Ffmpeg("libx265".into()),
-            "vp9" => Self::Ffmpeg("libvpx-vp9".into()),
             vcodec => Self::Ffmpeg(vcodec.into()),
         })
     }

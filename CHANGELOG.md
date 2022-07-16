@@ -4,11 +4,10 @@
   and that may be controlled using `-crf` may be used.
 * Add `--enc $FFMPEG_ARG` for providing arbitrary arguments to the ffmpeg encoder invocation.
   These only work when overriding the encoder with `-e`.
-  <br/>_E.g. Set libx265 params: `-e x265 --enc x265-params=lossless=1`._
-* `--preset` is **no longer required** and now supports word presets like `slow`, `veryfast` which
-  may be used when overriding the encoder with `-e`. Preset numbers are still used for svt-av1.
-* svt-av1 `--preset` now defaults to **8**.
-* Add built in support for x264, x265 & libaom-av1 to set keyint in the same way as is done for av1.
+  <br/>_E.g. Set x265 params: `-e libx265 --enc x265-params=lossless=1`._
+* `--preset` now supports also word presets like `slow`, `veryfast` for ffmpeg encoders like libx264.
+* `--preset` is **no longer required**. Default svt-av1 `--preset` is now **8**.
+* Support setting keyint for `-e` encoders in a similar way as is done for av1.
 * Add default vp9 & libaom-av1 `-b:v 0` setting so constant quality crf based encoding works consistently.
 * For `-e libaom-av1` map `--preset` number to `-cpu-used` (0-8).
 * Shell escape file name in "Encoding ..." output.
