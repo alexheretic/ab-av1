@@ -58,6 +58,7 @@ pub fn encode_sample(
 
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
+        .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
@@ -103,6 +104,7 @@ pub fn encode(
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
+        .arg("-y")
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
