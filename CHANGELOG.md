@@ -10,7 +10,8 @@
 * `--preset` is **no longer required**. Default svt-av1 `--preset` is now **8**.
 * Support setting keyint for `-e` encoders in a similar way as is done for av1.
 * Add default vp9 & libaom-av1 `-b:v 0` setting so constant quality crf based encoding works consistently.
-* For `-e libaom-av1` map `--preset` number to `-cpu-used` (0-8).
+* For `-e libaom-av1` map `--preset` number to ffmpeg `-cpu-used` (0-8).
+* For *_vaapi encoders map `--crf` to ffmpeg `-qp` as crf is not supported.
 * Shell escape file name in "Encoding ..." output.
 
 # v0.3.4

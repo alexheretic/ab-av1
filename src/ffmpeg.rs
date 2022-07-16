@@ -56,20 +56,15 @@ pub fn encode_sample(
     }
     temporary::add(&dest, TempKind::Keepable);
 
-    let preset_arg = match &*vcodec {
-        "libaom-av1" => "-cpu-used",
-        _ => "-preset",
-    };
-
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
-        .arg2("-c:v", vcodec)
+        .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
-        .arg2("-crf", crf)
+        .arg2(vcodec.crf_arg(), crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
-        .arg2_opt(preset_arg, preset)
+        .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
         .arg("-an")
         .arg(&dest)
@@ -109,11 +104,11 @@ pub fn encode(
         .kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
-        .arg2("-c:v", vcodec)
+        .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
-        .arg2("-crf", crf)
+        .arg2(vcodec.crf_arg(), crf)
         .arg2("-pix_fmt", pix_fmt.as_str())
-        .arg2_opt("-preset", preset)
+        .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
         .arg2("-c:s", "copy")
         .arg2("-c:a", audio_codec)
@@ -135,5 +130,29 @@ pub fn pre_extension_name(vcodec: &str) -> &str {
         Some(suffix) => suffix,
         _ if vcodec == "svt-av1" => "av1",
         _ => vcodec,
+    }
+}
+
+trait VCodecSpecific {
+    /// Arg to use preset values with, normally `-preset`.
+    fn preset_arg(&self) -> &str;
+    /// Arg to use crf values with, normally `-crf`.
+    fn crf_arg(&self) -> &str;
+}
+impl VCodecSpecific for Arc<str> {
+    fn preset_arg(&self) -> &str {
+        match &**self {
+            "libaom-av1" => "-cpu-used",
+            _ => "-preset",
+        }
+    }
+
+    fn crf_arg(&self) -> &str {
+        if self.ends_with("vaapi") {
+            // Use -qp for vaapi codecs as crf is not supported
+            "-qp"
+        } else {
+            "-crf"
+        }
     }
 }
