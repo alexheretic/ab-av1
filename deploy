@@ -3,7 +3,7 @@ set -eu
 dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$dir"
 
-cargo fmt -- --check
+cargo +nightly fmt -- --check
 
 cargo build --release
 

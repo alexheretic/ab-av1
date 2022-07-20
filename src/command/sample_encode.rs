@@ -1,6 +1,10 @@
 use crate::{
-    command::{args, PROGRESS_CHARS},
+    command::{
+        args::{self, EncoderArgs},
+        PROGRESS_CHARS,
+    },
     console_ext::style,
+    ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe,
     process::FfmpegOut,
     sample,
@@ -32,7 +36,7 @@ use tokio_stream::StreamExt;
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::SvtEncode,
+    pub svt: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
     #[clap(value_parser, long)]
@@ -78,7 +82,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(svt.input.clone());
     let probe = ffprobe::probe(&input);
-    let svt_args = svt.to_svt_args(crf, &probe)?;
+    let enc_args = svt.to_encoder_args(crf, &probe)?;
     let duration = probe.duration?;
     let fps = probe.fps?;
     let samples = sample_args.sample_count(duration).max(1);
@@ -137,13 +141,28 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
-        let (encoded_sample, mut output) = svtav1::encode_ivf(
-            SvtArgs {
-                input: &sample,
-                ..svt_args.clone()
-            },
-            temp_dir.clone(),
-        )?;
+        let (encoded_sample, mut output) = match enc_args.clone() {
+            EncoderArgs::SvtAv1(args) => {
+                let (sample, output) = svtav1::encode_sample(
+                    SvtArgs {
+                        input: &sample,
+                        ..args
+                    },
+                    temp_dir.clone(),
+                )?;
+                (sample, futures::StreamExt::boxed_local(output))
+            }
+            EncoderArgs::Ffmpeg(args) => {
+                let (sample, output) = ffmpeg::encode_sample(
+                    FfmpegEncodeArgs {
+                        input: &sample,
+                        ..args
+                    },
+                    temp_dir.clone(),
+                )?;
+                (sample, futures::StreamExt::boxed_local(output))
+            }
+        };
         while let Some(progress) = output.next().await {
             if let FfmpegOut::Progress { time, fps, .. } = progress? {
                 bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
@@ -162,7 +181,7 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            svt.pix_format,
+            enc_args.pix_fmt(),
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {

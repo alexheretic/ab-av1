@@ -1,4 +1,17 @@
-# Unreleased (v0.3.5)
+# Unreleased (v0.4.0)
+* Add `--encoder`/`-e` encoder override. 
+  Any [encoder ffmpeg supports](https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders)
+  and that may be controlled using `-crf` may be used.
+* Add `--enc $FFMPEG_ARG` for providing arbitrary output options to the ffmpeg encoder invocation.
+  These only work when overriding the encoder with `-e`.
+  <br/>_E.g. Set x265 params: `-e libx265 --enc x265-params=lossless=1`._
+* Add `--enc-input $FFMPEG_ARG` for providing ffmpeg input file options, similar to `--enc`.
+* `--preset` now supports also word presets like `slow`, `veryfast` for ffmpeg encoders like libx264.
+* `--preset` is **no longer required**. Default svt-av1 `--preset` is now **8**.
+* Support setting keyint for `-e` encoders in a similar way as is done for av1.
+* Add default vp9 & libaom-av1 `-b:v 0` setting so constant quality crf based encoding works consistently.
+* For `-e libaom-av1` map `--preset` number to ffmpeg `-cpu-used` (0-8).
+* For *_vaapi encoders map `--crf` to ffmpeg `-qp` as crf is not supported.
 * Shell escape file name in "Encoding ..." output.
 
 # v0.3.4

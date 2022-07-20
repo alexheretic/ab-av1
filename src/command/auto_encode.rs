@@ -36,7 +36,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let defaulting_output = encode.output.is_none();
     let output = encode
         .output
-        .unwrap_or_else(|| default_output_from(&search.svt.input));
+        .unwrap_or_else(|| default_output_from(&search.args));
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
@@ -100,7 +100,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     encode::run(
         encode::Args {
-            svt: search.svt,
+            args: search.args,
             crf: best.crf,
             encode: args::EncodeToOutput {
                 output: Some(output),

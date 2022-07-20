@@ -26,7 +26,7 @@ const BAR_LEN: u64 = 1000;
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::SvtEncode,
+    pub args: args::Encode,
 
     /// Desired min VMAF score to deliver.
     #[clap(long, value_parser, default_value_t = 95.0)]
@@ -69,7 +69,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style(args.svt.encode_hint(best.crf)).dim().italic(),
+        style(args.args.encode_hint(best.crf)).dim().italic(),
     );
 
     StdoutFormat::Human.print_result(&best);
@@ -79,7 +79,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
 
 pub async fn run(
     Args {
-        svt,
+        args: svt,
         min_vmaf,
         max_encoded_percent,
         min_crf,

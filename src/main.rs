@@ -1,5 +1,6 @@
 mod command;
 mod console_ext;
+mod ffmpeg;
 mod ffprobe;
 mod process;
 mod sample;

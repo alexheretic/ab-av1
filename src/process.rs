@@ -4,7 +4,7 @@ use std::{
     ffi::OsStr,
     io,
     process::{ExitStatus, Output},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use time::macros::format_description;
@@ -269,6 +269,7 @@ macro_rules! impl_arg_string_as_ref {
 impl_arg_string_as_ref!(String);
 impl_arg_string_as_ref!(&'_ String);
 impl_arg_string_as_ref!(&'_ str);
+impl_arg_string_as_ref!(&'_ &'_ str);
 impl_arg_string_as_ref!(&'_ std::path::Path);
 impl_arg_string_as_ref!(&'_ std::path::PathBuf);
 
@@ -285,3 +286,9 @@ impl_arg_string_display!(u8);
 impl_arg_string_display!(u16);
 impl_arg_string_display!(u32);
 impl_arg_string_display!(i32);
+
+impl ArgString for Arc<str> {
+    fn arg_string(&self) -> Cow<'_, OsStr> {
+        Cow::Borrowed((&**self).as_ref())
+    }
+}
