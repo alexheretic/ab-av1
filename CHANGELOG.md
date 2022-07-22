@@ -1,4 +1,4 @@
-# Unreleased (v0.4.0)
+# v0.4.0
 * Add `--encoder`/`-e` encoder override. 
   Any [encoder ffmpeg supports](https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders)
   and that may be controlled using `-crf` may be used.
