@@ -1,3 +1,9 @@
+# Unreleased (v0.4.1)
+* For `-e libvpx-vp9` map `--preset` number to ffmpeg `-cpu-used` (0-5).
+* When overriding with a ffmpeg encoder avoid setting `b:a`, `movflags` or `ac` if explicitly set via `--enc`.
+* Add error output when using `--enc-input` with the default svt-av1 encoder.
+* Add errors for `--enc`/`--enc-input` args that are already provided by existing args or inferred.
+
 # v0.4.0
 * Add `--encoder`/`-e` encoder override. 
   Any [encoder ffmpeg supports](https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders)

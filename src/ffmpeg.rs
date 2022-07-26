@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Context;
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -95,11 +96,17 @@ pub fn encode(
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
-    let output_is_mp4 = output.extension().and_then(|e| e.to_str()) == Some("mp4");
+    let oargs: HashSet<_> = output_args.iter().map(|a| a.as_str()).collect();
+
+    let add_faststart =
+        output.extension().and_then(|e| e.to_str()) == Some("mp4") && !oargs.contains("-movflags");
 
     let audio_codec = audio_codec.unwrap_or_else(|| {
         svtav1::default_audio_codec(input, output, downmix_to_stereo, has_audio)
     });
+
+    let set_ba_128k = audio_codec == "libopus" && !oargs.contains("-b:a");
+    let downmix_to_stereo = downmix_to_stereo && !oargs.contains("-ac");
 
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
@@ -115,8 +122,8 @@ pub fn encode(
         .arg2("-c:s", "copy")
         .arg2("-c:a", audio_codec)
         .arg2_if(downmix_to_stereo, "-ac", 2)
-        .arg2_if(audio_codec == "libopus", "-b:a", "128k")
-        .arg2_if(output_is_mp4, "-movflags", "+faststart")
+        .arg2_if(set_ba_128k, "-b:a", "128k")
+        .arg2_if(add_faststart, "-movflags", "+faststart")
         .arg(output)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -144,7 +151,7 @@ trait VCodecSpecific {
 impl VCodecSpecific for Arc<str> {
     fn preset_arg(&self) -> &str {
         match &**self {
-            "libaom-av1" => "-cpu-used",
+            "libaom-av1" | "libvpx-vp9" => "-cpu-used",
             _ => "-preset",
         }
     }

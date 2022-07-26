@@ -6,6 +6,7 @@ use crate::{
 use anyhow::ensure;
 use clap::Parser;
 use std::{
+    collections::HashMap,
     fmt::{self, Write},
     path::PathBuf,
     sync::Arc,
@@ -288,6 +289,29 @@ impl Encode {
                 }
             })
             .collect();
+
+        // ban usage of the bits we already set via other args & logic
+        let reserved = HashMap::from([
+            ("-c:a", " use --acodec"),
+            ("-codec:a", " use --acodec"),
+            ("-acodec", " use --acodec"),
+            ("-i", ""),
+            ("-y", ""),
+            ("-n", ""),
+            ("-c:v", ""),
+            ("-codec:v", ""),
+            ("-vcodec", ""),
+            ("-pix_fmt", " use --pix-format"),
+            ("-crf", ""),
+            ("-preset", " use --preset"),
+            ("-vf", " use --vfilter"),
+            ("-filter:v", " use --vfilter"),
+        ]);
+        for arg in args.iter().chain(input_args.iter()) {
+            if let Some(hint) = reserved.get(arg.as_str()) {
+                anyhow::bail!("Encoder argument `{arg}` not allowed{hint}");
+            }
+        }
 
         Ok(FfmpegEncodeArgs {
             input: &self.input,
