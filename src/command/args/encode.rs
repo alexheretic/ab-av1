@@ -187,6 +187,10 @@ impl Encode {
             self.enc_args.is_empty(),
             "--enc args cannot be used with svt-av1, instead use --svt"
         );
+        ensure!(
+            self.enc_input_args.is_empty(),
+            "--enc-input args cannot be used with svt-av1, instead use --svt"
+        );
 
         let preset = match &self.preset {
             Some(Preset::Number(n)) => *n,
