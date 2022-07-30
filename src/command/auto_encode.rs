@@ -10,6 +10,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 
 /// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
 ///
@@ -40,7 +41,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template(SPINNER_RUNNING)
+            .template(SPINNER_RUNNING)?
             .progress_chars(PROGRESS_CHARS),
     );
 
@@ -57,7 +58,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 // show last sample attempt in progress bar
                 bar.set_style(
                     ProgressStyle::default_bar()
-                        .template(SPINNER_FINISHED)
+                        .template(SPINNER_FINISHED)?
                         .progress_chars(PROGRESS_CHARS),
                 );
                 let mut vmaf = style(last.enc.vmaf);
@@ -79,7 +80,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     };
     bar.set_style(
         ProgressStyle::default_bar()
-            .template(SPINNER_FINISHED)
+            .template(SPINNER_FINISHED)?
             .progress_chars(PROGRESS_CHARS),
     );
     bar.finish_with_message(format!(
@@ -92,11 +93,11 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
+            .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
     bar.set_prefix("Encoding ");
-    bar.enable_steady_tick(100);
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     encode::run(
         encode::Args {

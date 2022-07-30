@@ -60,10 +60,10 @@ pub struct Args {
 pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
-    bar.enable_steady_tick(100);
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     run(args, bar).await?;
     Ok(())

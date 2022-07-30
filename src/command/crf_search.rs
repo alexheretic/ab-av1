@@ -57,7 +57,7 @@ pub struct Args {
 pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
 
@@ -115,8 +115,8 @@ pub async fn run(
         let sample_task = loop {
             match tokio::time::timeout(Duration::from_millis(100), &mut sample_task).await {
                 Err(_) => {
-                    let sample_progress =
-                        sample_bar.position() as f64 / sample_bar.length().max(1) as f64;
+                    let sample_progress = sample_bar.position() as f64
+                        / sample_bar.length().unwrap_or(1).max(1) as f64;
                     bar.set_position(guess_progress(run, sample_progress) as _);
                 }
                 Ok(o) => {

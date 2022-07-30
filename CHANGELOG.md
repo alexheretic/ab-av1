@@ -1,3 +1,6 @@
+# Unreleased (v0.4.2)
+* Update _indicatif_ dependency to `0.17`.
+
 # v0.4.1
 * For `-e libvpx-vp9` map `--preset` number to ffmpeg `-cpu-used` (0-5).
 * When overriding with a ffmpeg encoder avoid setting `b:a`, `movflags` or `ac` if explicitly set via `--enc`.

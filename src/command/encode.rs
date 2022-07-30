@@ -12,7 +12,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -33,10 +33,10 @@ pub struct Args {
 pub async fn encode(args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
-    bar.enable_steady_tick(100);
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     run(args, &bar).await
 }
