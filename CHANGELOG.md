@@ -1,4 +1,4 @@
-# Unreleased (v0.4.2)
+# v0.4.2
 * Update _indicatif_ dependency to `0.17`.
 
 # v0.4.1
