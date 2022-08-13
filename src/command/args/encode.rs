@@ -415,7 +415,7 @@ impl std::str::FromStr for Preset {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyInterval {
     Frames(i32),
     Duration(Duration),

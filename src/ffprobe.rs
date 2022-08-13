@@ -100,7 +100,7 @@ pub fn parse_frame_rate(rate: &str) -> Option<f64> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeError(String);
 
 impl fmt::Display for ProbeError {
