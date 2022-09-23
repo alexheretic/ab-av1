@@ -289,6 +289,6 @@ impl_arg_string_display!(i32);
 
 impl ArgString for Arc<str> {
     fn arg_string(&self) -> Cow<'_, OsStr> {
-        Cow::Borrowed((&**self).as_ref())
+        Cow::Borrowed((**self).as_ref())
     }
 }
