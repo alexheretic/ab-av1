@@ -1,3 +1,6 @@
+# Unreleased
+* Leave incomplete progress bars when exitting early with _ctrl c_ instead of clearing them.
+
 # v0.4.2
 * Update _indicatif_ dependency to `0.17`.
 

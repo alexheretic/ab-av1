@@ -11,7 +11,7 @@ use crate::{
 };
 use clap::Parser;
 use console::style;
-use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar, ProgressFinish, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 use tokio::fs;
 use tokio_stream::StreamExt;
@@ -35,7 +35,7 @@ pub async fn encode(args: Args) -> anyhow::Result<()> {
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
-    );
+    ).with_finish(ProgressFinish::Abandon);
     bar.enable_steady_tick(Duration::from_millis(100));
 
     run(args, &bar).await

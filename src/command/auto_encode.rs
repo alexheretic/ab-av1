@@ -9,7 +9,7 @@ use crate::{
 };
 use clap::Parser;
 use console::style;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use std::time::Duration;
 
 /// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
@@ -39,11 +39,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         .output
         .unwrap_or_else(|| default_output_from(&search.args));
 
-    let bar = ProgressBar::new(12).with_style(
-        ProgressStyle::default_bar()
-            .template(SPINNER_RUNNING)?
-            .progress_chars(PROGRESS_CHARS),
-    );
+    let bar = ProgressBar::new(12)
+        .with_style(
+            ProgressStyle::default_bar()
+                .template(SPINNER_RUNNING)?
+                .progress_chars(PROGRESS_CHARS),
+        )
+        .with_finish(ProgressFinish::Abandon);
 
     bar.set_prefix("Searching");
     if defaulting_output {
@@ -95,7 +97,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
-    );
+    ).with_finish(ProgressFinish::Abandon);
     bar.set_prefix("Encoding ");
     bar.enable_steady_tick(Duration::from_millis(100));
 

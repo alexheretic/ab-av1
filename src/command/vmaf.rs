@@ -9,7 +9,7 @@ use crate::{
     vmaf::VmafOut,
 };
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 use tokio_stream::StreamExt;
 
@@ -45,7 +45,7 @@ pub async fn vmaf(
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
-    );
+    ).with_finish(ProgressFinish::Abandon);
     bar.enable_steady_tick(Duration::from_millis(100));
     bar.set_message("vmaf running, ");
 
