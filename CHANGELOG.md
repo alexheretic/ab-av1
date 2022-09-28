@@ -1,3 +1,6 @@
+# Unreleased (v0.4.4)
+* Update to clap v4 which changes help/about output & reduces binary size.
+
 # v0.4.3
 * Fix terminal breaking sometimes after exitting early.
 

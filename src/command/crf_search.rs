@@ -29,25 +29,25 @@ pub struct Args {
     pub args: args::Encode,
 
     /// Desired min VMAF score to deliver.
-    #[clap(long, value_parser, default_value_t = 95.0)]
+    #[arg(long, default_value_t = 95.0)]
     pub min_vmaf: f32,
 
     /// Maximum desired encoded size percentage of the input size.
-    #[clap(long, value_parser, default_value_t = 80.0)]
+    #[arg(long, default_value_t = 80.0)]
     pub max_encoded_percent: f32,
 
     /// Minimum (highest quality) crf value to try.
-    #[clap(long, value_parser, default_value_t = 10)]
+    #[arg(long, default_value_t = 10)]
     pub min_crf: u8,
 
     /// Maximum (lowest quality) crf value to try.
-    #[clap(long, value_parser, default_value_t = 55)]
+    #[arg(long, default_value_t = 55)]
     pub max_crf: u8,
 
     #[clap(flatten)]
     pub sample: args::Sample,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub quiet: bool,
 
     #[clap(flatten)]
@@ -232,7 +232,7 @@ impl Sample {
     }
 }
 
-#[derive(Debug, Clone, Copy, clap::ArgEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum StdoutFormat {
     Human,
 }
