@@ -16,7 +16,7 @@ use crate::{
 use anyhow::ensure;
 use clap::Parser;
 use console::style;
-use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressFinish, ProgressStyle};
+use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -62,7 +62,7 @@ pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
-    ).with_finish(ProgressFinish::Abandon);
+    );
     bar.enable_steady_tick(Duration::from_millis(100));
 
     run(args, bar).await?;

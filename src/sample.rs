@@ -6,6 +6,7 @@ use crate::{
 use anyhow::Context;
 use std::{
     path::{Path, PathBuf},
+    process::Stdio,
     time::Duration,
 };
 use tokio::process::Command;
@@ -44,6 +45,7 @@ pub async fn copy(
         .arg2("-c:v", "copy")
         .arg("-an")
         .arg(&dest)
+        .stdin(Stdio::null())
         .output()
         .await
         .context("ffmpeg copy")?;

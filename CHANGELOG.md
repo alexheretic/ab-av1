@@ -1,5 +1,5 @@
-# Unreleased
-* Leave incomplete progress bars when exitting early with _ctrl c_ instead of clearing them.
+# Unreleased (v0.4.3)
+* Fix terminal breaking sometimes after exitting early.
 
 # v0.4.2
 * Update _indicatif_ dependency to `0.17`.

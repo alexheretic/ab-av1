@@ -123,9 +123,6 @@ pub fn encode(
 
     let to_output = Command::new("ffmpeg")
         .kill_on_drop(true)
-        .stdin(svt_out)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
         .arg("-y")
         .arg2("-i", "-")
         .arg2("-i", input)
@@ -141,6 +138,9 @@ pub fn encode(
         .arg2_if(audio_codec == "libopus", "-b:a", "128k")
         .arg2_if(add_faststart, "-movflags", "+faststart")
         .arg(output)
+        .stdin(svt_out)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .context("ffmpeg to-output")?;
 
