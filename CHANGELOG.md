@@ -1,4 +1,4 @@
-# Unreleased (v0.4.3)
+# v0.4.3
 * Fix terminal breaking sometimes after exitting early.
 
 # v0.4.2
