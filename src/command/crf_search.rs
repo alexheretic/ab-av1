@@ -9,7 +9,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use err::ensure_other;
-use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressFinish, ProgressStyle};
+use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::time::Duration;
 
 const BAR_LEN: u64 = 1000;
@@ -59,7 +59,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
-    ).with_finish(ProgressFinish::Abandon);
+    );
 
     let best = run(&args, bar.clone()).await;
     bar.finish();
