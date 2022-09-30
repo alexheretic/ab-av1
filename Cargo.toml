@@ -11,7 +11,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.53"
-clap = { version = "4", features = ["derive", "env", "help", "usage", "error-context", "wrap_help"] }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 console = "=0.15.1" # no lazy_static
 ffprobe = "0.3"
