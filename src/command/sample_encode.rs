@@ -141,6 +141,14 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
+        let dest_ext = if duration.is_zero() {
+            "avif"
+        } else {
+            input
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("mp4")
+        };
         let (encoded_sample, mut output) = match enc_args.clone() {
             EncoderArgs::SvtAv1(args) => {
                 let (sample, output) = svtav1::encode_sample(
@@ -159,6 +167,7 @@ pub async fn run(
                         ..args
                     },
                     temp_dir.clone(),
+                    dest_ext,
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }

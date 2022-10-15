@@ -5,7 +5,7 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
-    temporary,
+    ffprobe, temporary,
 };
 use clap::Parser;
 use console::style;
@@ -35,9 +35,10 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
+    let probe = ffprobe::probe(&search.args.input);
     let output = encode
         .output
-        .unwrap_or_else(|| default_output_from(&search.args));
+        .unwrap_or_else(|| default_output_from(&search.args, probe.duration.unwrap().is_zero()));
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()

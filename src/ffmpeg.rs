@@ -41,11 +41,8 @@ pub fn encode_sample(
         input_args,
     }: FfmpegEncodeArgs,
     temp_dir: Option<PathBuf>,
+    dest_ext: &str,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
-    let dest_ext = input
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("mp4");
     let pre = pre_extension_name(&vcodec);
     let mut dest = match &preset {
         Some(p) => input.with_extension(format!("{pre}.crf{crf}.{p}.{dest_ext}")),

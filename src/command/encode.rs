@@ -55,7 +55,9 @@ pub async fn run(
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    let output = output.unwrap_or_else(|| default_output_from(&args));
+    let probe = ffprobe::probe(&args.input);
+    let duration = probe.duration.as_ref().unwrap();
+    let output = output.unwrap_or_else(|| default_output_from(&args, duration.is_zero()));
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -65,12 +67,9 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let probe = ffprobe::probe(&args.input);
     let enc_args = args.to_encoder_args(crf, &probe)?;
     let has_audio = probe.has_audio;
-    if let Ok(d) = probe.duration {
-        bar.set_length(d.as_secs());
-    }
+    bar.set_length(duration.as_secs());
 
     // only downmix if achannels > 3
     let stereo_downmix = downmix_to_stereo && probe.max_audio_channels.map_or(false, |c| c > 3);
@@ -144,7 +143,7 @@ pub async fn run(
 }
 
 /// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(enc: &args::Encode) -> PathBuf {
+pub fn default_output_from(enc: &args::Encode, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(enc.encoder.as_str());
 
     match enc
@@ -154,7 +153,10 @@ pub fn default_output_from(enc: &args::Encode) -> PathBuf {
         // don't use extensions that won't work
         .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
     {
-        Some(ext) => enc.input.with_extension(format!("{pre}.{ext}")),
+        Some(ext) => {
+            let ext = if is_image { "avif" } else { ext };
+            enc.input.with_extension(format!("{pre}.{ext}"))
+        }
         _ => enc.input.with_extension(format!("{pre}.mp4")),
     }
 }

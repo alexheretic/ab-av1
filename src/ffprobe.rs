@@ -62,14 +62,15 @@ pub fn probe(input: &Path) -> Ffprobe {
 }
 
 fn read_duration(probe: &ffprobe::FfProbe) -> anyhow::Result<Duration> {
-    let duration_s = probe
-        .format
-        .duration
-        .as_deref()
-        .context("ffprobe missing video duration")?
-        .parse::<f64>()
-        .context("invalid ffprobe video duration")?;
-    Ok(Duration::from_secs_f64(duration_s))
+    match probe.format.duration.as_deref() {
+        Some(duration_s) => {
+            let duration_f = duration_s
+                .parse::<f64>()
+                .context("invalid ffprobe video duration")?;
+            Ok(Duration::from_secs_f64(duration_f))
+        }
+        None => Ok(Duration::ZERO),
+    }
 }
 
 fn read_fps(probe: &ffprobe::FfProbe) -> anyhow::Result<f64> {
