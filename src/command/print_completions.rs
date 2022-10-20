@@ -1,20 +1,17 @@
-use anyhow::anyhow;
-use clap::{IntoApp, Parser};
+use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
-use std::str::FromStr;
 
 /// Print shell completions.
 #[derive(Parser)]
-
 pub struct Args {
     /// Shell.
-    #[clap(value_parser, default_value = "bash")]
-    shell: String,
+    #[arg(value_enum, default_value_t = Shell::Bash)]
+    shell: Shell,
 }
 
 pub fn print_completions(Args { shell }: Args) -> anyhow::Result<()> {
     clap_complete::generate(
-        Shell::from_str(&shell).map_err(|e| anyhow!("Shell {e}"))?,
+        shell,
         &mut crate::Command::command(),
         "ab-av1",
         &mut std::io::stdout(),

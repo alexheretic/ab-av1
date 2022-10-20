@@ -39,18 +39,18 @@ pub struct Args {
     pub svt: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[clap(value_parser, long)]
+    #[arg(long)]
     pub crf: u8,
 
     #[clap(flatten)]
     pub sample: args::Sample,
 
     /// Keep temporary files after exiting.
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub keep: bool,
 
     /// Stdout message format `human` or `json`.
-    #[clap(long, value_parser, arg_enum, default_value_t = StdoutFormat::Human)]
+    #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
     pub stdout_format: StdoutFormat,
 
     #[clap(flatten)]
@@ -335,7 +335,7 @@ impl EncodeResults for Vec<EncodeResult> {
     }
 }
 
-#[derive(Debug, Clone, Copy, clap::ArgEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum StdoutFormat {
     Human,
     Json,

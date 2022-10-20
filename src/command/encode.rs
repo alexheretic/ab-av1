@@ -23,7 +23,7 @@ pub struct Args {
     pub args: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub crf: u8,
 
     #[clap(flatten)]

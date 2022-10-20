@@ -19,7 +19,7 @@ const SAMPLE_SIZE_S: u64 = 20;
 const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 
 #[derive(Parser)]
-#[clap(version, about)]
+#[command(version, about)]
 enum Command {
     SampleEncode(command::sample_encode::Args),
     Vmaf(command::vmaf::Args),

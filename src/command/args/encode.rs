@@ -19,22 +19,22 @@ pub struct Encode {
     /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
     ///
     /// [possible values: svt-av1, libx264, libx265, libvpx-vp9, ...]
-    #[clap(arg_enum, short, long, value_parser, default_value = "svt-av1")]
+    #[arg(value_enum, short, long, default_value = "svt-av1")]
     pub encoder: Encoder,
 
     /// Input video file.
-    #[clap(short, long, value_parser)]
+    #[arg(short, long)]
     pub input: PathBuf,
 
     /// Ffmpeg video filter applied to the input before av1 encoding.
     /// E.g. --vfilter "scale=1280:-1,fps=24".
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub vfilter: Option<String>,
 
     /// Pixel format. svt-av1 default yuv420p10le.
-    #[clap(arg_enum, long, value_parser)]
+    #[arg(value_enum, long)]
     pub pix_format: Option<PixelFormat>,
 
     /// Encoder preset (0-13).
@@ -44,7 +44,7 @@ pub struct Encode {
     /// libaom-av1 preset is mapped to equivalent -cpu-used argument.
     ///
     /// [svt-av1 default: 8]
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub preset: Option<Preset>,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
@@ -54,18 +54,18 @@ pub struct Encode {
     /// Durations will be converted to frames using the input fps.
     ///
     /// Works on svt-av1 & most ffmpeg encoders set with --encoder.
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub keyint: Option<KeyInterval>,
 
     /// Svt-av1 scene change detection, inserts keyframes at scene changes.
     /// Defaults on if using default keyint & the input duration is over 3m. Otherwise off.
-    #[clap(long, value_parser)]
+    #[arg(long)]
     pub scd: Option<bool>,
 
     /// Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=30
     ///
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
-    #[clap(long = "svt", value_parser = parse_svt_arg)]
+    #[arg(long = "svt", value_parser = parse_svt_arg)]
     pub svt_args: Vec<Arc<str>>,
 
     /// Additional ffmpeg encoder arg(s). E.g. `--enc x265-params=lossless=1`
@@ -73,14 +73,14 @@ pub struct Encode {
     ///
     /// The first '=' symbol will be used to infer that this is an option with a value.
     /// Passed to ffmpeg like "x265-params=lossless=1" -> ['-x265-params', 'lossless=1']
-    #[clap(long = "enc", allow_hyphen_values = true, value_parser = parse_enc_arg)]
+    #[arg(long = "enc", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_args: Vec<String>,
 
     /// Additional ffmpeg input encoder arg(s). E.g. `--enc-input r=1`
     /// These are added as ffmpeg input file options.
     ///
     /// See --enc docs.
-    #[clap(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
+    #[arg(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_input_args: Vec<String>,
 }
 
@@ -455,7 +455,7 @@ impl std::str::FromStr for KeyInterval {
     }
 }
 
-#[derive(clap::ArgEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[clap(rename_all = "lower")]
 pub enum PixelFormat {
     Yuv420p10le,

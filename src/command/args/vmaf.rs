@@ -8,7 +8,7 @@ pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
-    #[clap(long = "vmaf", value_parser = parse_vmaf_arg)]
+    #[arg(long = "vmaf", value_parser = parse_vmaf_arg)]
     pub vmaf_args: Vec<Arc<str>>,
 
     /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicupic
@@ -23,7 +23,7 @@ pub struct Vmaf {
     ///   are less than 3456 & 1944 respectively upscale to 4k. Otherwise no scaling.
     ///
     /// Scaling happens after any input/reference vfilters.
-    #[clap(long, default_value_t = VmafScale::Auto, value_parser = parse_vmaf_scale)]
+    #[arg(long, default_value_t = VmafScale::Auto, value_parser = parse_vmaf_scale)]
     pub vmaf_scale: VmafScale,
 }
 

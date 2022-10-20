@@ -15,10 +15,19 @@ jobs:
     - run: rustup update stable
     - uses: actions/checkout@v2
     - run: cargo test --locked
-    # check print-completions don't fail
-    - run: cargo run -- print-completions bash
-    - run: cargo run -- print-completions fish
-    - run: cargo run -- print-completions zsh
+
+  # check print-completions don't fail
+  print-completions:
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1
+    steps:
+    - run: rustup update stable
+    - uses: actions/checkout@v2
+    # Note: Using --release as clap debug-asserts panic
+    - run: cargo run --release --locked -- print-completions bash
+    - run: cargo run --release --locked -- print-completions fish
+    - run: cargo run --release --locked -- print-completions zsh
 
   test-windows:
     runs-on: windows-latest
