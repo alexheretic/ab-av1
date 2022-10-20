@@ -82,6 +82,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(svt.input.clone());
     let probe = ffprobe::probe(&input);
+    let input_is_image = probe.is_probably_an_image();
     let enc_args = svt.to_encoder_args(crf, &probe)?;
     let duration = probe.duration?;
     let fps = probe.fps?;
@@ -141,7 +142,7 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
-        let dest_ext = if duration.is_zero() {
+        let dest_ext = if input_is_image {
             "avif"
         } else {
             input

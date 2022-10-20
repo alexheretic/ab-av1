@@ -544,6 +544,7 @@ fn to_svt_args_default_over_3m() {
         max_audio_channels: None,
         fps: Ok(30.0),
         resolution: Some((1280, 720)),
+        has_image_extension: false,
     };
 
     let SvtArgs {
@@ -588,6 +589,7 @@ fn to_svt_args_default_under_3m() {
         max_audio_channels: None,
         fps: Ok(24.0),
         resolution: Some((1280, 720)),
+        has_image_extension: false,
     };
 
     let SvtArgs {
