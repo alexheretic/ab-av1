@@ -15,6 +15,7 @@ use tokio_stream::StreamExt;
 
 /// Simple full calculation of VMAF score distorted file vs original file.
 #[derive(Parser)]
+#[group(skip)]
 pub struct Args {
     /// Reference video file.
     #[arg(long)]
