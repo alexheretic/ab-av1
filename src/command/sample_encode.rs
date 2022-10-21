@@ -248,7 +248,7 @@ pub async fn run(
         vmaf: results.mean_vmaf(),
         predicted_encode_size: predicted_size as _,
         predicted_encode_percent: results.encoded_percent_size(),
-        predicted_encode_time: results.estimate_encode_time(duration),
+        predicted_encode_time: results.estimate_encode_time(duration, input_is_image),
     };
 
     if !bar.is_hidden() {
@@ -313,7 +313,7 @@ struct EncodeResult {
 trait EncodeResults {
     fn encoded_percent_size(&self) -> f64;
     fn mean_vmaf(&self) -> f32;
-    fn estimate_encode_time(&self, input_duration: Duration) -> Duration;
+    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration;
 }
 impl EncodeResults for Vec<EncodeResult> {
     fn encoded_percent_size(&self) -> f64 {
@@ -332,10 +332,14 @@ impl EncodeResults for Vec<EncodeResult> {
         self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
     }
 
-    fn estimate_encode_time(&self, input_duration: Duration) -> Duration {
+    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration {
         if self.is_empty() {
             return Duration::ZERO;
         }
+        if image {
+            return self[0].encode_time;
+        }
+
         let sample_factor =
             input_duration.as_secs_f64() / (SAMPLE_SIZE_S as f64 * self.len() as f64);
 
