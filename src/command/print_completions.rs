@@ -3,6 +3,7 @@ use clap_complete::Shell;
 
 /// Print shell completions.
 #[derive(Parser)]
+#[group(skip)]
 pub struct Args {
     /// Shell.
     #[arg(value_enum, default_value_t = Shell::Bash)]

@@ -18,6 +18,7 @@ use tokio_stream::StreamExt;
 
 /// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
 #[derive(Parser)]
+#[group(skip)]
 pub struct Args {
     #[clap(flatten)]
     pub args: args::Encode,
