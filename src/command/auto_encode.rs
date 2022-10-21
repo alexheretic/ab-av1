@@ -19,6 +19,7 @@ use std::time::Duration;
 /// * ffmpeg & SvtAv1EncApp to encode using the settings
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
+#[group(skip)]
 pub struct Args {
     #[clap(flatten)]
     pub search: crf_search::Args,

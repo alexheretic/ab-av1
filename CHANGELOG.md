@@ -1,5 +1,6 @@
 # Unreleased (v0.4.4)
 * Update to clap v4 which changes help/about output & reduces binary size.
+* Print crf-search attempts even when stderr is not a tty.
 
 # v0.4.3
 * Fix terminal breaking sometimes after exitting early.

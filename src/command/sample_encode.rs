@@ -34,6 +34,7 @@ use tokio_stream::StreamExt;
 /// * Predicted full encode time
 #[derive(Parser, Clone)]
 #[clap(verbatim_doc_comment)]
+#[group(skip)]
 pub struct Args {
     #[clap(flatten)]
     pub svt: args::Encode,

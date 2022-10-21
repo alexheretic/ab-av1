@@ -24,6 +24,7 @@ const BAR_LEN: u64 = 1000;
 /// * Predicted full encode time
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
+#[group(skip)]
 pub struct Args {
     #[clap(flatten)]
     pub args: args::Encode,
@@ -226,9 +227,12 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}"
-        ))
+        let msg = format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}");
+        if atty::is(atty::Stream::Stderr) {
+            bar.println(msg);
+        } else {
+            eprintln!("{msg}");
+        }
     }
 }
 

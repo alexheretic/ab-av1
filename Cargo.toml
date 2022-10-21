@@ -11,6 +11,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.53"
+atty = "0.2.14"
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 console = "=0.15.1" # no lazy_static
