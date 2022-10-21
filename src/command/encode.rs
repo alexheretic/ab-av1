@@ -70,7 +70,7 @@ pub async fn run(
     let enc_args = args.to_encoder_args(crf, &probe)?;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
-        bar.set_length(d.as_secs());
+        bar.set_length(d.as_secs().max(1));
     }
 
     // only downmix if achannels > 3

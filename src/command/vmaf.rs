@@ -51,11 +51,12 @@ pub async fn vmaf(
     bar.set_message("vmaf running, ");
 
     let dprobe = ffprobe::probe(&distorted);
+    let distorted_is_image = dprobe.is_probably_an_image();
     let duration = dprobe
         .duration
         .or_else(|_| ffprobe::probe(&reference).duration);
     if let Ok(d) = duration {
-        bar.set_length(d.as_secs());
+        bar.set_length(d.as_secs().max(1));
     }
 
     let mut vmaf = vmaf::run(
@@ -63,7 +64,11 @@ pub async fn vmaf(
         reference_vfilter.as_deref(),
         &distorted,
         &vmaf.ffmpeg_lavfi(dprobe.resolution),
-        PixelFormat::Yuv420p10le,
+        match distorted_is_image {
+            // 10le doesn't seem to work well for images
+            true => PixelFormat::Yuv420p,
+            false => PixelFormat::Yuv420p10le,
+        },
     )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {

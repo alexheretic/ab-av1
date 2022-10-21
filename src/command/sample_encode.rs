@@ -1,6 +1,6 @@
 use crate::{
     command::{
-        args::{self, EncoderArgs},
+        args::{self, EncoderArgs, PixelFormat},
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -192,7 +192,11 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            enc_args.pix_fmt(),
+            match input_is_image {
+                // 10le doesn't seem to work well for images
+                true => PixelFormat::Yuv420p,
+                _ => enc_args.pix_fmt(),
+            },
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
