@@ -227,9 +227,12 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}"
-        ))
+        let msg = format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}");
+        if atty::is(atty::Stream::Stderr) {
+            bar.println(msg);
+        } else {
+            eprintln!("{msg}");
+        }
     }
 }
 
