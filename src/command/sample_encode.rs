@@ -192,11 +192,7 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            match input_is_image {
-                // 10le doesn't seem to work well for images
-                true => PixelFormat::Yuv444p,
-                _ => enc_args.pix_fmt(),
-            },
+            PixelFormat::Yuv444p10le,
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
