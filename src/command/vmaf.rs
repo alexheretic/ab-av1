@@ -14,6 +14,8 @@ use std::{path::PathBuf, time::Duration};
 use tokio_stream::StreamExt;
 
 /// Simple full calculation of VMAF score distorted file vs original file.
+///
+/// Works with videos and images.
 #[derive(Parser)]
 #[group(skip)]
 pub struct Args {
@@ -55,7 +57,7 @@ pub async fn vmaf(
         .duration
         .or_else(|_| ffprobe::probe(&reference).duration);
     if let Ok(d) = duration {
-        bar.set_length(d.as_secs());
+        bar.set_length(d.as_secs().max(1));
     }
 
     let mut vmaf = vmaf::run(
@@ -63,7 +65,7 @@ pub async fn vmaf(
         reference_vfilter.as_deref(),
         &distorted,
         &vmaf.ffmpeg_lavfi(dprobe.resolution),
-        PixelFormat::Yuv420p10le,
+        PixelFormat::Yuv444p10le,
     )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {

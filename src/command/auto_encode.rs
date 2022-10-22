@@ -5,14 +5,14 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
-    temporary,
+    ffprobe, temporary,
 };
 use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
-/// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
+/// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 ///
 /// Two phases:
 /// * crf-search to determine the best --crf value
@@ -36,9 +36,12 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
-    let output = encode
-        .output
-        .unwrap_or_else(|| default_output_from(&search.args));
+    let output = encode.output.unwrap_or_else(|| {
+        default_output_from(
+            &search.args,
+            ffprobe::probe(&search.args.input).is_probably_an_image(),
+        )
+    });
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()

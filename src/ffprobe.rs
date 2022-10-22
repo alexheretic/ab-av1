@@ -12,10 +12,22 @@ pub struct Ffprobe {
     /// Video frame rate.
     pub fps: Result<f64, ProbeError>,
     pub resolution: Option<(u32, u32)>,
+    pub has_image_extension: bool,
+}
+
+impl Ffprobe {
+    pub fn is_probably_an_image(&self) -> bool {
+        self.has_image_extension || self.duration == Ok(Duration::ZERO)
+    }
 }
 
 /// Try to ffprobe the given input.
 pub fn probe(input: &Path) -> Ffprobe {
+    let has_image_extension = matches!(
+        input.extension().and_then(|ext| ext.to_str()),
+        Some("jpg" | "png" | "bmp" | "avif")
+    );
+
     let probe = match ffprobe::ffprobe(&input) {
         Ok(p) => p,
         Err(err) => {
@@ -25,6 +37,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 has_audio: true,
                 max_audio_channels: None,
                 resolution: None,
+                has_image_extension,
             }
         }
     };
@@ -58,18 +71,20 @@ pub fn probe(input: &Path) -> Ffprobe {
         has_audio,
         max_audio_channels,
         resolution,
+        has_image_extension,
     }
 }
 
 fn read_duration(probe: &ffprobe::FfProbe) -> anyhow::Result<Duration> {
-    let duration_s = probe
-        .format
-        .duration
-        .as_deref()
-        .context("ffprobe missing video duration")?
-        .parse::<f64>()
-        .context("invalid ffprobe video duration")?;
-    Ok(Duration::from_secs_f64(duration_s))
+    match probe.format.duration.as_deref() {
+        Some(duration_s) => {
+            let duration_f = duration_s
+                .parse::<f64>()
+                .context("invalid ffprobe video duration")?;
+            Ok(Duration::from_secs_f64(duration_f))
+        }
+        None => Ok(Duration::ZERO),
+    }
 }
 
 fn read_fps(probe: &ffprobe::FfProbe) -> anyhow::Result<f64> {

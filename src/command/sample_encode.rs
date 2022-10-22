@@ -1,6 +1,6 @@
 use crate::{
     command::{
-        args::{self, EncoderArgs},
+        args::{self, EncoderArgs, PixelFormat},
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -83,6 +83,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(svt.input.clone());
     let probe = ffprobe::probe(&input);
+    let input_is_image = probe.is_probably_an_image();
     let enc_args = svt.to_encoder_args(crf, &probe)?;
     let duration = probe.duration?;
     let fps = probe.fps?;
@@ -142,6 +143,14 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
+        let dest_ext = if input_is_image {
+            "avif"
+        } else {
+            input
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("mp4")
+        };
         let (encoded_sample, mut output) = match enc_args.clone() {
             EncoderArgs::SvtAv1(args) => {
                 let (sample, output) = svtav1::encode_sample(
@@ -160,6 +169,7 @@ pub async fn run(
                         ..args
                     },
                     temp_dir.clone(),
+                    dest_ext,
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }
@@ -182,7 +192,7 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            enc_args.pix_fmt(),
+            PixelFormat::Yuv444p10le,
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
@@ -234,7 +244,7 @@ pub async fn run(
         vmaf: results.mean_vmaf(),
         predicted_encode_size: predicted_size as _,
         predicted_encode_percent: results.encoded_percent_size(),
-        predicted_encode_time: results.estimate_encode_time(duration),
+        predicted_encode_time: results.estimate_encode_time(duration, input_is_image),
     };
 
     if !bar.is_hidden() {
@@ -299,7 +309,7 @@ struct EncodeResult {
 trait EncodeResults {
     fn encoded_percent_size(&self) -> f64;
     fn mean_vmaf(&self) -> f32;
-    fn estimate_encode_time(&self, input_duration: Duration) -> Duration;
+    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration;
 }
 impl EncodeResults for Vec<EncodeResult> {
     fn encoded_percent_size(&self) -> f64 {
@@ -318,10 +328,14 @@ impl EncodeResults for Vec<EncodeResult> {
         self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
     }
 
-    fn estimate_encode_time(&self, input_duration: Duration) -> Duration {
+    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration {
         if self.is_empty() {
             return Duration::ZERO;
         }
+        if image {
+            return self[0].encode_time;
+        }
+
         let sample_factor =
             input_duration.as_secs_f64() / (SAMPLE_SIZE_S as f64 * self.len() as f64);
 

@@ -16,7 +16,7 @@ use std::{path::PathBuf, time::Duration};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
+/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video or image.
 #[derive(Parser)]
 #[group(skip)]
 pub struct Args {
@@ -56,7 +56,8 @@ pub async fn run(
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    let output = output.unwrap_or_else(|| default_output_from(&args));
+    let probe = ffprobe::probe(&args.input);
+    let output = output.unwrap_or_else(|| default_output_from(&args, probe.is_probably_an_image()));
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -66,11 +67,10 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let probe = ffprobe::probe(&args.input);
     let enc_args = args.to_encoder_args(crf, &probe)?;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
-        bar.set_length(d.as_secs());
+        bar.set_length(d.as_secs().max(1));
     }
 
     // only downmix if achannels > 3
@@ -145,8 +145,11 @@ pub async fn run(
 }
 
 /// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(enc: &args::Encode) -> PathBuf {
+pub fn default_output_from(enc: &args::Encode, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(enc.encoder.as_str());
+    if is_image {
+        return enc.input.with_extension(format!("{pre}.avif"));
+    }
 
     match enc
         .input
