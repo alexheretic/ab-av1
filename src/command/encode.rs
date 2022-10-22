@@ -16,7 +16,7 @@ use std::{path::PathBuf, time::Duration};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
+/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video or image.
 #[derive(Parser)]
 #[group(skip)]
 pub struct Args {

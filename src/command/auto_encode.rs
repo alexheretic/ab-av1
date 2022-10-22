@@ -12,7 +12,7 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
-/// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
+/// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 ///
 /// Two phases:
 /// * crf-search to determine the best --crf value

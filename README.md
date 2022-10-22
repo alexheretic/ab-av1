@@ -7,7 +7,7 @@ Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 Also supports other ffmpeg compatible encoders like libx265 & libx264.
 
 ### Command: auto-encode
-Automatically determine the best crf to deliver the min-vmaf and use it to encode a video.
+Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 
 Two phases:
 * [crf-search](#command-crf-search) to determine the best --crf value
@@ -45,7 +45,7 @@ ab-av1 sample-encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
 
 ### Command: encode
-Simple invocation of ffmpeg & SvtAv1EncApp to encode a video.
+Simple invocation of ffmpeg & SvtAv1EncApp to encode a video or image.
 
 ```
 ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
@@ -53,6 +53,8 @@ ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 
 ### Command: vmaf
 Simple full calculation of VMAF score distorted file vs reference file.
+
+Works with videos and images.
 
 ```
 ab-av1 vmaf --reference <REFERENCE> --distorted <DISTORTED>

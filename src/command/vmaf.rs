@@ -14,6 +14,8 @@ use std::{path::PathBuf, time::Duration};
 use tokio_stream::StreamExt;
 
 /// Simple full calculation of VMAF score distorted file vs original file.
+///
+/// Works with videos and images.
 #[derive(Parser)]
 #[group(skip)]
 pub struct Args {
