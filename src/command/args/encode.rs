@@ -460,6 +460,7 @@ impl std::str::FromStr for KeyInterval {
 pub enum PixelFormat {
     Yuv420p10le,
     Yuv420p,
+    Yuv444p,
 }
 
 impl PixelFormat {
@@ -467,6 +468,7 @@ impl PixelFormat {
         match self {
             Self::Yuv420p10le => "yuv420p10le",
             Self::Yuv420p => "yuv420p",
+            Self::Yuv444p => "yuv444p",
         }
     }
 
@@ -474,6 +476,7 @@ impl PixelFormat {
         match self {
             Self::Yuv420p10le => "10",
             Self::Yuv420p => "8",
+            Self::Yuv444p => "8",
         }
     }
 }

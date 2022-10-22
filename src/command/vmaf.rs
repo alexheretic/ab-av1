@@ -66,7 +66,7 @@ pub async fn vmaf(
         &vmaf.ffmpeg_lavfi(dprobe.resolution),
         match distorted_is_image {
             // 10le doesn't seem to work well for images
-            true => PixelFormat::Yuv420p,
+            true => PixelFormat::Yuv444p,
             false => PixelFormat::Yuv420p10le,
         },
     )?;
