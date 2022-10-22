@@ -1,12 +1,13 @@
 # Unreleased (v0.4.4)
-* Update to clap v4 which changes help/about output & reduces binary size.
-* Print _crf-search_ attempts even when stderr is not a tty.
-* Add _crf-search_, _auto-encode_ & _vmaf_ command support for encoding images into avif.
+* Add _crf-search_, _auto-encode_, _encode_ & _vmaf_ command support for encoding images into avif.
   This works in the same way as videos, example:
   ```
   ab-av1 auto-encode -i pic.jpg
   ```
   The default encoder svt-av1 has some dimension limitations which may cause this to fail. `-e libaom-av1` also works and supports more dimensions.
+* Convert to yuv444p10le pixel format when calculating VMAF for accuracy and compatibility.
+* Update to clap v4 which changes help/about output & reduces binary size.
+* Print _crf-search_ attempts even when stderr is not a tty.
 
 # v0.4.3
 * Fix terminal breaking sometimes after exitting early.
