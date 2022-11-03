@@ -28,7 +28,7 @@ pub fn probe(input: &Path) -> Ffprobe {
         Some("jpg" | "png" | "bmp" | "avif")
     );
 
-    let probe = match ffprobe::ffprobe(&input) {
+    let probe = match ffprobe::ffprobe(input) {
         Ok(p) => p,
         Err(err) => {
             return Ffprobe {
