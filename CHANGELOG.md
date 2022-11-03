@@ -1,4 +1,4 @@
-# Unreleased (v0.4.4)
+# v0.4.4
 * Add _crf-search_, _auto-encode_, _encode_ & _vmaf_ command support for encoding images into avif.
   This works in the same way as videos, example:
   ```
