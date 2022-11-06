@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, sync::Arc, thread};
 
 /// Common vmaf options.
 #[derive(Parser, Clone)]
@@ -37,7 +37,15 @@ impl Vmaf {
         let mut args = self.vmaf_args.clone();
         if !args.iter().any(|a| a.contains("n_threads")) {
             // default n_threads to all cores
-            args.push(format!("n_threads={}", num_cpus::get()).into());
+            args.push(
+                format!(
+                    "n_threads={}",
+                    thread::available_parallelism()
+                        .map(|p| p.get())
+                        .unwrap_or(1)
+                )
+                .into(),
+            );
         }
         let mut lavfi = args.join(":");
         lavfi.insert_str(0, "libvmaf=");
@@ -173,7 +181,12 @@ fn vmaf_lavfi_default() {
         vmaf_args: vec![],
         vmaf_scale: VmafScale::Auto,
     };
-    let expected = format!("libvmaf=n_threads={}", num_cpus::get());
+    let expected = format!(
+        "libvmaf=n_threads={}",
+        thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1)
+    );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
 }
 
@@ -183,7 +196,12 @@ fn vmaf_lavfi_include_n_threads() {
         vmaf_args: vec!["log_path=output.xml".into()],
         vmaf_scale: VmafScale::Auto,
     };
-    let expected = format!("libvmaf=log_path=output.xml:n_threads={}", num_cpus::get());
+    let expected = format!(
+        "libvmaf=log_path=output.xml:n_threads={}",
+        thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1)
+    );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
 }
 
