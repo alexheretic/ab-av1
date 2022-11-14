@@ -40,9 +40,7 @@ impl Vmaf {
             args.push(
                 format!(
                     "n_threads={}",
-                    thread::available_parallelism()
-                        .map(|p| p.get())
-                        .unwrap_or(1)
+                    thread::available_parallelism().map_or(1, |p| p.get())
                 )
                 .into(),
             );
@@ -183,9 +181,7 @@ fn vmaf_lavfi_default() {
     };
     let expected = format!(
         "libvmaf=n_threads={}",
-        thread::available_parallelism()
-            .map(|p| p.get())
-            .unwrap_or(1)
+        thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
 }
@@ -198,9 +194,7 @@ fn vmaf_lavfi_include_n_threads() {
     };
     let expected = format!(
         "libvmaf=log_path=output.xml:n_threads={}",
-        thread::available_parallelism()
-            .map(|p| p.get())
-            .unwrap_or(1)
+        thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
 }
