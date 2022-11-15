@@ -38,7 +38,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let defaulting_output = encode.output.is_none();
     let output = encode.output.unwrap_or_else(|| {
         default_output_from(
-            &search.args,
+            &search.args.input,
+            &search.args.encoder,
             ffprobe::probe(&search.args.input).is_probably_an_image(),
         )
     });
