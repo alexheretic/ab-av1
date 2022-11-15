@@ -1,6 +1,7 @@
 use crate::{
     command::{
         args::{self, EncoderArgs, PixelFormat},
+        encode::default_output_from,
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -143,14 +144,6 @@ pub async fn run(
         // encode sample
         bar.set_message("encoding,");
         let b = Instant::now();
-        let dest_ext = if input_is_image {
-            "avif"
-        } else {
-            input
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or("mp4")
-        };
         let (encoded_sample, mut output) = match enc_args.clone() {
             EncoderArgs::SvtAv1(args) => {
                 let (sample, output) = svtav1::encode_sample(
@@ -163,6 +156,12 @@ pub async fn run(
                 (sample, futures::StreamExt::boxed_local(output))
             }
             EncoderArgs::Ffmpeg(args) => {
+                let default_output = default_output_from(&input, &svt.encoder, input_is_image);
+                let dest_ext = default_output
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("mp4");
+
                 let (sample, output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
                         input: &sample,

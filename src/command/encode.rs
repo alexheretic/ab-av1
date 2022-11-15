@@ -1,6 +1,6 @@
 use crate::{
     command::{
-        args::{self, EncoderArgs},
+        args::{self, Encoder, EncoderArgs},
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -12,7 +12,10 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tokio::fs;
 use tokio_stream::StreamExt;
 
@@ -57,7 +60,9 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
     let probe = ffprobe::probe(&args.input);
-    let output = output.unwrap_or_else(|| default_output_from(&args, probe.is_probably_an_image()));
+    let output = output.unwrap_or_else(|| {
+        default_output_from(&args.input, &args.encoder, probe.is_probably_an_image())
+    });
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -145,20 +150,19 @@ pub async fn run(
 }
 
 /// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(enc: &args::Encode, is_image: bool) -> PathBuf {
-    let pre = ffmpeg::pre_extension_name(enc.encoder.as_str());
+pub fn default_output_from(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
+    let pre = ffmpeg::pre_extension_name(encoder.as_str());
     if is_image {
-        return enc.input.with_extension(format!("{pre}.avif"));
+        return input.with_extension(format!("{pre}.avif"));
     }
 
-    match enc
-        .input
+    match input
         .extension()
         .and_then(|e| e.to_str())
         // don't use extensions that won't work
         .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
     {
-        Some(ext) => enc.input.with_extension(format!("{pre}.{ext}")),
-        _ => enc.input.with_extension(format!("{pre}.mp4")),
+        Some(ext) => input.with_extension(format!("{pre}.{ext}")),
+        _ => input.with_extension(format!("{pre}.mp4")),
     }
 }
