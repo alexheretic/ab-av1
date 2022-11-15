@@ -1,6 +1,7 @@
 # Unreleased (v0.4.5)
 * Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
   Such samples will now encode to .mp4 in the same way _encode_ already did in this case.
+* Windows: Add workaround for missing VMAF distorted pixel format conversion, by using ffmpeg defaults for reference yuv pixel format.
 
 # v0.4.4
 * Add _crf-search_, _auto-encode_, _encode_ & _vmaf_ command support for encoding images into avif.

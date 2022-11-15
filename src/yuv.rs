@@ -10,13 +10,13 @@ use tokio_stream::Stream;
 /// ffmpeg yuv4mpegpipe returning the stdout & [`FfmpegProgress`] stream.
 pub fn pipe(
     input: &Path,
-    pix_fmt: PixelFormat,
+    pix_fmt: Option<PixelFormat>,
     vfilter: Option<&str>,
 ) -> anyhow::Result<(Stdio, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
     let mut yuv4mpegpipe = Command::new("ffmpeg")
         .kill_on_drop(true)
         .arg2("-i", input)
-        .arg2("-pix_fmt", pix_fmt.as_str())
+        .arg2_opt("-pix_fmt", pix_fmt.map(|pf| pf.as_str()))
         .arg2_opt("-vf", vfilter)
         .arg2("-strict", "-1")
         .arg2("-f", "yuv4mpegpipe")
@@ -44,7 +44,7 @@ pub mod unix {
     /// ffmpeg yuv4mpegpipe returning the temporary fifo path & [`FfmpegProgress`] stream.
     pub fn pipe_to_fifo(
         input: &Path,
-        pix_fmt: PixelFormat,
+        pix_fmt: Option<PixelFormat>,
     ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
         let fifo = PathBuf::from(format!(
             "/tmp/ab-av1-{}.fifo",
@@ -56,7 +56,7 @@ pub mod unix {
         let yuv4mpegpipe = Command::new("ffmpeg")
             .kill_on_drop(true)
             .arg2("-i", input)
-            .arg2("-pix_fmt", pix_fmt.as_str())
+            .arg2_opt("-pix_fmt", pix_fmt.map(|pf| pf.as_str()))
             .arg2("-strict", "-1")
             .arg2("-f", "yuv4mpegpipe")
             .arg("-y")

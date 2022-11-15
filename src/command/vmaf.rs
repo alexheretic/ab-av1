@@ -53,6 +53,7 @@ pub async fn vmaf(
     bar.set_message("vmaf running, ");
 
     let dprobe = ffprobe::probe(&distorted);
+    let d_is_image = dprobe.is_probably_an_image();
     let duration = dprobe
         .duration
         .or_else(|_| ffprobe::probe(&reference).duration);
@@ -65,7 +66,11 @@ pub async fn vmaf(
         reference_vfilter.as_deref(),
         &distorted,
         &vmaf.ffmpeg_lavfi(dprobe.resolution),
-        PixelFormat::Yuv444p10le,
+        // Converting both distorted & reference to yuv444p10 seems to have the most
+        // consistent results. It seems particularly important for images.
+        // Windows: Distorted -> yuv is currently not supported (needs named-pipe-alike)
+        //          gets better results from ffmpeg inferring.
+        (cfg!(unix) || d_is_image).then_some(PixelFormat::Yuv444p10le),
     )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {

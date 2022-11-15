@@ -50,7 +50,7 @@ pub fn encode_sample(
     }
     temporary::add(&dest, TempKind::Keepable);
 
-    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, Some(pix_fmt), vfilter)?;
 
     let svt = Command::new("SvtAv1EncApp")
         .kill_on_drop(true)
@@ -97,7 +97,7 @@ pub fn encode(
     let audio_codec = audio_codec
         .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
 
-    let (yuv_out, yuv_pipe) = yuv::pipe(input, pix_fmt, vfilter)?;
+    let (yuv_out, yuv_pipe) = yuv::pipe(input, Some(pix_fmt), vfilter)?;
     let yuv_pipe = yuv_pipe.filter(Result::is_err);
 
     let mut svt = Command::new("SvtAv1EncApp")

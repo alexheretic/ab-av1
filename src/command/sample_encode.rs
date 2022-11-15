@@ -191,7 +191,11 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            PixelFormat::Yuv444p10le,
+            // Converting both distorted & reference to yuv444p10 seems to have the most
+            // consistent results. It seems particularly important for images.
+            // Windows: Distorted -> yuv is currently not supported (needs named-pipe-alike)
+            //          gets better results from ffmpeg inferring.
+            (cfg!(unix) || input_is_image).then_some(PixelFormat::Yuv444p10le),
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {

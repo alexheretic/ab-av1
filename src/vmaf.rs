@@ -12,12 +12,14 @@ use tokio_stream::{Stream, StreamExt};
 
 /// Calculate VMAF score by converting the original first to yuv.
 /// This can produce more accurate results than testing directly from original source.
+///
+/// `pix_fmt` is used for reference (and distorted on unix). `None` means no -pix_fmt is passed to ffmpeg.
 pub fn run(
     reference: &Path,
     reference_vfilter: Option<&str>,
     distorted: &Path,
     filter_complex: &str,
-    pix_fmt: PixelFormat,
+    pix_fmt: Option<PixelFormat>,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
     let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt, reference_vfilter)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
