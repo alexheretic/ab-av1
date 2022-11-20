@@ -39,8 +39,10 @@ pub mod windows {
         input: &Path,
         pix_fmt: PixelFormat,
     ) -> anyhow::Result<(String, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
-        use rand::distributions::{Alphanumeric, DistString};
-        use rand::thread_rng;
+        use rand::{
+            distributions::{Alphanumeric, DistString},
+            thread_rng,
+        };
 
         let mut in_name = Alphanumeric.sample_string(&mut thread_rng(), 12);
         in_name.insert_str(0, r"\\.\pipe\ab-av1-in-");
