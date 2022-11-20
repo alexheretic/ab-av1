@@ -26,10 +26,14 @@ time = { version = "0.3", features = ["parsing", "macros"] }
 tokio = { version = "1.15", features = ["rt", "macros", "process", "fs", "signal"] }
 tokio-process-stream = "0.3"
 tokio-stream = "0.1"
+rand = "0.8.5"
 
 [target.'cfg(unix)'.dependencies]
 unix-named-pipe = "0.2"
-rand = "0.8.5"
+
+[target.'cfg(windows)'.dependencies.tokio]
+version = "1.15"
+features = ["net"]
 
 [profile.release]
 lto = true
