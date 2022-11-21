@@ -1,7 +1,10 @@
 # Unreleased (v0.4.5)
-* Optimise pixel format choice for VMAF comparisons. _E.g. if both videos are yuv420p use that instead of yuv444p10le_.
+* Optimise pixel format choice for VMAF comparisons. Can significantly improve VMAF fps.
+  _E.g. if both videos are yuv420p use that instead of yuv444p10le_.
 * Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
   Such samples will now encode to .mp4 in the same way _encode_ already did in this case.
+* Windows: Support VMAF pixel format conversion for both distorted and reference.
+  Gives more consistently accurate results and brings Windows in line with Linux functionality.
 
 # v0.4.4
 * Add _crf-search_, _auto-encode_, _encode_ & _vmaf_ command support for encoding images into avif.

@@ -22,12 +22,19 @@ pub fn run(
     let (yuv_out, yuv_pipe) = yuv::pipe(reference, pix_fmt, reference_vfilter)?;
     let yuv_pipe = yuv_pipe.filter_map(VmafOut::ignore_ok);
 
-    // If possible convert distorted to yuv, in some cases this fixes inaccuracy
+    // Convert distorted to yuv. In some cases this fixes inaccuracy
     #[cfg(unix)]
     let (distorted_fifo, distorted_yuv_pipe) = yuv::unix::pipe_to_fifo(distorted, pix_fmt)?;
     #[cfg(unix)]
     let (distorted, yuv_pipe) = (
         &distorted_fifo,
+        yuv_pipe.merge(distorted_yuv_pipe.filter_map(VmafOut::ignore_ok)),
+    );
+    #[cfg(windows)]
+    let (distorted_npipe, distorted_yuv_pipe) = yuv::windows::named_pipe(distorted, pix_fmt)?;
+    #[cfg(windows)]
+    let (distorted, yuv_pipe) = (
+        &distorted_npipe,
         yuv_pipe.merge(distorted_yuv_pipe.filter_map(VmafOut::ignore_ok)),
     );
 
