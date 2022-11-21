@@ -47,27 +47,34 @@ pub mod windows {
         let mut in_name = Alphanumeric.sample_string(&mut thread_rng(), 12);
         in_name.insert_str(0, r"\\.\pipe\ab-av1-in-");
 
-        let mut in_server = tokio::net::windows::named_pipe::ServerOptions::new()
+        let in_server = tokio::net::windows::named_pipe::ServerOptions::new()
             .access_outbound(false)
             .first_pipe_instance(true)
             .max_instances(1)
             .create(&in_name)?;
 
         let out_name = in_name.replacen("-in-", "-out-", 1);
-        let mut out_server = tokio::net::windows::named_pipe::ServerOptions::new()
+        let out_server = tokio::net::windows::named_pipe::ServerOptions::new()
             .access_inbound(false)
             .first_pipe_instance(true)
             .max_instances(1)
             .create(&out_name)?;
 
+        async fn copy_in_pipe_to_out(
+            mut in_pipe: tokio::net::windows::named_pipe::NamedPipeServer,
+            mut out_pipe: tokio::net::windows::named_pipe::NamedPipeServer,
+        ) -> tokio::io::Result<()> {
+            in_pipe.connect().await?;
+            in_pipe.readable().await?;
+            out_pipe.connect().await?;
+            out_pipe.writable().await?;
+            tokio::io::copy(&mut in_pipe, &mut out_pipe).await?;
+            Ok(())
+        }
         tokio::spawn(async move {
-            in_server.connect().await.unwrap();
-            in_server.readable().await.unwrap();
-            out_server.connect().await.unwrap();
-            out_server.writable().await.unwrap();
-            tokio::io::copy(&mut in_server, &mut out_server)
-                .await
-                .unwrap();
+            if let Err(err) = copy_in_pipe_to_out(in_server, out_server).await {
+                eprintln!("Error copy_in_pipe_to_out: {err}");
+            }
         });
 
         let yuv4mpegpipe = Command::new("ffmpeg")
