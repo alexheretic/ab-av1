@@ -380,6 +380,15 @@ pub enum EncoderArgs<'a> {
     Ffmpeg(FfmpegEncodeArgs<'a>),
 }
 
+impl EncoderArgs<'_> {
+    pub fn pixel_format(&self) -> PixelFormat {
+        match self {
+            Self::SvtAv1(a) => a.pix_fmt,
+            Self::Ffmpeg(a) => a.pix_fmt,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Preset {
     Number(u8),
@@ -446,12 +455,20 @@ impl std::str::FromStr for KeyInterval {
     }
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+/// Ordered by ascending quality.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[clap(rename_all = "lower")]
 pub enum PixelFormat {
-    Yuv420p10le,
     Yuv420p,
+    Yuv420p10le,
     Yuv444p10le,
+}
+
+#[test]
+fn pixel_format_order() {
+    use PixelFormat::*;
+    assert!(Yuv420p < Yuv420p10le);
+    assert!(Yuv420p10le < Yuv444p10le);
 }
 
 impl PixelFormat {
@@ -475,6 +492,19 @@ impl PixelFormat {
 impl fmt::Display for PixelFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_str().fmt(f)
+    }
+}
+
+impl TryFrom<&str> for PixelFormat {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "yuv420p10le" => Ok(Self::Yuv420p10le),
+            "yuv444p10le" => Ok(Self::Yuv444p10le),
+            "yuv420p" => Ok(Self::Yuv420p),
+            _ => Err(()),
+        }
     }
 }
 
@@ -539,6 +569,7 @@ fn to_svt_args_default_over_3m() {
         fps: Ok(30.0),
         resolution: Some((1280, 720)),
         has_image_extension: false,
+        pix_fmt: None,
     };
 
     let SvtArgs {
@@ -584,6 +615,7 @@ fn to_svt_args_default_under_3m() {
         fps: Ok(24.0),
         resolution: Some((1280, 720)),
         has_image_extension: false,
+        pix_fmt: None,
     };
 
     let SvtArgs {

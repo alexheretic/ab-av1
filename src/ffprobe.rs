@@ -1,4 +1,5 @@
 //! ffprobe logic
+use crate::command::args::PixelFormat;
 use anyhow::Context;
 use std::{fmt, path::Path, time::Duration};
 
@@ -13,11 +14,17 @@ pub struct Ffprobe {
     pub fps: Result<f64, ProbeError>,
     pub resolution: Option<(u32, u32)>,
     pub has_image_extension: bool,
+    pub pix_fmt: Option<String>,
 }
 
 impl Ffprobe {
     pub fn is_probably_an_image(&self) -> bool {
         self.has_image_extension || self.duration == Ok(Duration::ZERO)
+    }
+
+    pub fn pixel_format(&self) -> Option<PixelFormat> {
+        let pf = self.pix_fmt.as_deref()?;
+        PixelFormat::try_from(pf).ok()
     }
 }
 
@@ -38,6 +45,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 max_audio_channels: None,
                 resolution: None,
                 has_image_extension,
+                pix_fmt: None,
             }
         }
     };
@@ -65,6 +73,12 @@ pub fn probe(input: &Path) -> Ffprobe {
             Some((w, h))
         });
 
+    let pix_fmt = probe
+        .streams
+        .into_iter()
+        .filter(|s| s.codec_type.as_deref() == Some("video"))
+        .find_map(|s| s.pix_fmt);
+
     Ffprobe {
         duration: duration.map_err(ProbeError::from),
         fps: fps.map_err(ProbeError::from),
@@ -72,6 +86,7 @@ pub fn probe(input: &Path) -> Ffprobe {
         max_audio_channels,
         resolution,
         has_image_extension,
+        pix_fmt,
     }
 }
 
