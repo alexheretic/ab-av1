@@ -1,4 +1,5 @@
 # Unreleased (v0.4.5)
+* Optimise pixel format choice for VMAF comparisons. _E.g. if both videos are yuv420p use that instead of yuv444p10le_.
 * Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
   Such samples will now encode to .mp4 in the same way _encode_ already did in this case.
 
@@ -14,7 +15,7 @@
 * Print _crf-search_ attempts even when stderr is not a tty.
 
 # v0.4.3
-* Fix terminal breaking sometimes after exitting early.
+* Fix terminal breaking sometimes after exiting early.
 
 # v0.4.2
 * Update _indicatif_ dependency to `0.17`.

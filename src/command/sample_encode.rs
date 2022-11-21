@@ -84,6 +84,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(svt.input.clone());
     let probe = ffprobe::probe(&input);
+    let input_pixel_format = probe.pixel_format();
     let input_is_image = probe.is_probably_an_image();
     let enc_args = svt.to_encoder_args(crf, &probe)?;
     let duration = probe.duration?;
@@ -191,7 +192,9 @@ pub async fn run(
             svt.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
-            PixelFormat::Yuv444p10le,
+            enc_args
+                .pixel_format()
+                .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
         )?;
         let mut vmaf_score = -1.0;
         while let Some(vmaf) = vmaf.next().await {
