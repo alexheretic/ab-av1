@@ -77,7 +77,7 @@ pub fn encode_sample(
     Ok((dest, stream))
 }
 
-/// Encode to mp4 including re-encoding audio with libopus, if present.
+/// Encode to output.
 pub fn encode(
     FfmpegEncodeArgs {
         input,

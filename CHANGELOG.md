@@ -1,9 +1,12 @@
 # Unreleased (v0.4.5)
+* Default to .mkv output format for all inputs (except .mkv which will continue to output .mkv by default).
+  This also applies to ffmpeg encoder sample output format. The previous behavior used the input extension
+  which may not have supported av1 (e.g. .m2ts).
+* For _auto-encode_ use the output extension also for ffmpeg encoder sample outputs if applicable.
 * Optimise pixel format choice for VMAF comparisons. Can significantly improve VMAF fps.
   _E.g. if both videos are yuv420p use that instead of yuv444p10le_.
-* Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
-  Such samples will now encode to .mp4 in the same way _encode_ already did in this case.
 * When sampling use full input video when sample time would be >= 85% of the total (down from 100%).
+* Eliminate repeated redundant ffprobe calls.
 * Windows: Support VMAF pixel format conversion for both distorted and reference.
   Gives more consistently accurate results and brings Windows in line with Linux functionality.
 

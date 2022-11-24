@@ -4,7 +4,8 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
-    ffmpeg, ffprobe,
+    ffmpeg,
+    ffprobe::{self, Ffprobe},
     process::FfmpegOut,
     svtav1::{self},
     temporary::{self, TempKind},
@@ -14,6 +15,7 @@ use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 use tokio::fs;
@@ -42,7 +44,8 @@ pub async fn encode(args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    run(args, &bar).await
+    let probe = ffprobe::probe(&args.args.input);
+    run(args, probe.into(), &bar).await
 }
 
 pub async fn run(
@@ -56,12 +59,13 @@ pub async fn run(
                 downmix_to_stereo,
             },
     }: Args,
+    probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    let probe = ffprobe::probe(&args.input);
+    // let probe = ffprobe::probe(&args.input);
     let output = output.unwrap_or_else(|| {
-        default_output_from(&args.input, &args.encoder, probe.is_probably_an_image())
+        default_output_name(&args.input, &args.encoder, probe.is_probably_an_image())
     });
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
@@ -149,20 +153,22 @@ pub async fn run(
     Ok(())
 }
 
-/// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
-    let pre = ffmpeg::pre_extension_name(encoder.as_str());
+/// * vid.mp4 -> "mp4"
+/// * vid.??? -> "mkv"
+/// * image.??? -> "avif"
+pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
     if is_image {
-        return input.with_extension(format!("{pre}.avif"));
+        return "avif";
     }
+    match input.extension().and_then(|e| e.to_str()) {
+        Some("mp4") => "mp4",
+        _ => "mkv",
+    }
+}
 
-    match input
-        .extension()
-        .and_then(|e| e.to_str())
-        // don't use extensions that won't work
-        .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
-    {
-        Some(ext) => input.with_extension(format!("{pre}.{ext}")),
-        _ => input.with_extension(format!("{pre}.mp4")),
-    }
+/// E.g. vid.mkv -> "vid.av1.mkv"
+pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
+    let pre = ffmpeg::pre_extension_name(encoder.as_str());
+    let ext = default_output_ext(input, is_image);
+    input.with_extension(format!("{pre}.{ext}"))
 }
