@@ -5,12 +5,14 @@ pub use err::Error;
 use crate::{
     command::{args, crf_search::err::ensure_or_no_good_crf, sample_encode, PROGRESS_CHARS},
     console_ext::style,
+    ffprobe,
+    ffprobe::Ffprobe,
 };
 use clap::Parser;
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 const BAR_LEN: u64 = 1000;
 
@@ -62,7 +64,9 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
             .progress_chars(PROGRESS_CHARS)
     );
 
-    let best = run(&args, bar.clone()).await;
+    let probe = ffprobe::probe(&args.args.input);
+
+    let best = run(&args, probe.into(), bar.clone()).await;
     bar.finish();
     let best = best?;
 
@@ -80,7 +84,7 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
 
 pub async fn run(
     Args {
-        args: svt,
+        args,
         min_vmaf,
         max_encoded_percent,
         min_crf,
@@ -89,12 +93,13 @@ pub async fn run(
         quiet,
         vmaf,
     }: &Args,
+    input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> Result<Sample, Error> {
     ensure_other!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
 
     let mut args = sample_encode::Args {
-        svt: svt.clone(),
+        args: args.clone(),
         crf: (min_crf + max_crf) / 2,
         sample: sample.clone(),
         keep: false,
@@ -110,8 +115,11 @@ pub async fn run(
         // how much we're prepared to go higher than the min-vmaf: +0.1, +0.2, +0.4, +0.8 ...
         let higher_tolerance = 2_f32.powi(run as i32 - 1) * 0.1;
         bar.set_message(format!("sampling crf {}, ", args.crf));
-        let mut sample_task =
-            tokio::task::spawn_local(sample_encode::run(args.clone(), sample_bar.clone()));
+        let mut sample_task = tokio::task::spawn_local(sample_encode::run(
+            args.clone(),
+            input_probe.clone(),
+            sample_bar.clone(),
+        ));
 
         let sample_task = loop {
             match tokio::time::timeout(Duration::from_millis(100), &mut sample_task).await {

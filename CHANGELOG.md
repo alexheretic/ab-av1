@@ -4,6 +4,7 @@
 * Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
   Such samples will now encode to .mp4 in the same way _encode_ already did in this case.
 * When sampling use full input video when sample time would be >= 85% of the total (down from 100%).
+* Eliminate repeated redundant ffprobe calls.
 * Windows: Support VMAF pixel format conversion for both distorted and reference.
   Gives more consistently accurate results and brings Windows in line with Linux functionality.
 

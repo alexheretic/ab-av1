@@ -6,7 +6,7 @@ use crate::{
     },
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
-    ffprobe,
+    ffprobe::{self, Ffprobe},
     process::FfmpegOut,
     sample,
     svtav1::{self, SvtArgs},
@@ -38,7 +38,7 @@ use tokio_stream::StreamExt;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub svt: args::Encode,
+    pub args: args::Encode,
 
     /// Encoder constant rate factor (1-63). Lower means better quality.
     #[arg(long)]
@@ -67,28 +67,29 @@ pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    run(args, bar).await?;
+    let probe = ffprobe::probe(&args.args.input);
+    run(args, probe.into(), bar).await?;
     Ok(())
 }
 
 pub async fn run(
     Args {
-        svt,
+        args,
         crf,
         sample: sample_args,
         keep,
         stdout_format,
         vmaf,
     }: Args,
+    input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
-    let input = Arc::new(svt.input.clone());
-    let probe = ffprobe::probe(&input);
-    let input_pixel_format = probe.pixel_format();
-    let input_is_image = probe.is_probably_an_image();
-    let enc_args = svt.to_encoder_args(crf, &probe)?;
-    let duration = probe.duration?;
-    let fps = probe.fps?;
+    let input = Arc::new(args.input.clone());
+    let input_pixel_format = input_probe.pixel_format();
+    let input_is_image = input_probe.is_probably_an_image();
+    let enc_args = args.to_encoder_args(crf, &input_probe)?;
+    let duration = input_probe.duration.clone()?;
+    let fps = input_probe.fps.clone()?;
     let samples = sample_args.sample_count(duration).max(1);
     let temp_dir = sample_args.temp_dir;
 
@@ -146,18 +147,18 @@ pub async fn run(
         bar.set_message("encoding,");
         let b = Instant::now();
         let (encoded_sample, mut output) = match enc_args.clone() {
-            EncoderArgs::SvtAv1(args) => {
+            EncoderArgs::SvtAv1(enc_args) => {
                 let (sample, output) = svtav1::encode_sample(
                     SvtArgs {
                         input: &sample,
-                        ..args
+                        ..enc_args
                     },
                     temp_dir.clone(),
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }
-            EncoderArgs::Ffmpeg(args) => {
-                let default_output = default_output_from(&input, &svt.encoder, input_is_image);
+            EncoderArgs::Ffmpeg(enc_args) => {
+                let default_output = default_output_from(&input, &args.encoder, input_is_image);
                 let dest_ext = default_output
                     .extension()
                     .and_then(|ext| ext.to_str())
@@ -166,7 +167,7 @@ pub async fn run(
                 let (sample, output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
                         input: &sample,
-                        ..args
+                        ..enc_args
                     },
                     temp_dir.clone(),
                     dest_ext,
@@ -189,7 +190,7 @@ pub async fn run(
         bar.set_message("vmaf running,");
         let mut vmaf = vmaf::run(
             &sample,
-            svt.vfilter.as_deref(),
+            args.vfilter.as_deref(),
             &encoded_sample,
             &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
             enc_args
@@ -254,7 +255,7 @@ pub async fn run(
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
-            style(svt.encode_hint(crf)).dim().italic(),
+            style(args.encode_hint(crf)).dim().italic(),
         );
         // stdout result
         stdout_format.print_result(

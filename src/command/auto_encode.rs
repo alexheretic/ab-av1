@@ -10,7 +10,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 /// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 ///
@@ -36,11 +36,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
+    let input_probe = Arc::new(ffprobe::probe(&search.args.input));
+
     let output = encode.output.unwrap_or_else(|| {
         default_output_from(
             &search.args.input,
             &search.args.encoder,
-            ffprobe::probe(&search.args.input).is_probably_an_image(),
+            input_probe.is_probably_an_image(),
         )
     });
 
@@ -56,7 +58,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         bar.println(style!("Encoding {out}").dim().to_string());
     }
 
-    let best = match crf_search::run(&search, bar.clone()).await {
+    let best = match crf_search::run(&search, input_probe.clone(), bar.clone()).await {
         Ok(best) => best,
         Err(err) => {
             if let crf_search::Error::NoGoodCrf { last } = &err {
@@ -113,6 +115,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 ..encode
             },
         },
+        input_probe,
         &bar,
     )
     .await
