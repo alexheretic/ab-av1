@@ -165,7 +165,7 @@ pub async fn run(
                         ..enc_args
                     },
                     temp_dir.clone(),
-                    sample_args.extension.as_deref().unwrap_or("mp4"),
+                    sample_args.extension.as_deref().unwrap_or("mkv"),
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }

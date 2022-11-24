@@ -75,7 +75,7 @@ pub fn encode_sample(
     Ok((dest, yuv_pipe.merge(svt)))
 }
 
-/// Encode to mp4 including re-encoding audio with libopus, if present.
+/// Encode to output (e.g. mkv).
 pub fn encode(
     SvtArgs {
         input,
@@ -144,9 +144,9 @@ pub fn encode(
         .spawn()
         .context("ffmpeg to-output")?;
 
-    let to_mp4 = FfmpegOut::stream(to_output, "ffmpeg to-output");
+    let to_output_stream = FfmpegOut::stream(to_output, "ffmpeg to-output");
 
-    Ok(yuv_pipe.merge(svt).merge(to_mp4))
+    Ok(yuv_pipe.merge(svt).merge(to_output_stream))
 }
 
 pub fn default_audio_codec(

@@ -18,7 +18,7 @@ use std::{
 pub struct EncodeToOutput {
     /// Output file, by default the same as input with `.av1` before the extension.
     ///
-    /// E.g. if unspecified: -i vid.mp4 --> vid.av1.mp4
+    /// E.g. if unspecified: -i vid.mkv --> vid.av1.mkv
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 

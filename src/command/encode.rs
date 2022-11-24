@@ -153,20 +153,20 @@ pub async fn run(
     Ok(())
 }
 
-/// * vid.mkv -> "mkv"
-/// * vid.??? -> "mp4"
+/// * vid.mp4 -> "mp4"
+/// * vid.??? -> "mkv"
 /// * image.??? -> "avif"
 pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
     if is_image {
         return "avif";
     }
     match input.extension().and_then(|e| e.to_str()) {
-        Some("mkv") => "mkv",
-        _ => "mp4",
+        Some("mp4") => "mp4",
+        _ => "mkv",
     }
 }
 
-/// E.g. vid.mp4 -> "vid.av1.mp4"
+/// E.g. vid.mkv -> "vid.av1.mkv"
 pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
     let ext = default_output_ext(input, is_image);
