@@ -1,7 +1,7 @@
 use crate::{
     command::{
         args, crf_search,
-        encode::{self, default_output_from},
+        encode::{self, default_output_name},
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -39,12 +39,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let input_probe = Arc::new(ffprobe::probe(&search.args.input));
 
     let output = encode.output.unwrap_or_else(|| {
-        default_output_from(
+        default_output_name(
             &search.args.input,
             &search.args.encoder,
             input_probe.is_probably_an_image(),
         )
     });
+    search.sample.set_extension_from_output(&output);
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()

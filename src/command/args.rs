@@ -5,8 +5,13 @@ mod vmaf;
 pub use encode::*;
 pub use vmaf::*;
 
+use crate::{command::encode::default_output_ext, ffprobe::Ffprobe};
 use clap::Parser;
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 /// Encoding args that apply when encoding to an output.
 #[derive(Parser, Clone)]
@@ -53,6 +58,10 @@ pub struct Sample {
     /// Defaults to using the input's directory.
     #[arg(long, env = "AB_AV1_TEMP_DIR")]
     pub temp_dir: Option<PathBuf>,
+
+    /// Extension preference for encoded samples (ffmpeg encoder only).
+    #[arg(skip)]
+    pub extension: Option<Arc<str>>,
 }
 
 impl Sample {
@@ -62,5 +71,13 @@ impl Sample {
             return s;
         }
         (input_duration.as_secs_f64() / self.sample_every.as_secs_f64().max(1.0)).ceil() as _
+    }
+
+    pub fn set_extension_from_input(&mut self, input: &Path, probe: &Ffprobe) {
+        self.extension = Some(default_output_ext(input, probe.is_probably_an_image()).into());
+    }
+
+    pub fn set_extension_from_output(&mut self, output: &Path) {
+        self.extension = output.extension().and_then(|e| e.to_str().map(Into::into));
     }
 }

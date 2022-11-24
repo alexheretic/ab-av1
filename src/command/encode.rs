@@ -65,7 +65,7 @@ pub async fn run(
     let defaulting_output = output.is_none();
     // let probe = ffprobe::probe(&args.input);
     let output = output.unwrap_or_else(|| {
-        default_output_from(
+        default_output_name(
             &args.input,
             &args.encoder,
             input_probe.is_probably_an_image(),
@@ -158,20 +158,22 @@ pub async fn run(
     Ok(())
 }
 
-/// * input: vid.ext -> output: vid.av1.ext
-pub fn default_output_from(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
-    let pre = ffmpeg::pre_extension_name(encoder.as_str());
+/// * vid.mkv -> "mkv"
+/// * vid.??? -> "mp4"
+/// * image.??? -> "avif"
+pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
     if is_image {
-        return input.with_extension(format!("{pre}.avif"));
+        return "avif";
     }
+    match input.extension().and_then(|e| e.to_str()) {
+        Some("mkv") => "mkv",
+        _ => "mp4",
+    }
+}
 
-    match input
-        .extension()
-        .and_then(|e| e.to_str())
-        // don't use extensions that won't work
-        .filter(|e| *e != "avi" && *e != "y4m" && *e != "ivf")
-    {
-        Some(ext) => input.with_extension(format!("{pre}.{ext}")),
-        _ => input.with_extension(format!("{pre}.mp4")),
-    }
+/// E.g. vid.mp4 -> "vid.av1.mp4"
+pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
+    let pre = ffmpeg::pre_extension_name(encoder.as_str());
+    let ext = default_output_ext(input, is_image);
+    input.with_extension(format!("{pre}.{ext}"))
 }

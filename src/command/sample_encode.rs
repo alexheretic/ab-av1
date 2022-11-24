@@ -1,7 +1,6 @@
 use crate::{
     command::{
         args::{self, EncoderArgs, PixelFormat},
-        encode::default_output_from,
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -59,7 +58,7 @@ pub struct Args {
     pub vmaf: args::Vmaf,
 }
 
-pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
+pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")?
@@ -68,6 +67,8 @@ pub async fn sample_encode(args: Args) -> anyhow::Result<()> {
     bar.enable_steady_tick(Duration::from_millis(100));
 
     let probe = ffprobe::probe(&args.args.input);
+    args.sample
+        .set_extension_from_input(&args.args.input, &probe);
     run(args, probe.into(), bar).await?;
     Ok(())
 }
@@ -158,19 +159,13 @@ pub async fn run(
                 (sample, futures::StreamExt::boxed_local(output))
             }
             EncoderArgs::Ffmpeg(enc_args) => {
-                let default_output = default_output_from(&input, &args.encoder, input_is_image);
-                let dest_ext = default_output
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or("mp4");
-
                 let (sample, output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
                         input: &sample,
                         ..enc_args
                     },
                     temp_dir.clone(),
-                    dest_ext,
+                    sample_args.extension.as_deref().unwrap_or("mp4"),
                 )?;
                 (sample, futures::StreamExt::boxed_local(output))
             }

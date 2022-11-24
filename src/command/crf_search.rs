@@ -50,14 +50,14 @@ pub struct Args {
     #[clap(flatten)]
     pub sample: args::Sample,
 
-    #[arg(skip)]
-    pub quiet: bool,
-
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
+
+    #[arg(skip)]
+    pub quiet: bool,
 }
 
-pub async fn crf_search(args: Args) -> anyhow::Result<()> {
+pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
@@ -65,6 +65,8 @@ pub async fn crf_search(args: Args) -> anyhow::Result<()> {
     );
 
     let probe = ffprobe::probe(&args.args.input);
+    args.sample
+        .set_extension_from_input(&args.args.input, &probe);
 
     let best = run(&args, probe.into(), bar.clone()).await;
     bar.finish();

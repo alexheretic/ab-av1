@@ -1,4 +1,8 @@
 # Unreleased (v0.4.5)
+* Default to .mp4 output format for all inputs (except .mkv which will continue to output .mkv by default).
+  This also applies to ffmpeg encoder sample output format. The previous behavior used the input extension
+  which may not have supported av1 (e.g. .m2ts).
+* For _auto-encode_ use the output extension also for ffmpeg encoder sample outputs if applicable.
 * Optimise pixel format choice for VMAF comparisons. Can significantly improve VMAF fps.
   _E.g. if both videos are yuv420p use that instead of yuv444p10le_.
 * Fix overridden `--encoder` .avi file samples using the same extension, which will generally not work.
