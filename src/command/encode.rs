@@ -59,17 +59,13 @@ pub async fn run(
                 downmix_to_stereo,
             },
     }: Args,
-    input_probe: Arc<Ffprobe>,
+    probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
     // let probe = ffprobe::probe(&args.input);
     let output = output.unwrap_or_else(|| {
-        default_output_name(
-            &args.input,
-            &args.encoder,
-            input_probe.is_probably_an_image(),
-        )
+        default_output_name(&args.input, &args.encoder, probe.is_probably_an_image())
     });
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
@@ -80,15 +76,14 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let enc_args = args.to_encoder_args(crf, &input_probe)?;
-    let has_audio = input_probe.has_audio;
-    if let Ok(d) = input_probe.duration {
+    let enc_args = args.to_encoder_args(crf, &probe)?;
+    let has_audio = probe.has_audio;
+    if let Ok(d) = probe.duration {
         bar.set_length(d.as_secs().max(1));
     }
 
     // only downmix if achannels > 3
-    let stereo_downmix =
-        downmix_to_stereo && input_probe.max_audio_channels.map_or(false, |c| c > 3);
+    let stereo_downmix = downmix_to_stereo && probe.max_audio_channels.map_or(false, |c| c > 3);
     let audio_codec = audio_codec.as_deref();
     if stereo_downmix && audio_codec == Some("copy") {
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
@@ -111,7 +106,7 @@ pub async fn run(
                 if fps > 0.0 {
                     bar.set_message(format!("{fps} fps, "));
                 }
-                if input_probe.duration.is_ok() {
+                if probe.duration.is_ok() {
                     bar.set_position(time.as_secs());
                 }
             }
