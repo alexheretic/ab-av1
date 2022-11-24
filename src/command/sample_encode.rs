@@ -93,8 +93,8 @@ pub async fn run(
     let temp_dir = sample_args.temp_dir;
 
     let (samples, full_pass) = {
-        if SAMPLE_SIZE * samples as _ >= duration {
-            // if the input is a lower duration than the samples just encode the whole thing
+        if SAMPLE_SIZE * samples as _ >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85) {
+            // if the sample time is most of the full input time just encode the whole thing
             (1, true)
         } else {
             (samples, false)
