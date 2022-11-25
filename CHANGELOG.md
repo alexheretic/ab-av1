@@ -1,8 +1,9 @@
-# Unreleased (v0.4.5)
-* Default to .mkv output format for all inputs (except .mkv which will continue to output .mkv by default).
+# Unreleased (v0.5.0)
+* Default to .mkv output format for all inputs (except .mp4 which will continue to output .mp4 by default).
   This also applies to ffmpeg encoder sample output format. The previous behavior used the input extension
   which may not have supported av1 (e.g. .m2ts).
 * For _auto-encode_ use the output extension also for ffmpeg encoder sample outputs if applicable.
+* When creating lossless samples for encode analysis use .mkv (or .mp4) extension for better ffmpeg compatibility.
 * Encode mkv outputs with the "cues" seek index at the front to optimise stream usage.
 * Optimise pixel format choice for VMAF comparisons. Can significantly improve VMAF fps.
   _E.g. if both videos are yuv420p use that instead of yuv444p10le_.

@@ -1,5 +1,6 @@
 //! ffmpeg logic
 use crate::{
+    command::encode::default_output_ext,
     process::{ensure_success, CommandExt},
     temporary::{self, TempKind},
 };
@@ -20,10 +21,7 @@ pub async fn copy(
     frames: u32,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<PathBuf> {
-    let ext = input
-        .extension()
-        .and_then(|e| e.to_str())
-        .context("input has no extension")?;
+    let ext = default_output_ext(input, false); // not an image
     let mut dest =
         input.with_extension(format!("sample{}+{frames}f.{ext}", sample_start.as_secs()));
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
