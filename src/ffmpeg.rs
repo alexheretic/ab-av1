@@ -95,9 +95,10 @@ pub fn encode(
     downmix_to_stereo: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
     let oargs: HashSet<_> = output_args.iter().map(|a| a.as_str()).collect();
+    let output_ext = output.extension().and_then(|e| e.to_str());
 
-    let add_faststart =
-        output.extension().and_then(|e| e.to_str()) == Some("mp4") && !oargs.contains("-movflags");
+    let add_faststart = output_ext == Some("mp4") && !oargs.contains("-movflags");
+    let add_cues_to_front = output_ext == Some("mkv") && !oargs.contains("-cues_to_front");
 
     let audio_codec = audio_codec.unwrap_or_else(|| {
         svtav1::default_audio_codec(input, output, downmix_to_stereo, has_audio)
@@ -122,6 +123,7 @@ pub fn encode(
         .arg2_if(downmix_to_stereo, "-ac", 2)
         .arg2_if(set_ba_128k, "-b:a", "128k")
         .arg2_if(add_faststart, "-movflags", "+faststart")
+        .arg2_if(add_cues_to_front, "-cues_to_front", "y")
         .arg(output)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

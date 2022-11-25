@@ -92,7 +92,9 @@ pub fn encode(
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
-    let add_faststart = output.extension().and_then(|e| e.to_str()) == Some("mp4");
+    let output_ext = output.extension().and_then(|e| e.to_str());
+    let add_faststart = output_ext == Some("mp4");
+    let add_cues_to_front = output_ext == Some("mkv");
 
     let audio_codec = audio_codec
         .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
@@ -137,6 +139,7 @@ pub fn encode(
         .arg2("-c:v", "copy")
         .arg2_if(audio_codec == "libopus", "-b:a", "128k")
         .arg2_if(add_faststart, "-movflags", "+faststart")
+        .arg2_if(add_cues_to_front, "-cues_to_front", "y")
         .arg(output)
         .stdin(svt_out)
         .stdout(Stdio::null())
