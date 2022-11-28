@@ -1,4 +1,4 @@
-# Unreleased (v0.5.0)
+# v0.5.0
 * Default to .mkv output format for all inputs (except .mp4 which will continue to output .mp4 by default).
   This also applies to ffmpeg encoder sample output format. The previous behavior used the input extension
   which may not have supported av1 (e.g. .m2ts).
