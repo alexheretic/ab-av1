@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - '*'
+
+jobs:
+  win-bin:
+    name: Build Windows binary
+    runs-on: windows-latest
+    steps:
+    - run: rustup update stable
+    - uses: actions/checkout@v2
+    - run: cargo build --release --locked
+    - uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/release/ab-av1.exe
+        tag: ${{ github.ref }}
+        overwrite: true
