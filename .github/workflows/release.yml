@@ -12,10 +12,11 @@ jobs:
     steps:
     - run: rustup update stable
     - uses: actions/checkout@v2
-    - run: cargo build --release --locked
+    - run: cargo build --locked
+    - run: dir target
     - uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/ab-av1.exe
+        file: target/debug/ab-av1.exe
         tag: ${{ github.ref }}
         overwrite: true
