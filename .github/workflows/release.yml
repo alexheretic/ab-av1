@@ -17,6 +17,5 @@ jobs:
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: README.md
-        asset_name: the-readme
         tag: ${{ github.ref }}
         overwrite: true
