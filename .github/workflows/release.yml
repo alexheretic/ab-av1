@@ -1,0 +1,21 @@
+name: Rust
+
+on:
+  push:
+    tags:
+    - '*'
+
+jobs:
+  win-bin:
+    name: Build Windows binary
+    runs-on: windows-latest
+    steps:
+    - run: rustup update stable
+    - uses: actions/checkout@v2
+    - run: cargo build --release --locked
+    - if: startsWith(github.ref, 'refs/tags/')
+      uses: fnkr/github-action-ghr@v1
+      env:
+        GHR_PATH: target/ab-av1.exe
+        GHR_REPLACE: true
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

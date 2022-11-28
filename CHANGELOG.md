@@ -11,6 +11,7 @@
 * Eliminate repeated redundant ffprobe calls.
 * Windows: Support VMAF pixel format conversion for both distorted and reference.
   Gives more consistently accurate results and brings Windows in line with Linux functionality.
+* Windows: ab-av1.exe binaries will now be automatically built and attached to releases.
 
 # v0.4.4
 * Add _crf-search_, _auto-encode_, _encode_ & _vmaf_ command support for encoding images into avif.
