@@ -1,5 +1,7 @@
 # Unreleased (v0.5.1)
-* Change encoded size prediction logic to estimate video stream size (or image size) only. Change text to clarify this.
+* Change encoded size prediction logic to estimate video stream size (or image size) only.
+  This should be much more consistent than the previous method. 
+  Change _crf-search_, _sample-encode_ result text to clarify this.
 * Improve video size prediction logic to account for samples that do not turn out as 20s.
 * Fix full-pass sample encode progress bar.
 * Use label "Full pass" instead of "Sample 1/1" when doing a full pass _sample-encode_.
