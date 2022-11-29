@@ -121,7 +121,7 @@ fn parse_label_substr<'a>(label: &str, line: &'a str) -> Option<&'a str> {
 fn parse_label_size(label: &str, line: &str) -> Option<u64> {
     let size = parse_label_substr(label, line)?;
     let kbs: u64 = size.strip_suffix("kB")?.parse().ok()?;
-    Some(kbs * 1000)
+    Some(kbs * 1024)
 }
 
 /// Output chunk storage.
@@ -205,8 +205,8 @@ fn parse_ffmpeg_stream_sizes() {
     assert_eq!(
         FfmpegOut::try_parse(out),
         Some(FfmpegOut::StreamSizes {
-            video: 2897022 * 1000,
-            audio: 537162 * 1000,
+            video: 2897022 * 1024,
+            audio: 537162 * 1024,
             subtitle: 0,
             other: 0,
         })

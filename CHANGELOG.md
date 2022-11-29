@@ -1,7 +1,6 @@
 # Unreleased (v0.5.1)
 * Change encoded size prediction logic to estimate video stream size only. Change text to clarify this.
 * Improve video size prediction logic to account for samples that do not turn out as 20s.
-* Fix ffmpeg output size parsing kB inaccuracy.
 * Fix full-pass sample encode progress bar.
 * Use label "Full pass" instead of "Sample 1/1" when doing a full pass _sample-encode_.
 
