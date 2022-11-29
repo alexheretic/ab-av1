@@ -87,6 +87,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
+    let input_is_image = input_probe.is_probably_an_image();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
     let duration = input_probe.duration.clone()?;
     let fps = input_probe.fps.clone()?;
@@ -94,8 +95,10 @@ pub async fn run(
     let temp_dir = sample_args.temp_dir;
 
     let (samples, sample_duration, full_pass) = {
-        if input_probe.is_probably_an_image()
-            || SAMPLE_SIZE * samples as _ >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85)
+        if input_is_image {
+            (1, duration.max(Duration::from_secs(1)), true)
+        } else if SAMPLE_SIZE * samples as _
+            >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85)
         {
             // if the sample time is most of the full input time just encode the whole thing
             (1, duration, true)
@@ -262,6 +265,7 @@ pub async fn run(
             output.predicted_encode_size,
             output.encode_percent,
             output.predicted_encode_time,
+            input_is_image,
         );
     }
 
@@ -379,7 +383,7 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(self, vmaf: f32, size: u64, percent: f64, time: Duration) {
+    fn print_result(self, vmaf: f32, size: u64, percent: f64, time: Duration, image: bool) {
         match self {
             Self::Human => {
                 let vmaf = match vmaf {
@@ -399,8 +403,12 @@ impl StdoutFormat {
                     v => style!("{}%", v).bold(),
                 };
                 let time = style(HumanDuration(time)).bold();
+                let enc_description = match image {
+                    true => "image",
+                    false => "video stream",
+                };
                 println!(
-                    "VMAF {vmaf:.2} predicted video stream size {size} ({percent}) taking {time}"
+                    "VMAF {vmaf:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
             Self::Json => {

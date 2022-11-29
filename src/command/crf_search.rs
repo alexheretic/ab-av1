@@ -65,6 +65,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     );
 
     let probe = ffprobe::probe(&args.args.input);
+    let input_is_image = probe.is_probably_an_image();
     args.sample
         .set_extension_from_input(&args.args.input, &probe);
 
@@ -79,7 +80,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
         style(args.args.encode_hint(best.crf)).dim().italic(),
     );
 
-    StdoutFormat::Human.print_result(&best);
+    StdoutFormat::Human.print_result(&best, input_is_image);
 
     Ok(())
 }
@@ -252,7 +253,7 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(self, Sample { crf, enc, .. }: &Sample) {
+    fn print_result(self, Sample { crf, enc, .. }: &Sample, image: bool) {
         match self {
             Self::Human => {
                 let crf = style(crf).bold().green();
@@ -260,8 +261,12 @@ impl StdoutFormat {
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
                 let percent = style!("{}%", enc.encode_percent.round()).bold().green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
+                let enc_description = match image {
+                    true => "image",
+                    false => "video stream",
+                };
                 println!(
-                    "crf {crf} VMAF {vmaf:.2} predicted video stream size {size} ({percent}) taking {time}"
+                    "crf {crf} VMAF {vmaf:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
         }
