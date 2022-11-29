@@ -87,7 +87,6 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
-    let input_is_image = input_probe.is_probably_an_image();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
     let duration = input_probe.duration.clone()?;
     let fps = input_probe.fps.clone()?;
@@ -95,7 +94,9 @@ pub async fn run(
     let temp_dir = sample_args.temp_dir;
 
     let (samples, full_pass) = {
-        if SAMPLE_SIZE * samples as _ >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85) {
+        if input_probe.is_probably_an_image()
+            || SAMPLE_SIZE * samples as _ >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85)
+        {
             // if the sample time is most of the full input time just encode the whole thing
             (1, true)
         } else {
@@ -180,6 +181,7 @@ pub async fn run(
         }
         let encode_time = b.elapsed();
         let encoded_size = fs::metadata(&encoded_sample).await?.len();
+        let encoded_probe = ffprobe::probe(&encoded_sample);
 
         // calculate vmaf
         bar.set_message("vmaf running,");
@@ -187,7 +189,7 @@ pub async fn run(
             &sample,
             args.vfilter.as_deref(),
             &encoded_sample,
-            &vmaf.ffmpeg_lavfi(ffprobe::probe(&encoded_sample).resolution),
+            &vmaf.ffmpeg_lavfi(encoded_probe.resolution),
             enc_args
                 .pixel_format()
                 .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
@@ -226,6 +228,7 @@ pub async fn run(
             sample_size,
             encoded_size,
             encode_time,
+            sample_duration: encoded_probe.duration.unwrap_or(SAMPLE_SIZE),
         });
 
         // Early clean. Note: Avoid cleaning copy samples
@@ -236,13 +239,11 @@ pub async fn run(
     }
     bar.finish();
 
-    let input_size = fs::metadata(&*input).await?.len();
-    let predicted_size = results.encoded_percent_size() * input_size as f64 / 100.0;
     let output = Output {
         vmaf: results.mean_vmaf(),
-        predicted_encode_size: predicted_size as _,
-        predicted_encode_percent: results.encoded_percent_size(),
-        predicted_encode_time: results.estimate_encode_time(duration, input_is_image),
+        predicted_encode_size: results.estimate_encode_size(duration, full_pass),
+        encode_percent: results.encoded_percent_size(),
+        predicted_encode_time: results.estimate_encode_time(duration, full_pass),
     };
 
     if !bar.is_hidden() {
@@ -256,7 +257,7 @@ pub async fn run(
         stdout_format.print_result(
             output.vmaf,
             output.predicted_encode_size,
-            output.predicted_encode_percent,
+            output.encode_percent,
             output.predicted_encode_time,
         );
     }
@@ -302,12 +303,18 @@ struct EncodeResult {
     encoded_size: u64,
     vmaf_score: f32,
     encode_time: Duration,
+    /// Duration of the sample.
+    ///
+    /// This should be close to `SAMPLE_SIZE` but may deviate due to how samples are cut.
+    sample_duration: Duration,
 }
 
 trait EncodeResults {
     fn encoded_percent_size(&self) -> f64;
     fn mean_vmaf(&self) -> f32;
-    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration;
+    /// Return estimated encoded **video stream** size.
+    fn estimate_encode_size(&self, input_duration: Duration, single_full_pass: bool) -> u64;
+    fn estimate_encode_time(&self, input_duration: Duration, single_full_pass: bool) -> Duration;
 }
 impl EncodeResults for Vec<EncodeResult> {
     fn encoded_percent_size(&self) -> f64 {
@@ -326,17 +333,31 @@ impl EncodeResults for Vec<EncodeResult> {
         self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
     }
 
-    fn estimate_encode_time(&self, input_duration: Duration, image: bool) -> Duration {
+    fn estimate_encode_size(&self, input_duration: Duration, single_full_pass: bool) -> u64 {
+        if self.is_empty() {
+            return 0;
+        }
+        if single_full_pass {
+            return self[0].encoded_size;
+        }
+
+        let sample_duration: Duration = self.iter().map(|s| s.sample_duration).sum();
+        let sample_factor = input_duration.as_secs_f64() / sample_duration.as_secs_f64();
+        let sample_encode_size: f64 = self.iter().map(|r| r.encoded_size as f64).sum();
+
+        (sample_encode_size * sample_factor).round() as _
+    }
+
+    fn estimate_encode_time(&self, input_duration: Duration, single_full_pass: bool) -> Duration {
         if self.is_empty() {
             return Duration::ZERO;
         }
-        if image {
+        if single_full_pass {
             return self[0].encode_time;
         }
 
-        let sample_factor =
-            input_duration.as_secs_f64() / (SAMPLE_SIZE_S as f64 * self.len() as f64);
-
+        let sample_duration: Duration = self.iter().map(|s| s.sample_duration).sum();
+        let sample_factor = input_duration.as_secs_f64() / sample_duration.as_secs_f64();
         let sample_encode_time: f64 = self.iter().map(|r| r.encode_time.as_secs_f64()).sum();
 
         let estimate = Duration::from_secs_f64(sample_encode_time * sample_factor);
@@ -376,7 +397,7 @@ impl StdoutFormat {
                 };
                 let time = style(HumanDuration(time)).bold();
                 println!(
-                    "VMAF {vmaf:.2} predicted full encode size {size} ({percent}) taking {time}"
+                    "VMAF {vmaf:.2} predicted video stream size {size} ({percent}) taking {time}"
                 );
             }
             Self::Json => {
@@ -392,10 +413,19 @@ impl StdoutFormat {
     }
 }
 
+/// Sample encode result.
 #[derive(Debug, Clone)]
 pub struct Output {
+    /// Sample mean VMAF score.
     pub vmaf: f32,
+    /// Estimated full encoded **video stream** size.
+    ///
+    /// Encoded sample size multiplied by duration.
     pub predicted_encode_size: u64,
-    pub predicted_encode_percent: f64,
+    /// Sample mean encoded percentage.
+    pub encode_percent: f64,
+    /// Estimated full encode time.
+    ///
+    /// Sample encode time multiplied by duration.
     pub predicted_encode_time: Duration,
 }

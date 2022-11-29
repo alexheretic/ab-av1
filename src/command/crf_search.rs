@@ -142,7 +142,7 @@ pub async fn run(
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
-        let sample_small_enough = sample.enc.predicted_encode_percent <= *max_encoded_percent as _;
+        let sample_small_enough = sample.enc.encode_percent <= *max_encoded_percent as _;
 
         if sample.enc.vmaf > *min_vmaf {
             // good
@@ -224,7 +224,7 @@ impl Sample {
         let mut crf = style(self.crf);
         let vmaf_label = style("VMAF").dim();
         let mut vmaf = style(self.enc.vmaf);
-        let mut percent = style!("{:.0}%", self.enc.predicted_encode_percent);
+        let mut percent = style!("{:.0}%", self.enc.encode_percent);
         let open = style("(").dim();
         let close = style(")").dim();
 
@@ -232,7 +232,7 @@ impl Sample {
             crf = crf.red().bright();
             vmaf = vmaf.red().bright();
         }
-        if self.enc.predicted_encode_percent > max_encoded_percent as _ {
+        if self.enc.encode_percent > max_encoded_percent as _ {
             crf = crf.red().bright();
             percent = percent.red().bright();
         }
@@ -258,12 +258,10 @@ impl StdoutFormat {
                 let crf = style(crf).bold().green();
                 let vmaf = style(enc.vmaf).bold().green();
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
-                let percent = style!("{}%", enc.predicted_encode_percent.round())
-                    .bold()
-                    .green();
+                let percent = style!("{}%", enc.encode_percent.round()).bold().green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
                 println!(
-                    "crf {crf} VMAF {vmaf:.2} predicted full encode size {size} ({percent}) taking {time}"
+                    "crf {crf} VMAF {vmaf:.2} predicted video stream size {size} ({percent}) taking {time}"
                 );
             }
         }
