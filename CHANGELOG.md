@@ -2,6 +2,8 @@
 * Change encoded size prediction logic to estimate video stream size only. Change text to clarify this.
 * Improve video size prediction logic to account for samples that do not turn out as 20s.
 * Fix ffmpeg output size parsing kB inaccuracy.
+* Fix full-pass sample encode progress bar.
+* Use label "Full pass" instead of "Sample 1/1" when doing a full pass _sample-encode_.
 
 # v0.5.0
 * Default to .mkv output format for all inputs (except .mp4 which will continue to output .mp4 by default).

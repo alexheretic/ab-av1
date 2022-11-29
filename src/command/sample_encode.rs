@@ -93,18 +93,18 @@ pub async fn run(
     let samples = sample_args.sample_count(duration).max(1);
     let temp_dir = sample_args.temp_dir;
 
-    let (samples, full_pass) = {
+    let (samples, sample_duration, full_pass) = {
         if input_probe.is_probably_an_image()
             || SAMPLE_SIZE * samples as _ >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85)
         {
             // if the sample time is most of the full input time just encode the whole thing
-            (1, true)
+            (1, duration, true)
         } else {
-            (samples, false)
+            (samples, SAMPLE_SIZE, false)
         }
     };
-
-    bar.set_length(SAMPLE_SIZE_S * samples * 2);
+    let sample_duration_s = sample_duration.as_secs();
+    bar.set_length(sample_duration_s * samples * 2);
 
     // Start creating copy samples async, this is IO bound & not cpu intensive
     let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
@@ -141,7 +141,10 @@ pub async fn run(
             None => break,
         };
         let (sample_idx, sample_n) = (sample_idx as u64, sample_idx + 1);
-        bar.set_prefix(format!("Sample {sample_n}/{samples}"));
+        match full_pass {
+            true => bar.set_prefix("Full pass"),
+            false => bar.set_prefix(format!("Sample {sample_n}/{samples}")),
+        };
 
         let (sample, sample_size) = sample?;
 
@@ -173,7 +176,7 @@ pub async fn run(
         };
         while let Some(progress) = output.next().await {
             if let FfmpegOut::Progress { time, fps, .. } = progress? {
-                bar.set_position(time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2);
+                bar.set_position(time.as_secs() + sample_idx * sample_duration_s * 2);
                 if fps > 0.0 {
                     bar.set_message(format!("enc {fps} fps,"));
                 }
@@ -203,7 +206,7 @@ pub async fn run(
                 }
                 VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                     bar.set_position(
-                        SAMPLE_SIZE_S + time.as_secs() + sample_idx * SAMPLE_SIZE_S * 2,
+                        sample_duration_s + time.as_secs() + sample_idx * sample_duration_s * 2,
                     );
                     if fps > 0.0 {
                         bar.set_message(format!("vmaf {fps} fps,"));
@@ -228,7 +231,7 @@ pub async fn run(
             sample_size,
             encoded_size,
             encode_time,
-            sample_duration: encoded_probe.duration.unwrap_or(SAMPLE_SIZE),
+            sample_duration: encoded_probe.duration.unwrap_or(sample_duration),
         });
 
         // Early clean. Note: Avoid cleaning copy samples
