@@ -73,8 +73,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 if last.enc.vmaf < search.min_vmaf {
                     vmaf = vmaf.red();
                 }
-                let mut percent = style!("{:.0}%", last.enc.predicted_encode_percent);
-                if last.enc.predicted_encode_percent > search.max_encoded_percent as _ {
+                let mut percent = style!("{:.0}%", last.enc.encode_percent);
+                if last.enc.encode_percent > search.max_encoded_percent as _ {
                     percent = percent.red();
                 }
                 bar.finish_with_message(format!(
@@ -95,7 +95,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         "crf {}, VMAF {:.2}, size {}",
         style(best.crf).green(),
         style(best.enc.vmaf).green(),
-        style(format!("{:.0}%", best.enc.predicted_encode_percent)).green(),
+        style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
     temporary::clean_all().await;
 

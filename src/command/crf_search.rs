@@ -65,6 +65,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     );
 
     let probe = ffprobe::probe(&args.args.input);
+    let input_is_image = probe.is_probably_an_image();
     args.sample
         .set_extension_from_input(&args.args.input, &probe);
 
@@ -79,7 +80,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
         style(args.args.encode_hint(best.crf)).dim().italic(),
     );
 
-    StdoutFormat::Human.print_result(&best);
+    StdoutFormat::Human.print_result(&best, input_is_image);
 
     Ok(())
 }
@@ -142,7 +143,7 @@ pub async fn run(
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
-        let sample_small_enough = sample.enc.predicted_encode_percent <= *max_encoded_percent as _;
+        let sample_small_enough = sample.enc.encode_percent <= *max_encoded_percent as _;
 
         if sample.enc.vmaf > *min_vmaf {
             // good
@@ -224,7 +225,7 @@ impl Sample {
         let mut crf = style(self.crf);
         let vmaf_label = style("VMAF").dim();
         let mut vmaf = style(self.enc.vmaf);
-        let mut percent = style!("{:.0}%", self.enc.predicted_encode_percent);
+        let mut percent = style!("{:.0}%", self.enc.encode_percent);
         let open = style("(").dim();
         let close = style(")").dim();
 
@@ -232,7 +233,7 @@ impl Sample {
             crf = crf.red().bright();
             vmaf = vmaf.red().bright();
         }
-        if self.enc.predicted_encode_percent > max_encoded_percent as _ {
+        if self.enc.encode_percent > max_encoded_percent as _ {
             crf = crf.red().bright();
             percent = percent.red().bright();
         }
@@ -252,18 +253,20 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(self, Sample { crf, enc, .. }: &Sample) {
+    fn print_result(self, Sample { crf, enc, .. }: &Sample, image: bool) {
         match self {
             Self::Human => {
                 let crf = style(crf).bold().green();
                 let vmaf = style(enc.vmaf).bold().green();
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
-                let percent = style!("{}%", enc.predicted_encode_percent.round())
-                    .bold()
-                    .green();
+                let percent = style!("{}%", enc.encode_percent.round()).bold().green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
+                let enc_description = match image {
+                    true => "image",
+                    false => "video stream",
+                };
                 println!(
-                    "crf {crf} VMAF {vmaf:.2} predicted full encode size {size} ({percent}) taking {time}"
+                    "crf {crf} VMAF {vmaf:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
         }
