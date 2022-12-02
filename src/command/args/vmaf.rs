@@ -7,7 +7,9 @@ use std::{fmt::Display, sync::Arc, thread};
 pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
-    /// See https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
+    /// By default `n_threads` is set to available system threads.
+    ///
+    /// Also see https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
     #[arg(long = "vmaf", value_parser = parse_vmaf_arg)]
     pub vmaf_args: Vec<Arc<str>>,
 

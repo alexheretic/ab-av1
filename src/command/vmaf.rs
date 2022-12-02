@@ -13,10 +13,14 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
 use tokio_stream::StreamExt;
 
-/// Simple full calculation of VMAF score distorted file vs original file.
-///
+/// Full VMAF score calculation, distorted file vs reference file.
 /// Works with videos and images.
+///
+/// * Auto sets model version (4k or 1k) according to resolution.
+/// * Auto sets `n_threads` to system threads.
+/// * Auto upscales lower resolution videos to the model.
 #[derive(Parser)]
+#[clap(verbatim_doc_comment)]
 #[group(skip)]
 pub struct Args {
     /// Reference video file.
