@@ -19,6 +19,7 @@ use tokio_stream::StreamExt;
 /// * Auto sets model version (4k or 1k) according to resolution.
 /// * Auto sets `n_threads` to system threads.
 /// * Auto upscales lower resolution videos to the model.
+/// * Converts distorted & reference to appropriate format yuv streams before passing to vmaf.
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
 #[group(skip)]
