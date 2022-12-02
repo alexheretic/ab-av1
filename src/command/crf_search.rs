@@ -117,11 +117,7 @@ pub async fn run(
 ) -> Result<Sample, Error> {
     ensure_other!(min_crf < max_crf, "Invalid --min-crf & --max-crf");
 
-    let crf_increment = match crf_increment {
-        Some(inc) => *inc,
-        None if args.encoder.as_str().contains("av1") => 1.0,
-        None => 0.1,
-    };
+    let crf_increment = crf_increment.unwrap_or_else(|| args.encoder.default_crf_increment());
     let min_q = q_from_crf(*min_crf, crf_increment);
     let max_q = q_from_crf(*max_crf, crf_increment);
     let mut q: u64 = (min_q + max_q) / 2;

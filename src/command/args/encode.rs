@@ -362,6 +362,16 @@ impl Encoder {
             Self::Ffmpeg(vcodec) => vcodec,
         }
     }
+
+    /// Returns default crf-increment.
+    ///
+    /// Generally 0.1 if codec supports decimal crf.
+    pub fn default_crf_increment(&self) -> f32 {
+        match self.as_str() {
+            "libx264" | "libx265" | "libvpx-vp9" => 0.1,
+            _ => 1.0,
+        }
+    }
 }
 
 impl std::str::FromStr for Encoder {

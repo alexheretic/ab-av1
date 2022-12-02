@@ -3,8 +3,8 @@
 * Use mkv containers for all lossless samples. Previously mp4 samples were used for mp4 inputs, however in all test cases
   mkv 20s samples were better quality. This change improves accuracy for all mp4 input files.
 * Add _crf-search_, _auto-encode_ arg `--crf-increment`. Previously this would always be 1.
-  Defaults to **1** for av1 encoders, **0.1** otherwise.
-* Add _crf-search_, _auto-encode_ arg ``--thorough` which more exhaustively searches to find
+  Defaults to **1**. -e libx264, libx265 & libvpx-vp9 default to **0.1**.
+* Add _crf-search_, _auto-encode_ arg `--thorough` which more exhaustively searches to find
   a crf value close to the specified min-vmaf.
 
 # v0.5.2
