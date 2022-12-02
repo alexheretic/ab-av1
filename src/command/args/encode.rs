@@ -1,6 +1,7 @@
 use crate::{
     ffmpeg::FfmpegEncodeArgs,
     ffprobe::{Ffprobe, ProbeError},
+    float::TerseF32,
     svtav1::SvtArgs,
 };
 use anyhow::ensure;
@@ -150,7 +151,7 @@ impl Encode {
         if let Encoder::Ffmpeg(vcodec) = encoder {
             write!(hint, " -e {vcodec}").unwrap();
         }
-        write!(hint, " -i {input} --crf {crf}").unwrap();
+        write!(hint, " -i {input} --crf {}", TerseF32(crf)).unwrap();
 
         if let Some(preset) = preset {
             write!(hint, " --preset {preset}").unwrap();

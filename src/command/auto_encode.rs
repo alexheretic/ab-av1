@@ -79,7 +79,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 }
                 bar.finish_with_message(format!(
                     "crf {}, VMAF {vmaf:.2}, size {percent}",
-                    style(last.crf).red(),
+                    style(last.crf()).red(),
                 ));
             }
             bar.finish();
@@ -93,7 +93,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
     bar.finish_with_message(format!(
         "crf {}, VMAF {:.2}, size {}",
-        style(best.crf).green(),
+        style(best.crf()).green(),
         style(best.enc.vmaf).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
@@ -110,7 +110,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     encode::run(
         encode::Args {
             args: search.args,
-            crf: best.crf.into(),
+            crf: best.crf(),
             encode: args::EncodeToOutput {
                 output: Some(output),
                 ..encode

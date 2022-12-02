@@ -3,6 +3,7 @@ mod console_ext;
 mod duration;
 mod ffmpeg;
 mod ffprobe;
+mod float;
 mod process;
 mod sample;
 mod svtav1;

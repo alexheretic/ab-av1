@@ -7,6 +7,7 @@ use crate::{
     console_ext::style,
     ffprobe,
     ffprobe::Ffprobe,
+    float::TerseF32,
 };
 use clap::Parser;
 use console::style;
@@ -40,12 +41,25 @@ pub struct Args {
     pub max_encoded_percent: f32,
 
     /// Minimum (highest quality) crf value to try.
-    #[arg(long, default_value_t = 10)]
-    pub min_crf: u8,
+    #[arg(long, default_value_t = 10.0)]
+    pub min_crf: f32,
 
     /// Maximum (lowest quality) crf value to try.
-    #[arg(long, default_value_t = 55)]
-    pub max_crf: u8,
+    #[arg(long, default_value_t = 55.0)]
+    pub max_crf: f32,
+
+    /// Keep searching until a crf is found no more than min_vmaf+0.1 or all
+    /// possibilities have been attempted.
+    ///
+    /// By default the "higher vmaf tolerance" increases with each attempt (0.1, 0.2, 0.4 etc...).
+    #[arg(long)]
+    pub thorough: bool,
+
+    /// Constant rate factor search increment precision.
+    ///
+    /// Defaults to 1.0 for av1, 0.1 for other encoders.
+    #[arg(long)]
+    pub crf_increment: Option<f32>,
 
     #[clap(flatten)]
     pub sample: args::Sample,
@@ -77,7 +91,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style(args.args.encode_hint(best.crf.into())).dim().italic(),
+        style(args.args.encode_hint(best.crf())).dim().italic(),
     );
 
     StdoutFormat::Human.print_result(&best, input_is_image);
@@ -92,6 +106,8 @@ pub async fn run(
         max_encoded_percent,
         min_crf,
         max_crf,
+        crf_increment,
+        thorough,
         sample,
         quiet,
         vmaf,
@@ -99,11 +115,20 @@ pub async fn run(
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> Result<Sample, Error> {
-    ensure_other!(min_crf <= max_crf, "Invalid --min-crf & --max-crf");
+    ensure_other!(min_crf < max_crf, "Invalid --min-crf & --max-crf");
+
+    let crf_increment = match crf_increment {
+        Some(inc) => *inc,
+        None if args.encoder.as_str().contains("av1") => 1.0,
+        None => 0.1,
+    };
+    let min_q = q_from_crf(*min_crf, crf_increment);
+    let max_q = q_from_crf(*max_crf, crf_increment);
+    let mut q: u64 = (min_q + max_q) / 2;
 
     let mut args = sample_encode::Args {
         args: args.clone(),
-        crf: ((min_crf + max_crf) / 2).into(),
+        crf: 0.0,
         sample: sample.clone(),
         keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,
@@ -115,9 +140,14 @@ pub async fn run(
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
-        // how much we're prepared to go higher than the min-vmaf: +0.1, +0.2, +0.4, +0.8 ...
-        let higher_tolerance = 2_f32.powi(run as i32 - 1) * 0.1;
-        bar.set_message(format!("sampling crf {}, ", args.crf));
+        // how much we're prepared to go higher than the min-vmaf
+        let higher_tolerance = match thorough {
+            true => 0.1,
+            // +0.1, +0.2, +0.4, +0.8 ..
+            _ => 2_f32.powi(run as i32 - 1) * 0.1,
+        };
+        args.crf = q.to_crf(crf_increment);
+        bar.set_message(format!("sampling crf {}, ", TerseF32(args.crf)));
         let mut sample_task = tokio::task::spawn_local(sample_encode::run(
             args.clone(),
             input_probe.clone(),
@@ -129,7 +159,7 @@ pub async fn run(
                 Err(_) => {
                     let sample_progress = sample_bar.position() as f64
                         / sample_bar.length().unwrap_or(1).max(1) as f64;
-                    bar.set_position(guess_progress(run, sample_progress) as _);
+                    bar.set_position(guess_progress(run, sample_progress, *thorough) as _);
                 }
                 Ok(o) => {
                     sample_bar.set_position(0);
@@ -139,7 +169,8 @@ pub async fn run(
         };
 
         let sample = Sample {
-            crf: args.crf as _,
+            crf_increment,
+            q,
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
@@ -152,51 +183,51 @@ pub async fn run(
             }
             let u_bound = crf_attempts
                 .iter()
-                .filter(|s| s.crf > sample.crf)
-                .min_by_key(|s| s.crf);
+                .filter(|s| s.q > sample.q)
+                .min_by_key(|s| s.q);
 
             match u_bound {
-                Some(upper) if upper.crf == sample.crf + 1 => {
+                Some(upper) if upper.q == sample.q + 1 => {
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
                 Some(upper) => {
-                    args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample).into();
+                    q = vmaf_lerp_q(*min_vmaf, upper, &sample);
                 }
-                None if sample.crf == *max_crf => {
+                None if sample.q == max_q => {
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
-                None if run == 1 && sample.crf + 1 < *max_crf => {
-                    args.crf = ((sample.crf + max_crf) / 2).into();
+                None if run == 1 && sample.q + 1 < max_q => {
+                    q = (sample.q + max_q) / 2;
                 }
-                None => args.crf = (*max_crf).into(),
+                None => q = max_q,
             };
         } else {
             // not good enough
-            if !sample_small_enough || sample.crf == *min_crf {
+            if !sample_small_enough || sample.q == min_q {
                 sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
                 ensure_or_no_good_crf!(false, sample);
             }
 
             let l_bound = crf_attempts
                 .iter()
-                .filter(|s| s.crf < sample.crf)
-                .max_by_key(|s| s.crf);
+                .filter(|s| s.q < sample.q)
+                .max_by_key(|s| s.q);
 
             match l_bound {
-                Some(lower) if lower.crf + 1 == sample.crf => {
+                Some(lower) if lower.q + 1 == sample.q => {
                     sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
-                    args.crf = vmaf_lerp_crf(*min_vmaf, &sample, lower).into();
+                    q = vmaf_lerp_q(*min_vmaf, &sample, lower);
                 }
-                None if run == 1 && sample.crf > min_crf + 1 => {
-                    args.crf = ((min_crf + sample.crf) / 2).into();
+                None if run == 1 && sample.q > min_q + 1 => {
+                    q = (min_q + sample.q) / 2;
                 }
-                None => args.crf = (*min_crf).into(),
+                None => q = min_q,
             };
         }
         sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
@@ -207,10 +238,15 @@ pub async fn run(
 #[derive(Debug, Clone)]
 pub struct Sample {
     pub enc: sample_encode::Output,
-    pub crf: u8,
+    pub crf_increment: f32,
+    pub q: u64,
 }
 
 impl Sample {
+    pub fn crf(&self) -> f32 {
+        self.q.to_crf(self.crf_increment)
+    }
+
     fn print_attempt(
         &self,
         bar: &ProgressBar,
@@ -222,7 +258,7 @@ impl Sample {
             return;
         }
         let crf_label = style("- crf").dim();
-        let mut crf = style(self.crf);
+        let mut crf = style(TerseF32(self.crf()));
         let vmaf_label = style("VMAF").dim();
         let mut vmaf = style(self.enc.vmaf);
         let mut percent = style!("{:.0}%", self.enc.encode_percent);
@@ -253,10 +289,11 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(self, Sample { crf, enc, .. }: &Sample, image: bool) {
+    fn print_result(self, sample: &Sample, image: bool) {
         match self {
             Self::Human => {
-                let crf = style(crf).bold().green();
+                let crf = style(TerseF32(sample.crf())).bold().green();
+                let enc = &sample.enc;
                 let vmaf = style(enc.vmaf).bold().green();
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
                 let percent = style!("{}%", enc.encode_percent.round()).bold().green();
@@ -273,30 +310,57 @@ impl StdoutFormat {
     }
 }
 
-/// Produce a crf value between given samples using vmaf score linear interpolation.
-fn vmaf_lerp_crf(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u8 {
+/// Produce a q value between given samples using vmaf score linear interpolation.
+fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
     assert!(
         worse_q.enc.vmaf <= min_vmaf
             && worse_q.enc.vmaf < better_q.enc.vmaf
-            && better_q.crf < worse_q.crf + 1,
+            && better_q.q < worse_q.q + 1,
         "invalid vmaf_lerp_crf usage: {worse_q:?}, {better_q:?}"
     );
 
     let vmaf_diff = better_q.enc.vmaf - worse_q.enc.vmaf;
     let vmaf_factor = (min_vmaf - worse_q.enc.vmaf) / vmaf_diff;
 
-    let crf_diff = worse_q.crf - better_q.crf;
-    let lerp = (worse_q.crf as f32 - crf_diff as f32 * vmaf_factor).round() as u8;
-    lerp.max(better_q.crf + 1).min(worse_q.crf - 1)
+    let q_diff = worse_q.q - better_q.q;
+    let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as u64;
+    lerp.max(better_q.q + 1).min(worse_q.q - 1)
 }
 
 /// sample_progress: [0, 1]
-fn guess_progress(run: usize, sample_progress: f64) -> f64 {
+fn guess_progress(run: usize, sample_progress: f64, thorough: bool) -> f64 {
     let total_runs_guess = match () {
+        // Guess 6 iterations for a "thorough" search
+        _ if thorough && run < 7 => 6.0,
         // Guess 4 iterations initially
         _ if run < 5 => 4.0,
         // Otherwise guess next will work
         _ => run as f64,
     };
     ((run - 1) as f64 + sample_progress) * BAR_LEN as f64 / total_runs_guess
+}
+
+/// Calculate "q" as a quality value integer multiple of crf.
+///
+/// * crf=33.5, inc=0.1 -> q=335
+/// * crf=27, inc=1 -> q=27
+#[inline]
+fn q_from_crf(crf: f32, crf_increment: f32) -> u64 {
+    (f64::from(crf) / f64::from(crf_increment)).round() as _
+}
+
+trait QualityValue {
+    fn to_crf(self, crf_increment: f32) -> f32;
+}
+impl QualityValue for u64 {
+    #[inline]
+    fn to_crf(self, crf_increment: f32) -> f32 {
+        ((self as f64) * f64::from(crf_increment)) as _
+    }
+}
+
+#[test]
+fn q_crf_conversions() {
+    assert_eq!(q_from_crf(33.5, 0.1), 335);
+    assert_eq!(q_from_crf(27.0, 1.0), 27);
 }
