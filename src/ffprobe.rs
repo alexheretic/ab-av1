@@ -1,6 +1,6 @@
 //! ffprobe logic
 use crate::command::args::PixelFormat;
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use std::{fmt, path::Path, time::Duration};
 
 pub struct Ffprobe {
@@ -95,7 +95,19 @@ fn read_duration(probe: &ffprobe::FfProbe) -> anyhow::Result<Duration> {
         Some(duration_s) => {
             let duration_f = duration_s
                 .parse::<f64>()
-                .context("invalid ffprobe video duration")?;
+                .with_context(|| format!("invalid ffprobe video duration: {duration_s:?}"))?;
+            ensure!(
+                duration_f.is_sign_positive(),
+                "invalid negative ffprobe video duration: {duration_s:?}"
+            );
+            ensure!(
+                duration_f.is_finite(),
+                "invalid infinite ffprobe video duration: {duration_s:?}"
+            );
+            ensure!(
+                duration_f < i64::MAX as f64,
+                "invalid length ffprobe video duration: {duration_s:?}"
+            );
             Ok(Duration::from_secs_f64(duration_f))
         }
         None => Ok(Duration::ZERO),
