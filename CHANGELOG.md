@@ -1,4 +1,4 @@
-# Unreleased (v0.5.1)
+# v0.5.1
 * Change encoded size prediction logic to estimate video stream size (or image size) only.
   This should be much more consistent than the previous method. 
   Change _crf-search_, _sample-encode_ result text to clarify this.
