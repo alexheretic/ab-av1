@@ -22,7 +22,7 @@ pub struct FfmpegEncodeArgs<'a> {
     pub vcodec: Arc<str>,
     pub vfilter: Option<&'a str>,
     pub pix_fmt: PixelFormat,
-    pub crf: u8,
+    pub crf: f32,
     pub preset: Option<Arc<str>>,
     pub output_args: Vec<Arc<String>>,
     pub input_args: Vec<Arc<String>>,

@@ -118,7 +118,7 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
 }
 
 impl Encode {
-    pub fn to_encoder_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
+    pub fn to_encoder_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
         match self.encoder {
             Encoder::SvtAv1 => Ok(EncoderArgs::SvtAv1(self.to_svt_args(crf, probe)?)),
             Encoder::Ffmpeg(ref vcodec) => Ok(EncoderArgs::Ffmpeg(self.to_ffmpeg_args(
@@ -129,7 +129,7 @@ impl Encode {
         }
     }
 
-    pub fn encode_hint(&self, crf: u8) -> String {
+    pub fn encode_hint(&self, crf: f32) -> String {
         let Self {
             encoder,
             input,
@@ -183,7 +183,7 @@ impl Encode {
         hint
     }
 
-    fn to_svt_args(&self, crf: u8, probe: &Ffprobe) -> anyhow::Result<SvtArgs<'_>> {
+    fn to_svt_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<SvtArgs<'_>> {
         ensure!(
             self.enc_args.is_empty(),
             "--enc args cannot be used with svt-av1, instead use --svt"
@@ -231,7 +231,7 @@ impl Encode {
     fn to_ffmpeg_args(
         &self,
         vcodec: Arc<str>,
-        crf: u8,
+        crf: f32,
         probe: &Ffprobe,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
         ensure!(
@@ -581,11 +581,11 @@ fn to_svt_args_default_over_3m() {
         keyint,
         scd,
         args,
-    } = svt.to_svt_args(32, &probe).expect("to_svt_args");
+    } = svt.to_svt_args(32.0, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
     assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
-    assert_eq!(crf, 32);
+    assert_eq!(crf, 32.0);
     assert_eq!(preset, 8);
     assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
     assert_eq!(keyint, Some(240)); // based off filter fps
@@ -627,11 +627,11 @@ fn to_svt_args_default_under_3m() {
         keyint,
         scd,
         args,
-    } = svt.to_svt_args(32, &probe).expect("to_svt_args");
+    } = svt.to_svt_args(32.0, &probe).expect("to_svt_args");
 
     assert_eq!(input, svt.input);
     assert_eq!(vfilter, None);
-    assert_eq!(crf, 32);
+    assert_eq!(crf, 32.0);
     assert_eq!(preset, 7);
     assert_eq!(pix_fmt, PixelFormat::Yuv420p);
     assert_eq!(keyint, None);

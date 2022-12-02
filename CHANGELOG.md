@@ -1,3 +1,6 @@
+# Unreleased (v0.5.3)
+* Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
+
 # v0.5.2
 * Fix ffprobe duration conversion error scenarios panicking.
 * Tweak encoded size prediction logic to consider both input file size & encoded sample duration.
