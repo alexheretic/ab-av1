@@ -97,9 +97,7 @@ pub async fn run(
     let (samples, sample_duration, full_pass) = {
         if input_is_image {
             (1, duration.max(Duration::from_secs(1)), true)
-        } else if SAMPLE_SIZE * samples as _
-            >= Duration::from_secs_f64(duration.as_secs_f64() * 0.85)
-        {
+        } else if SAMPLE_SIZE * samples as _ >= duration.mul_f64(0.85) {
             // if the sample time is most of the full input time just encode the whole thing
             (1, duration, true)
         } else {
@@ -234,7 +232,11 @@ pub async fn run(
             sample_size,
             encoded_size,
             encode_time,
-            sample_duration: encoded_probe.duration.unwrap_or(sample_duration),
+            sample_duration: encoded_probe
+                .duration
+                .ok()
+                .filter(|d| !d.is_zero())
+                .unwrap_or(sample_duration),
         });
 
         // Early clean. Note: Avoid cleaning copy samples
@@ -365,9 +367,9 @@ impl EncodeResults for Vec<EncodeResult> {
 
         let sample_duration: Duration = self.iter().map(|s| s.sample_duration).sum();
         let sample_factor = input_duration.as_secs_f64() / sample_duration.as_secs_f64();
-        let sample_encode_time: f64 = self.iter().map(|r| r.encode_time.as_secs_f64()).sum();
+        let sample_encode_time: Duration = self.iter().map(|r| r.encode_time).sum();
 
-        let estimate = Duration::from_secs_f64(sample_encode_time * sample_factor);
+        let estimate = sample_encode_time.mul_f64(sample_factor);
         if estimate < Duration::from_secs(1) {
             estimate
         } else {
