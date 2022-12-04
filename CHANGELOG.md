@@ -1,4 +1,4 @@
-# Unreleased (v0.5.2)
+# v0.5.2
 * Fix ffprobe duration conversion error scenarios panicking.
 * Tweak encoded size prediction logic to consider both input file size & encoded sample duration.
 
