@@ -117,7 +117,9 @@ pub async fn run(
 ) -> Result<Sample, Error> {
     ensure_other!(min_crf < max_crf, "Invalid --min-crf & --max-crf");
 
-    let crf_increment = crf_increment.unwrap_or_else(|| args.encoder.default_crf_increment());
+    let crf_increment = crf_increment
+        .unwrap_or_else(|| args.encoder.default_crf_increment())
+        .max(0.001);
     let min_q = q_from_crf(*min_crf, crf_increment);
     let max_q = q_from_crf(*max_crf, crf_increment);
     let mut q: u64 = (min_q + max_q) / 2;
@@ -136,12 +138,13 @@ pub async fn run(
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
-        // how much we're prepared to go higher than the min-vmaf
+        // how much we're prepared to go higher than the min-vmaf (at least +0.1)
         let higher_tolerance = match thorough {
             true => 0.1,
-            // +0.1, +0.2, +0.4, +0.8 ..
-            _ => 2_f32.powi(run as i32 - 1) * 0.1,
-        };
+            // increment 1 => +0.1, +0.2, +0.4, +0.8 ..
+            _ => crf_increment * 2_f32.powi(run as i32 - 1) * 0.1,
+        }
+        .max(0.1);
         args.crf = q.to_crf(crf_increment);
         bar.set_message(format!("sampling crf {}, ", TerseF32(args.crf)));
         let mut sample_task = tokio::task::spawn_local(sample_encode::run(
