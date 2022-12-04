@@ -18,7 +18,7 @@ use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -249,7 +249,11 @@ pub async fn run(
 
     let output = Output {
         vmaf: results.mean_vmaf(),
-        predicted_encode_size: results.estimate_encode_size(duration, full_pass),
+        // Using file size * encode_percent can over-estimate. However, if it ends up less
+        // than the duration estimation it may turn out to be more accurate.
+        predicted_encode_size: results
+            .estimate_encode_size_by_duration(duration, full_pass)
+            .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?),
         encode_percent: results.encoded_percent_size(),
         predicted_encode_time: results.estimate_encode_time(duration, full_pass),
     };
@@ -320,9 +324,16 @@ struct EncodeResult {
 
 trait EncodeResults {
     fn encoded_percent_size(&self) -> f64;
+
     fn mean_vmaf(&self) -> f32;
-    /// Return estimated encoded **video stream** size.
-    fn estimate_encode_size(&self, input_duration: Duration, single_full_pass: bool) -> u64;
+
+    /// Return estimated encoded **video stream** size by multiplying sample size by duration.
+    fn estimate_encode_size_by_duration(
+        &self,
+        input_duration: Duration,
+        single_full_pass: bool,
+    ) -> u64;
+
     fn estimate_encode_time(&self, input_duration: Duration, single_full_pass: bool) -> Duration;
 }
 impl EncodeResults for Vec<EncodeResult> {
@@ -342,7 +353,11 @@ impl EncodeResults for Vec<EncodeResult> {
         self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
     }
 
-    fn estimate_encode_size(&self, input_duration: Duration, single_full_pass: bool) -> u64 {
+    fn estimate_encode_size_by_duration(
+        &self,
+        input_duration: Duration,
+        single_full_pass: bool,
+    ) -> u64 {
         if self.is_empty() {
             return 0;
         }
@@ -376,6 +391,26 @@ impl EncodeResults for Vec<EncodeResult> {
             Duration::from_secs(estimate.as_secs())
         }
     }
+}
+
+/// Return estimated encoded **video stream** size by applying the sample percentage
+/// change to the input file size.
+///
+/// This can over-estimate the larger the non-video proportion of the input.
+async fn estimate_encode_size_by_file_percent(
+    results: &Vec<EncodeResult>,
+    input: &Path,
+    single_full_pass: bool,
+) -> anyhow::Result<u64> {
+    if results.is_empty() {
+        return Ok(0);
+    }
+    if single_full_pass {
+        return Ok(results[0].encoded_size);
+    }
+    let encode_proportion = results.encoded_percent_size() / 100.0;
+
+    Ok((fs::metadata(input).await?.len() as f64 * encode_proportion).round() as _)
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
