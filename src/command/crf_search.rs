@@ -48,7 +48,7 @@ pub struct Args {
     #[arg(long, default_value_t = 55.0)]
     pub max_crf: f32,
 
-    /// Keep searching until a crf is found no more than min_vmaf+0.1 or all
+    /// Keep searching until a crf is found no more than min_vmaf+0.05 or all
     /// possibilities have been attempted.
     ///
     /// By default the "higher vmaf tolerance" increases with each attempt (0.1, 0.2, 0.4 etc...).
@@ -138,13 +138,13 @@ pub async fn run(
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
-        // how much we're prepared to go higher than the min-vmaf (at least +0.1)
+        // how much we're prepared to go higher than the min-vmaf
         let higher_tolerance = match thorough {
-            true => 0.1,
-            // increment 1 => +0.1, +0.2, +0.4, +0.8 ..
-            _ => crf_increment * 2_f32.powi(run as i32 - 1) * 0.1,
-        }
-        .max(0.1);
+            true => 0.05,
+            // increment 1.0 => +0.1, +0.2, +0.4, +0.8 ..
+            // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
+            _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
+        };
         args.crf = q.to_crf(crf_increment);
         bar.set_message(format!("sampling crf {}, ", TerseF32(args.crf)));
         let mut sample_task = tokio::task::spawn_local(sample_encode::run(
