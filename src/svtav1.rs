@@ -22,7 +22,7 @@ pub struct SvtArgs<'a> {
     pub input: &'a Path,
     pub vfilter: Option<&'a str>,
     pub pix_fmt: PixelFormat,
-    pub crf: u8,
+    pub crf: f32,
     pub preset: u8,
     pub keyint: Option<i32>,
     pub scd: u8,

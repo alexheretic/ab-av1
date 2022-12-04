@@ -77,7 +77,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style(args.args.encode_hint(best.crf)).dim().italic(),
+        style(args.args.encode_hint(best.crf.into())).dim().italic(),
     );
 
     StdoutFormat::Human.print_result(&best, input_is_image);
@@ -103,7 +103,7 @@ pub async fn run(
 
     let mut args = sample_encode::Args {
         args: args.clone(),
-        crf: (min_crf + max_crf) / 2,
+        crf: ((min_crf + max_crf) / 2).into(),
         sample: sample.clone(),
         keep: false,
         stdout_format: sample_encode::StdoutFormat::Json,
@@ -139,7 +139,7 @@ pub async fn run(
         };
 
         let sample = Sample {
-            crf: args.crf,
+            crf: args.crf as _,
             enc: sample_task??,
         };
         crf_attempts.push(sample.clone());
@@ -161,16 +161,16 @@ pub async fn run(
                     return Ok(sample);
                 }
                 Some(upper) => {
-                    args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample);
+                    args.crf = vmaf_lerp_crf(*min_vmaf, upper, &sample).into();
                 }
                 None if sample.crf == *max_crf => {
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
                 None if run == 1 && sample.crf + 1 < *max_crf => {
-                    args.crf = (sample.crf + max_crf) / 2;
+                    args.crf = ((sample.crf + max_crf) / 2).into();
                 }
-                None => args.crf = *max_crf,
+                None => args.crf = (*max_crf).into(),
             };
         } else {
             // not good enough
@@ -191,12 +191,12 @@ pub async fn run(
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
-                    args.crf = vmaf_lerp_crf(*min_vmaf, &sample, lower);
+                    args.crf = vmaf_lerp_crf(*min_vmaf, &sample, lower).into();
                 }
                 None if run == 1 && sample.crf > min_crf + 1 => {
-                    args.crf = (min_crf + sample.crf) / 2;
+                    args.crf = ((min_crf + sample.crf) / 2).into();
                 }
-                None => args.crf = *min_crf,
+                None => args.crf = (*min_crf).into(),
             };
         }
         sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
