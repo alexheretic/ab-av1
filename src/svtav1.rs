@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Context;
 use std::{
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -27,6 +28,19 @@ pub struct SvtArgs<'a> {
     pub keyint: Option<i32>,
     pub scd: u8,
     pub args: Vec<&'a str>,
+}
+
+impl SvtArgs<'_> {
+    pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
+        // input not relevant to sample encoding
+        self.vfilter.hash(state);
+        self.pix_fmt.hash(state);
+        self.crf.to_bits().hash(state);
+        self.preset.hash(state);
+        self.keyint.hash(state);
+        self.scd.hash(state);
+        self.args.hash(state);
+    }
 }
 
 /// Encode to sample ivf.

@@ -9,6 +9,7 @@ use crate::{
 use anyhow::Context;
 use std::{
     collections::HashSet,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -27,6 +28,19 @@ pub struct FfmpegEncodeArgs<'a> {
     pub preset: Option<Arc<str>>,
     pub output_args: Vec<Arc<String>>,
     pub input_args: Vec<Arc<String>>,
+}
+
+impl FfmpegEncodeArgs<'_> {
+    pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
+        // input not relevant to sample encoding
+        self.vcodec.hash(state);
+        self.vfilter.hash(state);
+        self.pix_fmt.hash(state);
+        self.crf.to_bits().hash(state);
+        self.preset.hash(state);
+        self.output_args.hash(state);
+        self.input_args.hash(state);
+    }
 }
 
 /// Encode a sample.
