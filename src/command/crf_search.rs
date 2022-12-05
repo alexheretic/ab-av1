@@ -313,13 +313,23 @@ impl StdoutFormat {
     }
 }
 
-/// Produce a q value between given samples using vmaf score linear interpolation.
+/// Produce a q value between given samples using vmaf score linear interpolation
+/// so the output q value should produce the `min_vmaf`.
+///
+/// Note: `worse_q` will be a numerically higher q value (worse quality),
+///       `better_q` a numerically lower q value (better quality).
+///
+/// # Issues
+/// Crf values do not linearly map to VMAF changes (or anything?) so this is a flawed method,
+/// though it seems to work better than a binary search.
+/// Perhaps a better approximation of a general crf->vmaf model could be found.
+/// This would be helpful particularly for small crf-increments.
 fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
     assert!(
         worse_q.enc.vmaf <= min_vmaf
             && worse_q.enc.vmaf < better_q.enc.vmaf
-            && better_q.q < worse_q.q + 1,
-        "invalid vmaf_lerp_crf usage: {worse_q:?}, {better_q:?}"
+            && worse_q.q > better_q.q,
+        "invalid vmaf_lerp_crf usage: ({min_vmaf}, {worse_q:?}, {better_q:?})"
     );
 
     let vmaf_diff = better_q.enc.vmaf - worse_q.enc.vmaf;
