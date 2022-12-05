@@ -1,6 +1,5 @@
 //! ffmpeg logic
 use crate::{
-    command::encode::default_output_ext,
     process::{ensure_success, CommandExt},
     temporary::{self, TempKind},
 };
@@ -21,9 +20,9 @@ pub async fn copy(
     frames: u32,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<PathBuf> {
-    let ext = default_output_ext(input, false); // not an image
-    let mut dest =
-        input.with_extension(format!("sample{}+{frames}f.{ext}", sample_start.as_secs()));
+    // Always using mkv for the samples works better than, e.g. using mp4 for mp4s
+    // see https://github.com/alexheretic/ab-av1/issues/82#issuecomment-1337306325
+    let mut dest = input.with_extension(format!("sample{}+{frames}f.mkv", sample_start.as_secs()));
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
         temp.push(name);
         dest = temp;
