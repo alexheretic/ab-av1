@@ -45,8 +45,10 @@ pub struct Args {
     pub min_crf: f32,
 
     /// Maximum (lowest quality) crf value to try.
-    #[arg(long, default_value_t = 55.0)]
-    pub max_crf: f32,
+    ///
+    /// [default: 55, 46 for x264,x265]
+    #[arg(long)]
+    pub max_crf: Option<f32>,
 
     /// Keep searching until a crf is found no more than min_vmaf+0.05 or all
     /// possibilities have been attempted.
@@ -57,7 +59,7 @@ pub struct Args {
 
     /// Constant rate factor search increment precision.
     ///
-    /// Defaults to 1.0 for av1, 0.1 for other encoders.
+    /// [default: 1.0, 0.1 for x264,x265,vp9]
     #[arg(long)]
     pub crf_increment: Option<f32>,
 
@@ -115,13 +117,15 @@ pub async fn run(
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> Result<Sample, Error> {
-    ensure_other!(min_crf < max_crf, "Invalid --min-crf & --max-crf");
+    let max_crf = max_crf.unwrap_or_else(|| args.encoder.default_max_crf());
+    ensure_other!(*min_crf < max_crf, "Invalid --min-crf & --max-crf");
 
     let crf_increment = crf_increment
         .unwrap_or_else(|| args.encoder.default_crf_increment())
         .max(0.001);
+
     let min_q = q_from_crf(*min_crf, crf_increment);
-    let max_q = q_from_crf(*max_crf, crf_increment);
+    let max_q = q_from_crf(max_crf, crf_increment);
     let mut q: u64 = (min_q + max_q) / 2;
 
     let mut args = sample_encode::Args {

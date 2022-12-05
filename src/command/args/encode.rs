@@ -372,6 +372,14 @@ impl Encoder {
             _ => 1.0,
         }
     }
+
+    pub fn default_max_crf(&self) -> f32 {
+        match self.as_str() {
+            "libx264" | "libx265" => 46.0,
+            // Works well for svt-av1
+            _ => 55.0,
+        }
+    }
 }
 
 impl std::str::FromStr for Encoder {

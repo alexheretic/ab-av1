@@ -6,6 +6,7 @@
   Defaults to **1**. -e libx264, libx265 & libvpx-vp9 default to **0.1**.
 * Add _crf-search_, _auto-encode_ arg `--thorough` which more exhaustively searches to find
   a crf value close to the specified min-vmaf.
+* Default `--max-crf` to **46** for libx264 & libx265 encoders.
 
 # v0.5.2
 * Fix ffprobe duration conversion error scenarios panicking.
