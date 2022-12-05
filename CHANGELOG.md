@@ -1,5 +1,7 @@
 # Unreleased (v0.5.3)
 * Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
+* Use mkv containers for all lossless samples. Previously mp4 samples were used for mp4 inputs, however in all test cases
+  mkv 20s samples were better quality. This change improves accuracy for all mp4 input files.
 
 # v0.5.2
 * Fix ffprobe duration conversion error scenarios panicking.
