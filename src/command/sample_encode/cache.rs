@@ -1,13 +1,7 @@
 //! _sample-encode_ file system caching logic.
 use crate::command::args::EncoderArgs;
 use anyhow::Context;
-use std::{
-    ffi::OsStr,
-    hash::Hash,
-    path::{Path, PathBuf},
-    time::Duration,
-};
-use tokio::fs;
+use std::{ffi::OsStr, hash::Hash, path::Path, time::Duration};
 
 /// Return a previous stored encode result for the same sample & args.
 pub async fn cached_encode(
@@ -35,50 +29,57 @@ pub async fn cached_encode(
         enc_args,
     );
 
-    let key = match Key::try_from_hash(hash) {
-        Ok(k) => k,
-        _ => return (None, None),
-    };
+    let key = Key(hash);
 
-    match fs::read(key.path())
-        .await
-        .ok()
-        .and_then(|d| serde_json::from_slice::<super::EncodeResult>(&d).ok())
+    match tokio::task::spawn_blocking::<_, anyhow::Result<_>>(move || {
+        let db = open_db()?;
+        Ok(match db.get(key.0.to_hex().as_bytes())? {
+            Some(data) => Some(serde_json::from_slice::<super::EncodeResult>(&data)?),
+            None => None,
+        })
+    })
+    .await
+    .context("db.get task failed")
+    .and_then(|r| r)
     {
-        Some(mut result) => {
+        Ok(Some(mut result)) => {
             result.from_cache = true;
             (Some(result), Some(key))
         }
-        _ => (None, Some(key)),
+        Ok(None) => (None, Some(key)),
+        Err(err) => {
+            eprintln!("cache error: {err}");
+            (None, None)
+        }
     }
 }
 
 pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Result<()> {
     let data = serde_json::to_vec(result)?;
-    let path = key.path();
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).await?;
+    let insert = tokio::task::spawn_blocking(move || {
+        let db = open_db()?;
+        db.insert(key.0.to_hex().as_bytes(), data)?;
+        db.flush()
+    })
+    .await
+    .context("db.insert task failed")
+    .and_then(|r| Ok(r?));
+
+    if let Err(err) = insert {
+        eprintln!("cache error: {err}")
     }
-    fs::write(path, data).await?;
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct Key(PathBuf);
-
-impl Key {
-    fn try_from_hash(hash: blake3::Hash) -> anyhow::Result<Self> {
-        let mut path = dirs::cache_dir().context("no cache dir found")?;
-        path.push("ab-av1");
-        path.push(hash.to_hex().as_str());
-        path.set_extension("json");
-        Ok(Self(path))
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
+fn open_db() -> sled::Result<sled::Db> {
+    let mut path = dirs::cache_dir().expect("no cache dir found");
+    path.push("ab-av1");
+    path.push("sample-encode-cache");
+    sled::open(path)
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Key(blake3::Hash);
 
 fn hash_encode(input_info: impl Hash, enc_args: &EncoderArgs<'_>) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
