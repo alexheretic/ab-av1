@@ -1,4 +1,8 @@
 # Unreleased (v0.6.0)
+* Cache _sample-encode_ results in $CACHE_DIR/ab-av1 directory. This allows repeated same crf sample encoding
+  to be avoided when running _sample-encode_, _crf-search_ & _auto-encode_. E.g. repeating a _crf-search_ with
+  a different min-vmaf.<br/>
+  Caching is enabled by default. Can be disabled with `--cache false` or setting env var `AB_AV1_CACHE=false`.
 * Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
 * Use mkv containers for all lossless samples. Previously mp4 samples were used for mp4 inputs, however in all test cases
   mkv 20s samples were better quality. This change improves accuracy for all mp4 input files.

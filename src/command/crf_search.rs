@@ -64,7 +64,12 @@ pub struct Args {
     pub crf_increment: Option<f32>,
 
     /// Enable sample-encode caching.
-    #[arg(long, default_value_t = true, action(ArgAction::Set))]
+    #[arg(
+        long,
+        default_value_t = true,
+        env = "AB_AV1_CACHE",
+        action(ArgAction::Set)
+    )]
     pub cache: bool,
 
     #[clap(flatten)]

@@ -53,7 +53,12 @@ pub struct Args {
     pub keep: bool,
 
     /// Enable sample-encode caching.
-    #[arg(long, default_value_t = true, action(ArgAction::Set))]
+    #[arg(
+        long,
+        default_value_t = true,
+        env = "AB_AV1_CACHE",
+        action(ArgAction::Set)
+    )]
     pub cache: bool,
 
     /// Stdout message format `human` or `json`.
