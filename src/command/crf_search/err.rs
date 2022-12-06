@@ -32,6 +32,7 @@ impl std::error::Error for Error {}
 
 macro_rules! ensure_other {
     ($condition:expr, $reason:expr) => {
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !$condition {
             return Err($crate::command::crf_search::err::Error::Other(
                 anyhow::anyhow!($reason),

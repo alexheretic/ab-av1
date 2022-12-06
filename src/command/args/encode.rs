@@ -1,6 +1,7 @@
 use crate::{
     ffmpeg::FfmpegEncodeArgs,
     ffprobe::{Ffprobe, ProbeError},
+    float::TerseF32,
     svtav1::SvtArgs,
 };
 use anyhow::ensure;
@@ -150,7 +151,7 @@ impl Encode {
         if let Encoder::Ffmpeg(vcodec) = encoder {
             write!(hint, " -e {vcodec}").unwrap();
         }
-        write!(hint, " -i {input} --crf {crf}").unwrap();
+        write!(hint, " -i {input} --crf {}", TerseF32(crf)).unwrap();
 
         if let Some(preset) = preset {
             write!(hint, " --preset {preset}").unwrap();
@@ -359,6 +360,24 @@ impl Encoder {
         match self {
             Self::SvtAv1 => "svt-av1",
             Self::Ffmpeg(vcodec) => vcodec,
+        }
+    }
+
+    /// Returns default crf-increment.
+    ///
+    /// Generally 0.1 if codec supports decimal crf.
+    pub fn default_crf_increment(&self) -> f32 {
+        match self.as_str() {
+            "libx264" | "libx265" | "libvpx-vp9" => 0.1,
+            _ => 1.0,
+        }
+    }
+
+    pub fn default_max_crf(&self) -> f32 {
+        match self.as_str() {
+            "libx264" | "libx265" => 46.0,
+            // Works well for svt-av1
+            _ => 55.0,
         }
     }
 }

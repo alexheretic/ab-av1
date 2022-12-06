@@ -1,6 +1,7 @@
 //! ffmpeg encoding logic
 use crate::{
     command::args::PixelFormat,
+    float::TerseF32,
     process::{CommandExt, FfmpegOut},
     svtav1,
     temporary::{self, TempKind},
@@ -44,9 +45,10 @@ pub fn encode_sample(
     dest_ext: &str,
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
     let pre = pre_extension_name(&vcodec);
+    let crf_str = format!("{}", TerseF32(crf)).replace('.', "_");
     let mut dest = match &preset {
-        Some(p) => input.with_extension(format!("{pre}.crf{crf}.{p}.{dest_ext}")),
-        None => input.with_extension(format!("{pre}.crf{crf}.{dest_ext}")),
+        Some(p) => input.with_extension(format!("{pre}.crf{crf_str}.{p}.{dest_ext}")),
+        None => input.with_extension(format!("{pre}.crf{crf_str}.{dest_ext}")),
     };
     if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
         temp.push(name);
