@@ -10,6 +10,7 @@ pub async fn cached_encode(
     input_duration: Duration,
     input_extension: Option<&OsStr>,
     input_size: u64,
+    full_pass: bool,
     enc_args: &EncoderArgs<'_>,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
@@ -25,6 +26,7 @@ pub async fn cached_encode(
             input_duration,
             input_extension,
             input_size,
+            full_pass,
         ),
         enc_args,
     );

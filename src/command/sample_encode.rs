@@ -168,6 +168,7 @@ pub async fn run(
             duration,
             input.extension(),
             input_len,
+            full_pass,
             &enc_args,
         )
         .await
