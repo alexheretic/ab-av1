@@ -6,6 +6,7 @@ use crate::{
     yuv,
 };
 use anyhow::Context;
+use once_cell::sync::Lazy;
 use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
@@ -32,7 +33,17 @@ pub struct SvtArgs<'a> {
 
 impl SvtArgs<'_> {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
-        // input not relevant to sample encoding
+        // hashing svt-av1 version means new encoder releases will avoid old cache data
+        static SVT_AV1_V: Lazy<Vec<u8>> = Lazy::new(|| {
+            use std::process::Command;
+            match Command::new("SvtAv1EncApp").arg("--version").output() {
+                Ok(out) => out.stdout,
+                _ => <_>::default(),
+            }
+        });
+        SVT_AV1_V.hash(state);
+
+        // Note: `self.input` is not relevant to sample encoding
         self.vfilter.hash(state);
         self.pix_fmt.hash(state);
         self.crf.to_bits().hash(state);
