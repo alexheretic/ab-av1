@@ -9,7 +9,7 @@ use crate::{
     ffprobe::Ffprobe,
     float::TerseF32,
 };
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
@@ -63,6 +63,15 @@ pub struct Args {
     #[arg(long)]
     pub crf_increment: Option<f32>,
 
+    /// Enable sample-encode caching.
+    #[arg(
+        long,
+        default_value_t = true,
+        env = "AB_AV1_CACHE",
+        action(ArgAction::Set)
+    )]
+    pub cache: bool,
+
     #[clap(flatten)]
     pub sample: args::Sample,
 
@@ -112,6 +121,7 @@ pub async fn run(
         thorough,
         sample,
         quiet,
+        cache,
         vmaf,
     }: &Args,
     input_probe: Arc<Ffprobe>,
@@ -133,6 +143,7 @@ pub async fn run(
         crf: 0.0,
         sample: sample.clone(),
         keep: false,
+        cache: *cache,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),
     };
@@ -176,6 +187,7 @@ pub async fn run(
             q,
             enc: sample_task??,
         };
+        let from_cache = sample.enc.from_cache;
         crf_attempts.push(sample.clone());
         let sample_small_enough = sample.enc.encode_percent <= *max_encoded_percent as _;
 
@@ -209,7 +221,7 @@ pub async fn run(
         } else {
             // not good enough
             if !sample_small_enough || sample.q == min_q {
-                sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
+                sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet, from_cache);
                 ensure_or_no_good_crf!(false, sample);
             }
 
@@ -220,7 +232,7 @@ pub async fn run(
 
             match l_bound {
                 Some(lower) if lower.q + 1 == sample.q => {
-                    sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
+                    sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet, from_cache);
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(lower.clone());
                 }
@@ -233,7 +245,7 @@ pub async fn run(
                 None => q = min_q,
             };
         }
-        sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet);
+        sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet, from_cache);
     }
     unreachable!();
 }
@@ -256,6 +268,7 @@ impl Sample {
         min_vmaf: f32,
         max_encoded_percent: f32,
         quiet: bool,
+        from_cache: bool,
     ) {
         if quiet {
             return;
@@ -267,6 +280,10 @@ impl Sample {
         let mut percent = style!("{:.0}%", self.enc.encode_percent);
         let open = style("(").dim();
         let close = style(")").dim();
+        let cache_msg = match from_cache {
+            true => style(" (cache)").dim(),
+            false => style(""),
+        };
 
         if self.enc.vmaf < min_vmaf {
             crf = crf.red().bright();
@@ -277,7 +294,8 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        let msg = format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}");
+        let msg =
+            format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}");
         if atty::is(atty::Stream::Stderr) {
             bar.println(msg);
         } else {

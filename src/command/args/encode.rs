@@ -9,6 +9,7 @@ use clap::Parser;
 use std::{
     collections::HashMap,
     fmt::{self, Write},
+    hash::Hasher,
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -348,7 +349,7 @@ impl Encode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Encoder {
     SvtAv1,
     Ffmpeg(Arc<str>),
@@ -406,9 +407,16 @@ impl EncoderArgs<'_> {
             Self::Ffmpeg(a) => a.pix_fmt,
         }
     }
+
+    pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
+        match self {
+            Self::SvtAv1(a) => a.sample_encode_hash(state),
+            Self::Ffmpeg(a) => a.sample_encode_hash(state),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Preset {
     Number(u8),
     Name(Arc<str>),
@@ -434,7 +442,7 @@ impl std::str::FromStr for Preset {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyInterval {
     Frames(i32),
     Duration(Duration),
@@ -475,7 +483,7 @@ impl std::str::FromStr for KeyInterval {
 }
 
 /// Ordered by ascending quality.
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[clap(rename_all = "lower")]
 pub enum PixelFormat {
     Yuv420p,

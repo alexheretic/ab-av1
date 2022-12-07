@@ -1,3 +1,5 @@
+mod cache;
+
 use crate::{
     command::{
         args::{self, EncoderArgs, PixelFormat},
@@ -14,7 +16,7 @@ use crate::{
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{
@@ -50,6 +52,15 @@ pub struct Args {
     #[arg(long)]
     pub keep: bool,
 
+    /// Enable sample-encode caching.
+    #[arg(
+        long,
+        default_value_t = true,
+        env = "AB_AV1_CACHE",
+        action(ArgAction::Set)
+    )]
+    pub cache: bool,
+
     /// Stdout message format `human` or `json`.
     #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
     pub stdout_format: StdoutFormat,
@@ -79,6 +90,7 @@ pub async fn run(
         crf,
         sample: sample_args,
         keep,
+        cache,
         stdout_format,
         vmaf,
     }: Args,
@@ -88,6 +100,7 @@ pub async fn run(
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
     let input_is_image = input_probe.is_probably_an_image();
+    let input_len = fs::metadata(&*input).await?.len();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
     let duration = input_probe.duration.clone()?;
     let fps = input_probe.fps.clone()?;
@@ -112,12 +125,11 @@ pub async fn run(
     let sample_temp = temp_dir.clone();
     let sample_in = input.clone();
     tokio::task::spawn_local(async move {
-        for sample_idx in 0..samples {
-            if full_pass {
-                let full_sample = sample_full_pass(sample_in.clone()).await;
-                let _ = tx.send((sample_idx, full_sample));
-                break;
-            } else {
+        if full_pass {
+            // Use the entire video as a single sample
+            let _ = tx.send((0, Ok((sample_in.clone(), input_len))));
+        } else {
+            for sample_idx in 0..samples {
                 let sample = sample(
                     sample_in.clone(),
                     sample_idx,
@@ -150,100 +162,138 @@ pub async fn run(
         let (sample, sample_size) = sample?;
 
         // encode sample
-        bar.set_message("encoding,");
-        let b = Instant::now();
-        let (encoded_sample, mut output) = match enc_args.clone() {
-            EncoderArgs::SvtAv1(enc_args) => {
-                let (sample, output) = svtav1::encode_sample(
-                    SvtArgs {
-                        input: &sample,
-                        ..enc_args
-                    },
-                    temp_dir.clone(),
-                )?;
-                (sample, futures::StreamExt::boxed_local(output))
-            }
-            EncoderArgs::Ffmpeg(enc_args) => {
-                let (sample, output) = ffmpeg::encode_sample(
-                    FfmpegEncodeArgs {
-                        input: &sample,
-                        ..enc_args
-                    },
-                    temp_dir.clone(),
-                    sample_args.extension.as_deref().unwrap_or("mkv"),
-                )?;
-                (sample, futures::StreamExt::boxed_local(output))
-            }
-        };
-        while let Some(progress) = output.next().await {
-            if let FfmpegOut::Progress { time, fps, .. } = progress? {
-                bar.set_position(time.as_secs() + sample_idx * sample_duration_s * 2);
-                if fps > 0.0 {
-                    bar.set_message(format!("enc {fps} fps,"));
-                }
-            }
-        }
-        let encode_time = b.elapsed();
-        let encoded_size = fs::metadata(&encoded_sample).await?.len();
-        let encoded_probe = ffprobe::probe(&encoded_sample);
-
-        // calculate vmaf
-        bar.set_message("vmaf running,");
-        let mut vmaf = vmaf::run(
+        let result = match cache::cached_encode(
+            cache,
             &sample,
-            args.vfilter.as_deref(),
-            &encoded_sample,
-            &vmaf.ffmpeg_lavfi(encoded_probe.resolution),
-            enc_args
-                .pixel_format()
-                .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
-        )?;
-        let mut vmaf_score = -1.0;
-        while let Some(vmaf) = vmaf.next().await {
-            match vmaf {
-                VmafOut::Done(score) => {
-                    vmaf_score = score;
-                    break;
-                }
-                VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
-                    bar.set_position(
-                        sample_duration_s + time.as_secs() + sample_idx * sample_duration_s * 2,
-                    );
-                    if fps > 0.0 {
-                        bar.set_message(format!("vmaf {fps} fps,"));
+            duration,
+            input.extension(),
+            input_len,
+            full_pass,
+            &enc_args,
+        )
+        .await
+        {
+            (Some(result), _) => {
+                bar.set_position(sample_n * sample_duration_s * 2);
+                bar.println(
+                    style!(
+                        "- Sample {sample_n} ({:.0}%) vmaf {:.2} (cache)",
+                        100.0 * result.encoded_size as f32 / sample_size as f32,
+                        result.vmaf_score,
+                    )
+                    .dim()
+                    .to_string(),
+                );
+                result
+            }
+            (None, key) => {
+                bar.set_message("encoding,");
+                let b = Instant::now();
+                let (encoded_sample, mut output) = match enc_args.clone() {
+                    EncoderArgs::SvtAv1(enc_args) => {
+                        let (sample, output) = svtav1::encode_sample(
+                            SvtArgs {
+                                input: &sample,
+                                ..enc_args
+                            },
+                            temp_dir.clone(),
+                        )?;
+                        (sample, futures::StreamExt::boxed_local(output))
+                    }
+                    EncoderArgs::Ffmpeg(enc_args) => {
+                        let (sample, output) = ffmpeg::encode_sample(
+                            FfmpegEncodeArgs {
+                                input: &sample,
+                                ..enc_args
+                            },
+                            temp_dir.clone(),
+                            sample_args.extension.as_deref().unwrap_or("mkv"),
+                        )?;
+                        (sample, futures::StreamExt::boxed_local(output))
+                    }
+                };
+                while let Some(progress) = output.next().await {
+                    if let FfmpegOut::Progress { time, fps, .. } = progress? {
+                        bar.set_position(time.as_secs() + sample_idx * sample_duration_s * 2);
+                        if fps > 0.0 {
+                            bar.set_message(format!("enc {fps} fps,"));
+                        }
                     }
                 }
-                VmafOut::Progress(_) => {}
-                VmafOut::Err(e) => return Err(e),
+                let encode_time = b.elapsed();
+                let encoded_size = fs::metadata(&encoded_sample).await?.len();
+                let encoded_probe = ffprobe::probe(&encoded_sample);
+
+                // calculate vmaf
+                bar.set_message("vmaf running,");
+                let mut vmaf = vmaf::run(
+                    &sample,
+                    args.vfilter.as_deref(),
+                    &encoded_sample,
+                    &vmaf.ffmpeg_lavfi(encoded_probe.resolution),
+                    enc_args
+                        .pixel_format()
+                        .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                )?;
+                let mut vmaf_score = -1.0;
+                while let Some(vmaf) = vmaf.next().await {
+                    match vmaf {
+                        VmafOut::Done(score) => {
+                            vmaf_score = score;
+                            break;
+                        }
+                        VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+                            bar.set_position(
+                                sample_duration_s
+                                    + time.as_secs()
+                                    + sample_idx * sample_duration_s * 2,
+                            );
+                            if fps > 0.0 {
+                                bar.set_message(format!("vmaf {fps} fps,"));
+                            }
+                        }
+                        VmafOut::Progress(_) => {}
+                        VmafOut::Err(e) => return Err(e),
+                    }
+                }
+
+                bar.println(
+                    style!(
+                        "- Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}",
+                        100.0 * encoded_size as f32 / sample_size as f32
+                    )
+                    .dim()
+                    .to_string(),
+                );
+
+                let result = EncodeResult {
+                    vmaf_score,
+                    sample_size,
+                    encoded_size,
+                    encode_time,
+                    sample_duration: encoded_probe
+                        .duration
+                        .ok()
+                        .filter(|d| !d.is_zero())
+                        .unwrap_or(sample_duration),
+                    from_cache: false,
+                };
+
+                if let Some(k) = key {
+                    cache::cache_result(k, &result).await?;
+                }
+
+                // Early clean. Note: Avoid cleaning copy samples
+                temporary::clean(true).await;
+                if !keep {
+                    let _ = tokio::fs::remove_file(encoded_sample).await;
+                }
+
+                result
             }
-        }
+        };
 
-        bar.println(
-            style!(
-                "- Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}",
-                100.0 * encoded_size as f32 / sample_size as f32
-            )
-            .dim()
-            .to_string(),
-        );
-
-        results.push(EncodeResult {
-            vmaf_score,
-            sample_size,
-            encoded_size,
-            encode_time,
-            sample_duration: encoded_probe
-                .duration
-                .ok()
-                .filter(|d| !d.is_zero())
-                .unwrap_or(sample_duration),
-        });
-
-        // Early clean. Note: Avoid cleaning copy samples
-        temporary::clean(true).await;
-        if !keep {
-            let _ = tokio::fs::remove_file(encoded_sample).await;
-        }
+        results.push(result);
     }
     bar.finish();
 
@@ -256,6 +306,7 @@ pub async fn run(
             .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?),
         encode_percent: results.encoded_percent_size(),
         predicted_encode_time: results.estimate_encode_time(duration, full_pass),
+        from_cache: results.iter().all(|r| r.from_cache),
     };
 
     if !bar.is_hidden() {
@@ -276,12 +327,6 @@ pub async fn run(
     }
 
     Ok(output)
-}
-
-/// Use the entire video as a single sample
-async fn sample_full_pass(input: Arc<PathBuf>) -> anyhow::Result<(Arc<PathBuf>, u64)> {
-    let input_size = fs::metadata(&*input).await?.len();
-    Ok((input, input_size))
 }
 
 /// Copy a sample from the input to the temp_dir (or input dir).
@@ -311,7 +356,8 @@ async fn sample(
     Ok((sample.into(), sample_size))
 }
 
-struct EncodeResult {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EncodeResult {
     sample_size: u64,
     encoded_size: u64,
     vmaf_score: f32,
@@ -320,6 +366,8 @@ struct EncodeResult {
     ///
     /// This should be close to `SAMPLE_SIZE` but may deviate due to how samples are cut.
     sample_duration: Duration,
+    /// Result read from cache.
+    from_cache: bool,
 }
 
 trait EncodeResults {
@@ -476,4 +524,6 @@ pub struct Output {
     ///
     /// Sample encode time multiplied by duration.
     pub predicted_encode_time: Duration,
+    /// All sample results were read from the cache.
+    pub from_cache: bool,
 }
