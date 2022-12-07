@@ -41,7 +41,7 @@ pub struct Encode {
     /// Encoder preset (0-13).
     /// Higher presets means faster encodes, but with a quality tradeoff.
     ///
-    /// For some ffmpeg encodes a word may be used, e.g. "fast".
+    /// For some ffmpeg encoders a word may be used, e.g. "fast".
     /// libaom-av1 preset is mapped to equivalent -cpu-used argument.
     ///
     /// [svt-av1 default: 8]

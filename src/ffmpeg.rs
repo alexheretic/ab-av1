@@ -100,7 +100,8 @@ pub fn encode(
     let output_ext = output.extension().and_then(|e| e.to_str());
 
     let add_faststart = output_ext == Some("mp4") && !oargs.contains("-movflags");
-    let add_cues_to_front = output_ext == Some("mkv") && !oargs.contains("-cues_to_front");
+    let add_cues_to_front =
+        matches!(output_ext, Some("mkv") | Some("webm")) && !oargs.contains("-cues_to_front");
 
     let audio_codec = audio_codec.unwrap_or_else(|| {
         svtav1::default_audio_codec(input, output, downmix_to_stereo, has_audio)

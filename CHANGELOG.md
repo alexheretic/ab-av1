@@ -7,6 +7,7 @@
 * Add _crf-search_, _auto-encode_ arg `--thorough` which more exhaustively searches to find
   a crf value close to the specified min-vmaf.
 * Default `--max-crf` to **46** for libx264 & libx265 encoders.
+* Encode webm outputs with the "cues" seek index at the front to optimise stream usage (as done with mkv).
 
 # v0.5.2
 * Fix ffprobe duration conversion error scenarios panicking.

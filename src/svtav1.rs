@@ -94,7 +94,7 @@ pub fn encode(
 ) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
     let output_ext = output.extension().and_then(|e| e.to_str());
     let add_faststart = output_ext == Some("mp4");
-    let add_cues_to_front = output_ext == Some("mkv");
+    let add_cues_to_front = matches!(output_ext, Some("mkv") | Some("webm"));
 
     let audio_codec = audio_codec
         .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
