@@ -1,15 +1,15 @@
 # Unreleased (v0.6.0)
-* Cache _sample-encode_ results in $CACHE_DIR/ab-av1 directory. This allows repeated same crf sample encoding
-  to be avoided when running _sample-encode_, _crf-search_ & _auto-encode_. E.g. repeating a _crf-search_ with
-  a different min-vmaf.<br/>
-  Caching is enabled by default. Can be disabled with `--cache false` or setting env var `AB_AV1_CACHE=false`.
 * Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
-* Use mkv containers for all lossless samples. Previously mp4 samples were used for mp4 inputs, however in all test cases
-  mkv 20s samples were better quality. This change improves accuracy for all mp4 input files.
 * Add _crf-search_, _auto-encode_ arg `--crf-increment`. Previously this would always be 1.
   Defaults to **1**. -e libx264, libx265 & libvpx-vp9 default to **0.1**.
 * Add _crf-search_, _auto-encode_ arg `--thorough` which more exhaustively searches to find
   a crf value close to the specified min-vmaf.
+* Cache _sample-encode_ results in $CACHE_DIR/ab-av1 directory. This allows repeated same crf sample encoding
+  to be avoided when running _sample-encode_, _crf-search_ & _auto-encode_. E.g. repeating a _crf-search_ with
+  a different min-vmaf.<br/>
+  Caching is enabled by default. Can be disabled with `--cache false` or setting env var `AB_AV1_CACHE=false`.
+* Use mkv containers for all lossless samples. Previously mp4 samples were used for mp4 inputs, however in all test cases
+  mkv 20s samples were better quality. This change improves accuracy for all mp4 input files.
 * Default `--max-crf` to **46** for libx264 & libx265 encoders.
 * Encode webm outputs with the "cues" seek index at the front to optimise stream usage (as done with mkv).
 
