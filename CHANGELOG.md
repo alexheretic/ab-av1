@@ -1,4 +1,4 @@
-# Unreleased (v0.6.0)
+# v0.6.0
 * Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
 * Add _crf-search_, _auto-encode_ arg `--crf-increment`. Previously this would always be 1.
   Defaults to **1**. -e libx264, libx265 & libvpx-vp9 default to **0.1**.
