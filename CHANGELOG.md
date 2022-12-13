@@ -1,3 +1,6 @@
+# Unreleased (v0.6.1)
+* Add _sample-encode_, _crf-search_, _auto-encode_ arg `--min-samples`.
+
 # v0.6.0
 * Support decimal crf values in _sample-encode_, _encode_ subcommands (note svt-av1 only supports integer crf).
 * Add _crf-search_, _auto-encode_ arg `--crf-increment`. Previously this would always be 1.

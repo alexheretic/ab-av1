@@ -54,6 +54,10 @@ pub struct Sample {
     #[arg(long, default_value = "12m", value_parser = humantime::parse_duration)]
     pub sample_every: Duration,
 
+    /// Minimum number of samples. So at least this many samples will be used.
+    #[arg(long)]
+    pub min_samples: Option<u64>,
+
     /// Directory to store temporary sample data in.
     /// Defaults to using the input's directory.
     #[arg(long, env = "AB_AV1_TEMP_DIR")]
@@ -65,12 +69,17 @@ pub struct Sample {
 }
 
 impl Sample {
-    /// Calculate the desired sample count using `samples` or `sample_every`.
+    /// Calculate the desired sample count using `samples` or `sample_every` & `min_samples`.
     pub fn sample_count(&self, input_duration: Duration) -> u64 {
-        if let Some(s) = self.samples {
-            return s;
+        match self.samples {
+            Some(s) => s,
+            None => {
+                (input_duration.as_secs_f64() / self.sample_every.as_secs_f64().max(1.0)).ceil()
+                    as _
+            }
         }
-        (input_duration.as_secs_f64() / self.sample_every.as_secs_f64().max(1.0)).ceil() as _
+        .max(self.min_samples.unwrap_or(1))
+        .max(1)
     }
 
     pub fn set_extension_from_input(&mut self, input: &Path, probe: &Ffprobe) {
