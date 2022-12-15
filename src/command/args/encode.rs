@@ -369,7 +369,7 @@ impl Encoder {
     /// Generally 0.1 if codec supports decimal crf.
     pub fn default_crf_increment(&self) -> f32 {
         match self.as_str() {
-            "libx264" | "libx265" | "libvpx-vp9" => 0.1,
+            "libx264" | "libx265" => 0.1,
             _ => 1.0,
         }
     }
