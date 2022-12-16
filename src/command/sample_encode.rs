@@ -153,7 +153,7 @@ pub async fn run(
             Some(s) => s,
             None => break,
         };
-        let (sample_idx, sample_n) = (sample_idx as u64, sample_idx + 1);
+        let sample_n = sample_idx + 1;
         match full_pass {
             true => bar.set_prefix("Full pass"),
             false => bar.set_prefix(format!("Sample {sample_n}/{samples}")),

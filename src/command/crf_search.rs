@@ -355,7 +355,7 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
 
     let q_diff = worse_q.q - better_q.q;
     let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as u64;
-    lerp.max(better_q.q + 1).min(worse_q.q - 1)
+    lerp.clamp(better_q.q + 1, worse_q.q - 1)
 }
 
 /// sample_progress: [0, 1]

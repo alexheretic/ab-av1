@@ -96,7 +96,7 @@ fn read_duration(probe: &ffprobe::FfProbe) -> anyhow::Result<Duration> {
             let duration_f = duration_s
                 .parse::<f64>()
                 .with_context(|| format!("invalid ffprobe video duration: {duration_s:?}"))?;
-            crate::duration::try_from_secs_f64(duration_f)
+            Duration::try_from_secs_f64(duration_f)
                 .map_err(|e| anyhow!("{e}: ffprobe video duration: {duration_s:?}"))
         }
         None => Ok(Duration::ZERO),
