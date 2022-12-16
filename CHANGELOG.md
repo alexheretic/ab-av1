@@ -1,4 +1,4 @@
-# Unreleased (v0.6.1)
+# v0.6.1
 * Add _sample-encode_, _crf-search_, _auto-encode_ arg `--min-samples`.
 * Revert libvpx-vp9 `--crf-increment` default to **1**.
 

@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "ab-av1"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "atty",
@@ -627,9 +627,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "portable-atomic"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ef946e2f765276038550e74abfbda40c84d73278417c071e0f19f8af6ba100b"
+checksum = "81bdd679d533107e090c2704a35982fc06302e30898e63ffa26a81155c012e92"
 
 [[package]]
 name = "ppv-lite86"
