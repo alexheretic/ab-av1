@@ -164,10 +164,9 @@ pub fn encode(
 
 pub fn pre_extension_name(vcodec: &str) -> &str {
     match vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
-        Some("vpx-vp9") => "vp9",
         Some("svtav1") => "av1",
+        Some("vpx-vp9") => "vp9",
         Some(suffix) => suffix,
-        _ if vcodec == "svt-av1" => "av1",
         _ => vcodec,
     }
 }
