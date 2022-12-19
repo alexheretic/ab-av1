@@ -5,7 +5,6 @@ mod ffprobe;
 mod float;
 mod process;
 mod sample;
-mod svtav1;
 mod temporary;
 mod vmaf;
 mod yuv;
