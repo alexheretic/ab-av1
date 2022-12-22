@@ -1,7 +1,7 @@
 //! ffprobe logic
 use crate::command::args::PixelFormat;
 use anyhow::{anyhow, Context};
-use std::{fmt, path::Path, time::Duration};
+use std::{fmt, fs::File, io::Read, path::Path, time::Duration};
 
 pub struct Ffprobe {
     /// Duration of video.
@@ -26,24 +26,7 @@ impl Ffprobe {
 
 /// Try to ffprobe the given input.
 pub fn probe(input: &Path) -> Ffprobe {
-    let is_image = match infer::get_from_path(input) {
-        Ok(option) => match option {
-            Some(file_type) => file_type.mime_type().starts_with("image"),
-            // assume video for unrecognised filetypes
-            None => false,
-        },
-        Err(err) => {
-            return Ffprobe {
-                duration: Err(ProbeError(format!("infer: {err}"))),
-                fps: Err(ProbeError(format!("infer: {err}"))),
-                has_audio: true,
-                max_audio_channels: None,
-                resolution: None,
-                is_image: false,
-                pix_fmt: None,
-            }
-        }
-    };
+    let is_image = is_image(input).unwrap_or(false);
 
     let probe = match ffprobe::ffprobe(input) {
         Ok(p) => p,
@@ -98,6 +81,19 @@ pub fn probe(input: &Path) -> Ffprobe {
         is_image,
         pix_fmt,
     }
+}
+
+fn is_image(path: &Path) -> anyhow::Result<bool> {
+    // This code was taken from infer::get_from_path, but it's not available since we're importing it as no_std
+    let file = File::open(path)?;
+    let limit = file
+        .metadata()
+        .map(|m| std::cmp::min(m.len(), 8192) as usize + 1)
+        .unwrap_or(0);
+    let mut file_header = Vec::with_capacity(limit);
+    file.take(8192).read_to_end(&mut file_header)?;
+
+    Ok(infer::is_image(&file_header))
 }
 
 fn read_duration(probe: &ffprobe::FfProbe) -> anyhow::Result<Duration> {
