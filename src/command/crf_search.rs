@@ -80,6 +80,10 @@ pub struct Args {
 
     #[arg(skip)]
     pub quiet: bool,
+
+    /// Keep temporary files after exiting.
+    #[arg(long)]
+    pub keep: bool,
 }
 
 pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
@@ -123,6 +127,7 @@ pub async fn run(
         quiet,
         cache,
         vmaf,
+        keep
     }: &Args,
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
@@ -142,7 +147,7 @@ pub async fn run(
         args: args.clone(),
         crf: 0.0,
         sample: sample.clone(),
-        keep: false,
+        keep: *keep,
         cache: *cache,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),
