@@ -21,6 +21,7 @@ ffprobe = "0.3"
 futures = "0.3.19"
 humantime = "2.1"
 indicatif = "0.17"
+infer = "0.11.0"
 once_cell = "1.9"
 rand = "0.8.5"
 serde = { version = "1.0.149", features = ["derive"] }

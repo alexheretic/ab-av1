@@ -42,7 +42,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         default_output_name(
             &search.args.input,
             &search.args.encoder,
-            input_probe.is_probably_an_image(),
+            input_probe.is_image,
         )
     });
     search.sample.set_extension_from_output(&output);

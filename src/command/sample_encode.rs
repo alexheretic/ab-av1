@@ -99,7 +99,7 @@ pub async fn run(
 ) -> anyhow::Result<Output> {
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
-    let input_is_image = input_probe.is_probably_an_image();
+    let input_is_image = input_probe.is_image;
     let input_len = fs::metadata(&*input).await?.len();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
     let duration = input_probe.duration.clone()?;

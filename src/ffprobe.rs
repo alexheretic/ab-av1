@@ -13,15 +13,11 @@ pub struct Ffprobe {
     /// Video frame rate.
     pub fps: Result<f64, ProbeError>,
     pub resolution: Option<(u32, u32)>,
-    pub has_image_extension: bool,
+    pub is_image: bool,
     pub pix_fmt: Option<String>,
 }
 
 impl Ffprobe {
-    pub fn is_probably_an_image(&self) -> bool {
-        self.has_image_extension || self.duration == Ok(Duration::ZERO)
-    }
-
     pub fn pixel_format(&self) -> Option<PixelFormat> {
         let pf = self.pix_fmt.as_deref()?;
         PixelFormat::try_from(pf).ok()
@@ -30,10 +26,24 @@ impl Ffprobe {
 
 /// Try to ffprobe the given input.
 pub fn probe(input: &Path) -> Ffprobe {
-    let has_image_extension = matches!(
-        input.extension().and_then(|ext| ext.to_str()),
-        Some("jpg" | "png" | "bmp" | "avif")
-    );
+    let is_image = match infer::get_from_path(input) {
+        Ok(option) => match option {
+            Some(file_type) => file_type.mime_type().starts_with("image"),
+            // assume video for unrecognised filetypes
+            None => false,
+        },
+        Err(err) => {
+            return Ffprobe {
+                duration: Err(ProbeError(format!("infer: {err}"))),
+                fps: Err(ProbeError(format!("infer: {err}"))),
+                has_audio: true,
+                max_audio_channels: None,
+                resolution: None,
+                is_image: false,
+                pix_fmt: None,
+            }
+        }
+    };
 
     let probe = match ffprobe::ffprobe(input) {
         Ok(p) => p,
@@ -44,7 +54,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 has_audio: true,
                 max_audio_channels: None,
                 resolution: None,
-                has_image_extension,
+                is_image: false,
                 pix_fmt: None,
             }
         }
@@ -85,7 +95,7 @@ pub fn probe(input: &Path) -> Ffprobe {
         has_audio,
         max_audio_channels,
         resolution,
-        has_image_extension,
+        is_image,
         pix_fmt,
     }
 }

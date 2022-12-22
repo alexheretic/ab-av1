@@ -83,7 +83,7 @@ impl Sample {
     }
 
     pub fn set_extension_from_input(&mut self, input: &Path, probe: &Ffprobe) {
-        self.extension = Some(default_output_ext(input, probe.is_probably_an_image()).into());
+        self.extension = Some(default_output_ext(input, probe.is_image).into());
     }
 
     pub fn set_extension_from_output(&mut self, output: &Path) {
