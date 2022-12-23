@@ -1,6 +1,7 @@
 # Unreleased (v0.7.0)
 * Use ffmpeg for svt-av1 encodes instead of invoking to SvtAv1EncApp directly. This unifies the handling of
-  other encoders & allows svt-av1 encoding to benefit from more built-in ffmpeg behaviours like aspect preservation.
+  other encoders & allows svt-av1 encoding to benefit from more built-in ffmpeg behaviours like aspect preservation.<br/>
+  **An ffmpeg build with libsvtav1 enabled is now required**. SvtAv1EncApp is no longer required.
 * Improve image detection.
 
 # v0.6.1
