@@ -63,9 +63,8 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
     // let probe = ffprobe::probe(&args.input);
-    let output = output.unwrap_or_else(|| {
-        default_output_name(&args.input, &args.encoder, probe.is_probably_an_image())
-    });
+    let output =
+        output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 

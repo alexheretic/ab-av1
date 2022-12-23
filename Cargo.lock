@@ -17,6 +17,7 @@ dependencies = [
  "futures",
  "humantime",
  "indicatif",
+ "infer",
  "once_cell",
  "rand",
  "serde",
@@ -464,6 +465,12 @@ dependencies = [
  "portable-atomic",
  "unicode-width",
 ]
+
+[[package]]
+name = "infer"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a6c16b11a665b26aeeb9b1d7f954cdeb034be38dd00adab4f2ae921a8fee804"
 
 [[package]]
 name = "instant"
