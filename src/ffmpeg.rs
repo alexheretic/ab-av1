@@ -3,10 +3,10 @@ use crate::{
     command::args::PixelFormat,
     float::TerseF32,
     process::{CommandExt, FfmpegOut},
-    svtav1,
     temporary::{self, TempKind},
 };
 use anyhow::Context;
+use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
@@ -32,6 +32,18 @@ pub struct FfmpegEncodeArgs<'a> {
 
 impl FfmpegEncodeArgs<'_> {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
+        // hashing svt-av1 version means new encoder releases will avoid old cache data
+        static SVT_AV1_V: Lazy<Vec<u8>> = Lazy::new(|| {
+            use std::process::Command;
+            match Command::new("SvtAv1EncApp").arg("--version").output() {
+                Ok(out) => out.stdout,
+                _ => <_>::default(),
+            }
+        });
+        if &*self.vcodec == "libsvtav1" {
+            SVT_AV1_V.hash(state);
+        }
+
         // input not relevant to sample encoding
         self.vcodec.hash(state);
         self.vfilter.hash(state);
@@ -117,9 +129,8 @@ pub fn encode(
     let add_cues_to_front =
         matches!(output_ext, Some("mkv") | Some("webm")) && !oargs.contains("-cues_to_front");
 
-    let audio_codec = audio_codec.unwrap_or_else(|| {
-        svtav1::default_audio_codec(input, output, downmix_to_stereo, has_audio)
-    });
+    let audio_codec = audio_codec
+        .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
 
     let set_ba_128k = audio_codec == "libopus" && !oargs.contains("-b:a");
     let downmix_to_stereo = downmix_to_stereo && !oargs.contains("-ac");
@@ -153,9 +164,9 @@ pub fn encode(
 
 pub fn pre_extension_name(vcodec: &str) -> &str {
     match vcodec.strip_prefix("lib").filter(|s| !s.is_empty()) {
+        Some("svtav1") => "av1",
         Some("vpx-vp9") => "vp9",
         Some(suffix) => suffix,
-        _ if vcodec == "svt-av1" => "av1",
         _ => vcodec,
     }
 }
@@ -181,5 +192,20 @@ impl VCodecSpecific for Arc<str> {
         } else {
             "-crf"
         }
+    }
+}
+
+pub fn default_audio_codec(
+    input: &Path,
+    output: &Path,
+    downmix_to_stereo: bool,
+    has_audio: bool,
+) -> &'static str {
+    // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
+    match input.extension() {
+        _ if downmix_to_stereo => "libopus",
+        ext if ext.is_some() && ext == output.extension() => "copy",
+        _ if !has_audio => "copy",
+        _ => "libopus",
     }
 }

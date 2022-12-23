@@ -1,13 +1,12 @@
 use crate::{
     command::{
-        args::{self, Encoder, EncoderArgs},
+        args::{self, Encoder},
         PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg,
     ffprobe::{self, Ffprobe},
     process::FfmpegOut,
-    svtav1::{self},
     temporary::{self, TempKind},
 };
 use clap::Parser;
@@ -21,7 +20,7 @@ use std::{
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Simple invocation of ffmpeg & SvtAv1EncApp to encode a video or image.
+/// Invoke ffmpeg to encode a video or image.
 #[derive(Parser)]
 #[group(skip)]
 pub struct Args {
@@ -89,16 +88,8 @@ pub async fn run(
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
     }
 
-    let mut enc = match enc_args {
-        EncoderArgs::SvtAv1(args) => {
-            let enc = svtav1::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
-            futures::StreamExt::boxed_local(enc)
-        }
-        EncoderArgs::Ffmpeg(args) => {
-            let enc = ffmpeg::encode(args, &output, has_audio, audio_codec, stereo_downmix)?;
-            futures::StreamExt::boxed_local(enc)
-        }
-    };
+    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
         match progress? {
