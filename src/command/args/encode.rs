@@ -2,14 +2,12 @@ use crate::{
     ffmpeg::FfmpegEncodeArgs,
     ffprobe::{Ffprobe, ProbeError},
     float::TerseF32,
-    svtav1::SvtArgs,
 };
 use anyhow::ensure;
 use clap::Parser;
 use std::{
     collections::HashMap,
     fmt::{self, Write},
-    hash::Hasher,
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -20,8 +18,8 @@ use std::{
 pub struct Encode {
     /// Encoder override. See https://ffmpeg.org/ffmpeg-all.html#toc-Video-Encoders.
     ///
-    /// [possible values: svt-av1, libx264, libx265, libvpx-vp9, ...]
-    #[arg(value_enum, short, long, default_value = "svt-av1")]
+    /// [possible values: libsvtav1, libx264, libx265, libvpx-vp9, ...]
+    #[arg(value_enum, short, long, default_value = "libsvtav1")]
     pub encoder: Encoder,
 
     /// Input video file.
@@ -64,7 +62,7 @@ pub struct Encode {
     #[arg(long)]
     pub scd: Option<bool>,
 
-    /// Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=30
+    /// Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=8
     ///
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
     #[arg(long = "svt", value_parser = parse_svt_arg)]
@@ -120,15 +118,12 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
 }
 
 impl Encode {
-    pub fn to_encoder_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<EncoderArgs<'_>> {
-        match self.encoder {
-            Encoder::SvtAv1 => Ok(EncoderArgs::SvtAv1(self.to_svt_args(crf, probe)?)),
-            Encoder::Ffmpeg(ref vcodec) => Ok(EncoderArgs::Ffmpeg(self.to_ffmpeg_args(
-                Arc::clone(vcodec),
-                crf,
-                probe,
-            )?)),
-        }
+    pub fn to_encoder_args(
+        &self,
+        crf: f32,
+        probe: &Ffprobe,
+    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        self.to_ffmpeg_args(Arc::clone(&self.encoder.0), crf, probe)
     }
 
     pub fn encode_hint(&self, crf: f32) -> String {
@@ -149,7 +144,8 @@ impl Encode {
 
         let mut hint = "ab-av1 encode".to_owned();
 
-        if let Encoder::Ffmpeg(vcodec) = encoder {
+        let vcodec = encoder.as_str();
+        if vcodec != "libsvtav1" {
             write!(hint, " -e {vcodec}").unwrap();
         }
         write!(hint, " -i {input} --crf {}", TerseF32(crf)).unwrap();
@@ -185,83 +181,67 @@ impl Encode {
         hint
     }
 
-    fn to_svt_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<SvtArgs<'_>> {
-        ensure!(
-            self.enc_args.is_empty(),
-            "--enc args cannot be used with svt-av1, instead use --svt"
-        );
-        ensure!(
-            self.enc_input_args.is_empty(),
-            "--enc-input args cannot be used with svt-av1, instead use --svt"
-        );
-
-        let preset = match &self.preset {
-            Some(Preset::Number(n)) => *n,
-            Some(Preset::Name(n)) => {
-                anyhow::bail!("Invalid svt-av1 --preset must be a number not `{n}`")
-            }
-            None => 8,
-        };
-
-        let args = self
-            .svt_args
-            .iter()
-            .flat_map(|arg| match arg.split_once('=') {
-                Some((a, b)) => vec![a, b],
-                None => vec![arg.as_ref()],
-            })
-            .collect();
-
-        let keyint = self.keyint(probe)?;
-        let scd = match (self.scd, self.keyint, keyint) {
-            (Some(true), ..) | (_, None, Some(_)) => 1,
-            _ => 0,
-        };
-
-        Ok(SvtArgs {
-            input: &self.input,
-            pix_fmt: self.pix_format.unwrap_or(PixelFormat::Yuv420p10le),
-            vfilter: self.vfilter.as_deref(),
-            crf,
-            preset,
-            keyint,
-            scd,
-            args,
-        })
-    }
-
     fn to_ffmpeg_args(
         &self,
         vcodec: Arc<str>,
         crf: f32,
         probe: &Ffprobe,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        let svtav1 = &*vcodec == "libsvtav1";
         ensure!(
-            self.svt_args.is_empty(),
-            "--svt args cannot be used with other encoders, instead use --enc"
+            svtav1 || self.svt_args.is_empty(),
+            "--svt may only be used with svt-av1"
         );
 
         let preset = match &self.preset {
             Some(Preset::Number(n)) => Some(n.to_string().into()),
             Some(Preset::Name(n)) => Some(n.clone()),
+            None if svtav1 => Some("8".into()),
             None => None,
         };
+
+        let keyint = self.keyint(probe)?;
+
+        let mut svtav1_params = vec![];
+        if svtav1 {
+            let scd = match (self.scd, self.keyint, keyint) {
+                (Some(true), ..) | (_, None, Some(_)) => 1,
+                _ => 0,
+            };
+            svtav1_params.push(format!("scd={scd}"));
+            // add all --svt args
+            svtav1_params.extend(
+                self.svt_args
+                    .iter()
+                    .map(|a| a.trim_start_matches('-').to_owned()),
+            );
+        }
 
         let mut args: Vec<Arc<String>> = self
             .enc_args
             .iter()
             .flat_map(|arg| {
                 if let Some((opt, val)) = arg.split_once('=') {
-                    vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                    if opt == "svtav1-params" {
+                        svtav1_params.push(arg.clone());
+                        vec![].into_iter()
+                    } else {
+                        vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                    }
                 } else {
                     vec![arg.clone().into()].into_iter()
                 }
             })
             .collect();
 
+        if !svtav1_params.is_empty() {
+            args.push("-svtav1-params".to_owned().into());
+            args.push(svtav1_params.join(":").into());
+        }
+
         // Set keyint/-g for all vcodecs
-        if !args.iter().any(|a| &**a == "-g") {
-            if let Some(keyint) = self.keyint(probe)? {
+        if let Some(keyint) = keyint {
+            if !args.iter().any(|a| &**a == "-g") {
                 args.push("-g".to_owned().into());
                 args.push(keyint.to_string().into());
             }
@@ -276,7 +256,7 @@ impl Encode {
         }
 
         let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
-            "libaom-av1" => PixelFormat::Yuv420p10le,
+            vc if vc.contains("av1") => PixelFormat::Yuv420p10le,
             _ => PixelFormat::Yuv420p,
         });
 
@@ -349,19 +329,14 @@ impl Encode {
     }
 }
 
+/// Video codec for encoding.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Encoder {
-    SvtAv1,
-    Ffmpeg(Arc<str>),
-}
+pub struct Encoder(Arc<str>);
 
 impl Encoder {
     /// vcodec name that would work if you used it as the -e argument.
     pub fn as_str(&self) -> &str {
-        match self {
-            Self::SvtAv1 => "svt-av1",
-            Self::Ffmpeg(vcodec) => vcodec,
-        }
+        &self.0
     }
 
     /// Returns default crf-increment.
@@ -388,31 +363,10 @@ impl std::str::FromStr for Encoder {
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
         Ok(match s {
-            "svt-av1" => Self::SvtAv1,
-            vcodec => Self::Ffmpeg(vcodec.into()),
+            // Support "svt-av1" alias for back compat
+            "svt-av1" => Self("libsvtav1".into()),
+            vcodec => Self(vcodec.into()),
         })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum EncoderArgs<'a> {
-    SvtAv1(SvtArgs<'a>),
-    Ffmpeg(FfmpegEncodeArgs<'a>),
-}
-
-impl EncoderArgs<'_> {
-    pub fn pixel_format(&self) -> PixelFormat {
-        match self {
-            Self::SvtAv1(a) => a.pix_fmt,
-            Self::Ffmpeg(a) => a.pix_fmt,
-        }
-    }
-
-    pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
-        match self {
-            Self::SvtAv1(a) => a.sample_encode_hash(state),
-            Self::Ffmpeg(a) => a.sample_encode_hash(state),
-        }
     }
 }
 
@@ -506,14 +460,6 @@ impl PixelFormat {
             Self::Yuv420p => "yuv420p",
         }
     }
-
-    pub fn input_depth(self) -> &'static str {
-        match self {
-            Self::Yuv420p10le => "10",
-            Self::Yuv444p10le => "10",
-            Self::Yuv420p => "8",
-        }
-    }
 }
 
 impl fmt::Display for PixelFormat {
@@ -575,9 +521,9 @@ fn duration_interval_from_str() {
 
 /// Should use keyint & scd defaults for >3m inputs.
 #[test]
-fn to_svt_args_default_over_3m() {
-    let svt = Encode {
-        encoder: Encoder::SvtAv1,
+fn svtav1_to_ffmpeg_args_default_over_3m() {
+    let enc = Encode {
+        encoder: Encoder("libsvtav1".into()),
         input: "vid.mp4".into(),
         vfilter: Some("scale=320:-1,fps=film".into()),
         preset: None,
@@ -599,31 +545,48 @@ fn to_svt_args_default_over_3m() {
         pix_fmt: None,
     };
 
-    let SvtArgs {
+    let FfmpegEncodeArgs {
         input,
+        vcodec,
         vfilter,
         pix_fmt,
         crf,
         preset,
-        keyint,
-        scd,
-        args,
-    } = svt.to_svt_args(32.0, &probe).expect("to_svt_args");
+        output_args,
+        input_args,
+    } = enc
+        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
+        .expect("to_ffmpeg_args");
 
-    assert_eq!(input, svt.input);
+    assert_eq!(&*vcodec, "libsvtav1");
+    assert_eq!(input, enc.input);
     assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
     assert_eq!(crf, 32.0);
-    assert_eq!(preset, 8);
+    assert_eq!(preset, Some("8".into()));
     assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
-    assert_eq!(keyint, Some(240)); // based off filter fps
-    assert_eq!(scd, 1);
-    assert_eq!(args, vec!["film-grain", "30"]);
+
+    assert!(
+        output_args
+            .windows(2)
+            .any(|w| w[0].as_str() == "-g" && w[1].as_str() == "240"),
+        "expected -g in {output_args:?}"
+    );
+    let svtargs_idx = output_args
+        .iter()
+        .position(|a| a.as_str() == "-svtav1-params")
+        .expect("missing -svtav1-params");
+    let svtargs = output_args
+        .get(svtargs_idx + 1)
+        .expect("missing -svtav1-params value")
+        .as_str();
+    assert_eq!(svtargs, "scd=1:film-grain=30");
+    assert!(input_args.is_empty());
 }
 
 #[test]
-fn to_svt_args_default_under_3m() {
-    let svt = Encode {
-        encoder: Encoder::SvtAv1,
+fn svtav1_to_ffmpeg_args_default_under_3m() {
+    let enc = Encode {
+        encoder: Encoder("libsvtav1".into()),
         input: "vid.mp4".into(),
         vfilter: None,
         preset: Some(Preset::Number(7)),
@@ -645,23 +608,38 @@ fn to_svt_args_default_under_3m() {
         pix_fmt: None,
     };
 
-    let SvtArgs {
+    let FfmpegEncodeArgs {
         input,
+        vcodec,
         vfilter,
         pix_fmt,
         crf,
         preset,
-        keyint,
-        scd,
-        args,
-    } = svt.to_svt_args(32.0, &probe).expect("to_svt_args");
+        output_args,
+        input_args,
+    } = enc
+        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
+        .expect("to_ffmpeg_args");
 
-    assert_eq!(input, svt.input);
+    assert_eq!(&*vcodec, "libsvtav1");
+    assert_eq!(input, enc.input);
     assert_eq!(vfilter, None);
     assert_eq!(crf, 32.0);
-    assert_eq!(preset, 7);
+    assert_eq!(preset, Some("7".into()));
     assert_eq!(pix_fmt, PixelFormat::Yuv420p);
-    assert_eq!(keyint, None);
-    assert_eq!(scd, 0);
-    assert!(args.is_empty());
+
+    assert!(
+        !output_args.iter().any(|a| a.as_str() == "-g"),
+        "unexpected -g in {output_args:?}"
+    );
+    let svtargs_idx = output_args
+        .iter()
+        .position(|a| a.as_str() == "-svtav1-params")
+        .expect("missing -svtav1-params");
+    let svtargs = output_args
+        .get(svtargs_idx + 1)
+        .expect("missing -svtav1-params value")
+        .as_str();
+    assert_eq!(svtargs, "scd=0");
+    assert!(input_args.is_empty());
 }

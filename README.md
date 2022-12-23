@@ -11,7 +11,7 @@ Automatically determine the best crf to deliver the min-vmaf and use it to encod
 
 Two phases:
 * [crf-search](#command-crf-search) to determine the best --crf value
-* ffmpeg & SvtAv1EncApp to encode using the settings
+* ffmpeg to encode using the settings
 
 ```
 ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET>
@@ -45,7 +45,7 @@ ab-av1 sample-encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
 
 ### Command: encode
-Simple invocation of ffmpeg & SvtAv1EncApp to encode a video or image.
+Invoke ffmpeg to encode a video or image.
 
 ```
 ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
@@ -83,12 +83,9 @@ cargo install --git https://github.com/alexheretic/ab-av1
 ```
 
 ### Requirements
-* svt-av1
-* ffmpeg
-* vmaf
-* opus
+**ffmpeg** newer than git-2022-02-24 with libsvtav1, libvmaf, libopus enabled. 
 
-`ffmpeg`, `SvtAv1EncApp` commands should be in `$PATH`.
+`ffmpeg` should be in `$PATH`.
 
 ## Minimum supported rust compiler
 Maintained with [latest stable rust](https://gist.github.com/alexheretic/d1e98d8433b602e57f5d0a9637927e0c).

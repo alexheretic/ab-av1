@@ -2,16 +2,14 @@ mod cache;
 
 use crate::{
     command::{
-        args::{self, EncoderArgs, PixelFormat},
+        args::{self, PixelFormat},
         PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe::{self, Ffprobe},
     process::FfmpegOut,
-    sample,
-    svtav1::{self, SvtArgs},
-    temporary, vmaf,
+    sample, temporary, vmaf,
     vmaf::VmafOut,
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
@@ -189,29 +187,14 @@ pub async fn run(
             (None, key) => {
                 bar.set_message("encoding,");
                 let b = Instant::now();
-                let (encoded_sample, mut output) = match enc_args.clone() {
-                    EncoderArgs::SvtAv1(enc_args) => {
-                        let (sample, output) = svtav1::encode_sample(
-                            SvtArgs {
-                                input: &sample,
-                                ..enc_args
-                            },
-                            temp_dir.clone(),
-                        )?;
-                        (sample, futures::StreamExt::boxed_local(output))
-                    }
-                    EncoderArgs::Ffmpeg(enc_args) => {
-                        let (sample, output) = ffmpeg::encode_sample(
-                            FfmpegEncodeArgs {
-                                input: &sample,
-                                ..enc_args
-                            },
-                            temp_dir.clone(),
-                            sample_args.extension.as_deref().unwrap_or("mkv"),
-                        )?;
-                        (sample, futures::StreamExt::boxed_local(output))
-                    }
-                };
+                let (encoded_sample, mut output) = ffmpeg::encode_sample(
+                    FfmpegEncodeArgs {
+                        input: &sample,
+                        ..enc_args.clone()
+                    },
+                    temp_dir.clone(),
+                    sample_args.extension.as_deref().unwrap_or("mkv"),
+                )?;
                 while let Some(progress) = output.next().await {
                     if let FfmpegOut::Progress { time, fps, .. } = progress? {
                         bar.set_position(time.as_secs() + sample_idx * sample_duration_s * 2);
@@ -232,7 +215,7 @@ pub async fn run(
                     &encoded_sample,
                     &vmaf.ffmpeg_lavfi(encoded_probe.resolution),
                     enc_args
-                        .pixel_format()
+                        .pix_fmt
                         .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
                 )?;
                 let mut vmaf_score = -1.0;

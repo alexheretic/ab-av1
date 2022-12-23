@@ -1,5 +1,5 @@
 //! _sample-encode_ file system caching logic.
-use crate::command::args::EncoderArgs;
+use crate::ffmpeg::FfmpegEncodeArgs;
 use anyhow::Context;
 use std::{ffi::OsStr, hash::Hash, path::Path, time::Duration};
 
@@ -11,7 +11,7 @@ pub async fn cached_encode(
     input_extension: Option<&OsStr>,
     input_size: u64,
     full_pass: bool,
-    enc_args: &EncoderArgs<'_>,
+    enc_args: &FfmpegEncodeArgs<'_>,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
         return (None, None);
@@ -83,7 +83,7 @@ fn open_db() -> sled::Result<sled::Db> {
 #[derive(Debug, Clone, Copy)]
 pub struct Key(blake3::Hash);
 
-fn hash_encode(input_info: impl Hash, enc_args: &EncoderArgs<'_>) -> blake3::Hash {
+fn hash_encode(input_info: impl Hash, enc_args: &FfmpegEncodeArgs<'_>) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     let mut std_hasher = BlakeStdHasher(&mut hasher);
     input_info.hash(&mut std_hasher);
