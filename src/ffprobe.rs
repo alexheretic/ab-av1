@@ -84,13 +84,8 @@ pub fn probe(input: &Path) -> Ffprobe {
 }
 
 fn is_image(path: &Path) -> anyhow::Result<bool> {
-    // This code was taken from infer::get_from_path, but it's not available since we're importing it as no_std
     let file = File::open(path)?;
-    let limit = file
-        .metadata()
-        .map(|m| std::cmp::min(m.len(), 8192) as usize + 1)
-        .unwrap_or(0);
-    let mut file_header = Vec::with_capacity(limit);
+    let mut file_header = Vec::with_capacity(8192);
     file.take(8192).read_to_end(&mut file_header)?;
 
     Ok(infer::is_image(&file_header))
