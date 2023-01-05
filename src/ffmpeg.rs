@@ -189,6 +189,9 @@ impl VCodecSpecific for Arc<str> {
         if self.ends_with("vaapi") {
             // Use -qp for vaapi codecs as crf is not supported
             "-qp"
+        } else if self.ends_with("nvenc") {
+            // Use -cq for nvenc codecs as crf is not supported
+            "-cq"
         } else {
             "-crf"
         }
