@@ -3,6 +3,7 @@
   other encoders & allows svt-av1 encoding to benefit from more built-in ffmpeg behaviours like aspect preservation.<br/>
   **An ffmpeg build with libsvtav1 enabled is now required**. SvtAv1EncApp is no longer required.
 * Improve image detection.
+* Add `--encoder` support for nvenc family of ffmpeg encoders: av1_nvenc, hevc_nvenc, and h264_nvenc.
 
 # v0.6.1
 * Add _sample-encode_, _crf-search_, _auto-encode_ arg `--min-samples`.
