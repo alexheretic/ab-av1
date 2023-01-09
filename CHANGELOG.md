@@ -1,3 +1,6 @@
+# Unreleased
+* Fix _crf-search_ incorrectly picking a rate that exceeds the `--max-encoded-percent`.
+
 # v0.7.0
 * Use ffmpeg for svt-av1 encodes instead of invoking to SvtAv1EncApp directly. This unifies the handling of
   other encoders & allows svt-av1 encoding to benefit from more built-in ffmpeg behaviours like aspect preservation.<br/>

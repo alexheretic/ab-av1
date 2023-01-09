@@ -233,7 +233,8 @@ pub async fn run(
             match l_bound {
                 Some(lower) if lower.q + 1 == sample.q => {
                     sample.print_attempt(&bar, *min_vmaf, *max_encoded_percent, *quiet, from_cache);
-                    ensure_or_no_good_crf!(sample_small_enough, sample);
+                    let lower_small_enough = lower.enc.encode_percent <= *max_encoded_percent as _;
+                    ensure_or_no_good_crf!(lower_small_enough, sample);
                     return Ok(lower.clone());
                 }
                 Some(lower) => {
