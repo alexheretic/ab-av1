@@ -1,5 +1,6 @@
 # Unreleased
 * Fix _crf-search_ incorrectly picking a rate that exceeds the `--max-encoded-percent`.
+* Improve _auto-encode_ crf float display rounding.
 
 # v0.7.0
 * Use ffmpeg for svt-av1 encodes instead of invoking to SvtAv1EncApp directly. This unifies the handling of

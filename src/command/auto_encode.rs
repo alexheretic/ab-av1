@@ -5,7 +5,9 @@ use crate::{
         PROGRESS_CHARS,
     },
     console_ext::style,
-    ffprobe, temporary,
+    ffprobe,
+    float::TerseF32,
+    temporary,
 };
 use clap::Parser;
 use console::style;
@@ -79,7 +81,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 }
                 bar.finish_with_message(format!(
                     "crf {}, VMAF {vmaf:.2}, size {percent}",
-                    style(last.crf()).red(),
+                    style(TerseF32(last.crf())).red(),
                 ));
             }
             bar.finish();
@@ -93,7 +95,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
     bar.finish_with_message(format!(
         "crf {}, VMAF {:.2}, size {}",
-        style(best.crf()).green(),
+        style(TerseF32(best.crf())).green(),
         style(best.enc.vmaf).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
