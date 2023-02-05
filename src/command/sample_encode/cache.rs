@@ -1,7 +1,12 @@
 //! _sample-encode_ file system caching logic.
 use crate::ffmpeg::FfmpegEncodeArgs;
 use anyhow::Context;
-use std::{ffi::OsStr, hash::Hash, path::Path, time::Duration};
+use std::{
+    ffi::OsStr,
+    hash::Hash,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 /// Return a previous stored encode result for the same sample & args.
 pub async fn cached_encode(
@@ -74,10 +79,18 @@ pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Res
 }
 
 fn open_db() -> sled::Result<sled::Db> {
+    const LOCK_MAX_WAIT: Duration = Duration::from_secs(2);
+
     let mut path = dirs::cache_dir().expect("no cache dir found");
     path.push("ab-av1");
     path.push("sample-encode-cache");
-    sled::open(path)
+    let a = Instant::now();
+    let mut db = sled::open(&path);
+    while db.is_err() && a.elapsed() < LOCK_MAX_WAIT {
+        std::thread::yield_now();
+        db = sled::open(&path);
+    }
+    db
 }
 
 #[derive(Debug, Clone, Copy)]

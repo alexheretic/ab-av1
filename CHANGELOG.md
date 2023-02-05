@@ -1,5 +1,6 @@
 # Unreleased (v0.7.2)
 * Preserve all input streams into outputs.
+* Support concurrent running processes out of the box by segregating temp-dirs & fixing cache access.
 
 # v0.7.1
 * Fix _crf-search_ incorrectly picking a rate that exceeds the `--max-encoded-percent`.
