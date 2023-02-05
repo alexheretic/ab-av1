@@ -20,13 +20,15 @@ pub async fn copy(
     frames: u32,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<PathBuf> {
+    let mut dest = temporary::process_dir(temp_dir, input);
     // Always using mkv for the samples works better than, e.g. using mp4 for mp4s
     // see https://github.com/alexheretic/ab-av1/issues/82#issuecomment-1337306325
-    let mut dest = input.with_extension(format!("sample{}+{frames}f.mkv", sample_start.as_secs()));
-    if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
-        temp.push(name);
-        dest = temp;
-    }
+    dest.push(
+        input
+            .with_extension(format!("sample{}+{frames}f.mkv", sample_start.as_secs()))
+            .file_name()
+            .unwrap(),
+    );
     if dest.exists() {
         return Ok(dest);
     }

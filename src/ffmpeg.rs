@@ -72,14 +72,14 @@ pub fn encode_sample(
 ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
     let pre = pre_extension_name(&vcodec);
     let crf_str = format!("{}", TerseF32(crf)).replace('.', "_");
-    let mut dest = match &preset {
+    let dest_file_name = match &preset {
         Some(p) => input.with_extension(format!("{pre}.crf{crf_str}.{p}.{dest_ext}")),
         None => input.with_extension(format!("{pre}.crf{crf_str}.{dest_ext}")),
     };
-    if let (Some(mut temp), Some(name)) = (temp_dir, dest.file_name()) {
-        temp.push(name);
-        dest = temp;
-    }
+    let dest_file_name = dest_file_name.file_name().unwrap();
+    let mut dest = temporary::process_dir(temp_dir, input);
+    dest.push(dest_file_name);
+
     temporary::add(&dest, TempKind::Keepable);
 
     let enc = Command::new("ffmpeg")

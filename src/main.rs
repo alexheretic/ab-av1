@@ -12,7 +12,7 @@ mod yuv;
 use anyhow::anyhow;
 use clap::Parser;
 use futures::FutureExt;
-use std::{io, time::Duration};
+use std::time::Duration;
 use tokio::signal;
 
 const SAMPLE_SIZE_S: u64 = 20;
@@ -33,7 +33,6 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let action = Command::parse();
 
-    action.ensure_temp_dir_exists().await?;
     let keep = action.keep_temp_files();
 
     let local = tokio::task::LocalSet::new();
@@ -63,18 +62,5 @@ impl Command {
             Self::SampleEncode(args) => args.keep,
             _ => false,
         }
-    }
-
-    async fn ensure_temp_dir_exists(&self) -> io::Result<()> {
-        let temp_dir = match self {
-            Self::SampleEncode(args) => &args.sample.temp_dir,
-            Self::CrfSearch(args) => &args.sample.temp_dir,
-            Self::AutoEncode(args) => &args.search.sample.temp_dir,
-            _ => &None,
-        };
-        if let Some(dir) = temp_dir {
-            tokio::fs::create_dir_all(dir).await?;
-        }
-        Ok(())
     }
 }
