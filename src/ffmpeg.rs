@@ -140,6 +140,7 @@ pub fn encode(
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
+        .arg2("-map", "0")
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
         .arg2(vcodec.crf_arg(), crf)

@@ -1,3 +1,6 @@
+# Unreleased (v0.7.2)
+* Preserve all input streams into outputs.
+
 # v0.7.1
 * Fix _crf-search_ incorrectly picking a rate that exceeds the `--max-encoded-percent`.
 * Improve _auto-encode_ crf float display rounding.
