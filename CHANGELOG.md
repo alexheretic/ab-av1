@@ -1,4 +1,5 @@
 # Unreleased (v0.7.2)
+* Print failing ffmpeg output.
 * Preserve all input streams into outputs.
 * Support concurrent running processes out of the box by segregating temp-dirs & fixing cache access.
 

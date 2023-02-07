@@ -1,10 +1,10 @@
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
     ffi::OsStr,
     io,
     process::{ExitStatus, Output},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 use time::macros::format_description;
@@ -15,9 +15,12 @@ use tokio_stream::{Stream, StreamExt};
 pub fn ensure_success(name: &'static str, out: &Output) -> anyhow::Result<()> {
     ensure!(
         out.status.success(),
-        "{name} exit code {:?}\n{}",
-        out.status.code(),
-        String::from_utf8_lossy(&out.stderr),
+        "{name} exit code {}\n---stderr---\n{}\n------------",
+        out.status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "None".into()),
+        String::from_utf8_lossy(&out.stderr).trim(),
     );
     Ok(())
 }
@@ -25,19 +28,24 @@ pub fn ensure_success(name: &'static str, out: &Output) -> anyhow::Result<()> {
 /// Convert exit code result into simple result.
 pub fn exit_ok(name: &'static str, done: io::Result<ExitStatus>) -> anyhow::Result<()> {
     let code = done?;
-    ensure!(code.success(), "{name} exit code {:?}", code.code());
+    ensure!(
+        code.success(),
+        "{name} exit code {}",
+        code.code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "None".into())
+    );
     Ok(())
 }
 
-/// Ok -> None, err -> Some(err)
-pub fn exit_ok_option<T>(
+/// Convert exit code result into simple result adding stderr to error messages.
+pub fn exit_ok_stderr(
     name: &'static str,
     done: io::Result<ExitStatus>,
-) -> Option<anyhow::Result<T>> {
-    match exit_ok(name, done) {
-        Ok(_) => None,
-        Err(err) => Some(Err(err)),
-    }
+    stderr: &Chunks,
+) -> anyhow::Result<()> {
+    exit_ok(name, done)
+        .map_err(|e| anyhow!("{e}\n---stderr---\n{}\n------------", stderr.out.trim()))
 }
 
 #[derive(Debug, PartialEq)]
@@ -91,15 +99,17 @@ impl FfmpegOut {
         child: Child,
         name: &'static str,
     ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
-        let chunks: Mutex<Chunks> = <_>::default();
+        let mut chunks = Chunks::default();
         ProcessChunkStream::from(child).filter_map(move |item| match item {
             Item::Stderr(chunk) => {
-                let mut chunks = chunks.lock().unwrap();
                 chunks.push(&chunk);
                 FfmpegOut::try_parse(chunks.last_line()).map(Ok)
             }
             Item::Stdout(_) => None,
-            Item::Done(code) => exit_ok_option(name, code),
+            Item::Done(code) => match exit_ok_stderr(name, code, &chunks) {
+                Ok(_) => None,
+                Err(err) => Some(Err(err)),
+            },
         })
     }
 }

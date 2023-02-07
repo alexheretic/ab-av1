@@ -1,11 +1,11 @@
 //! vmaf logic
 use crate::{
     command::args::PixelFormat,
-    process::{exit_ok, Chunks, CommandExt, FfmpegOut},
+    process::{exit_ok_stderr, Chunks, CommandExt, FfmpegOut},
     yuv,
 };
 use anyhow::Context;
-use std::{path::Path, sync::Mutex};
+use std::path::Path;
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
@@ -49,11 +49,11 @@ pub fn run(
         .try_into()
         .context("ffmpeg vmaf")?;
 
-    let chunks: Mutex<Chunks> = <_>::default();
+    let mut chunks = Chunks::default();
     let vmaf = vmaf.filter_map(move |item| match item {
-        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &chunks),
+        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &mut chunks),
         Item::Stdout(_) => None,
-        Item::Done(code) => VmafOut::ignore_ok(exit_ok("ffmpeg vmaf", code)),
+        Item::Done(code) => VmafOut::ignore_ok(exit_ok_stderr("ffmpeg vmaf", code, &chunks)),
     });
 
     Ok(yuv_pipe.merge(vmaf))
@@ -74,8 +74,7 @@ impl VmafOut {
         }
     }
 
-    fn try_from_chunk(chunk: &[u8], chunks: &Mutex<Chunks>) -> Option<Self> {
-        let mut chunks = chunks.lock().unwrap();
+    fn try_from_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<Self> {
         chunks.push(chunk);
         let line = chunks.last_line();
 
