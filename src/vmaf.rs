@@ -40,6 +40,7 @@ pub fn run(
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
         .kill_on_drop(true)
+        // Use 24fps to match vmaf models
         .arg2("-r", "24")
         .arg2("-i", distorted)
         .arg2("-r", "24")
