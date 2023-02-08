@@ -63,7 +63,15 @@ impl Vmaf {
             // scale both streams to the vmaf width
             lavfi.insert_str(
                 0,
-                &format!("[0:v]scale={w}:{h}:flags=bicubic[dis];[1:v]scale={w}:{h}:flags=bicubic[ref];[dis][ref]"),
+                &format!(
+                    "[0:v]scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+                     [1:v]scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS[ref];[dis][ref]"
+                ),
+            );
+        } else {
+            lavfi.insert_str(
+                0,
+                "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];[dis][ref]",
             );
         }
 
@@ -172,7 +180,10 @@ fn vmaf_lavfi() {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
     };
-    assert_eq!(vmaf.ffmpeg_lavfi(None), "libvmaf=n_threads=5:n_subsample=4");
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(None),
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];[dis][ref]libvmaf=n_threads=5:n_subsample=4"
+    );
 }
 
 #[test]
@@ -182,7 +193,7 @@ fn vmaf_lavfi_default() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "libvmaf=n_threads={}",
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];[dis][ref]libvmaf=n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
@@ -195,7 +206,7 @@ fn vmaf_lavfi_include_n_threads() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "libvmaf=log_path=output.xml:n_threads={}",
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];[dis][ref]libvmaf=log_path=output.xml:n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
@@ -210,8 +221,8 @@ fn vmaf_lavfi_small_width() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "[0:v]scale=1920:-1:flags=bicubic[dis];\
-         [1:v]scale=1920:-1:flags=bicubic[ref];\
+        "[0:v]scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+         [1:v]scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
@@ -225,7 +236,8 @@ fn vmaf_lavfi_4k() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3840, 2160))),
-        "libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];\
+         [dis][ref]libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
     );
 }
 
@@ -238,8 +250,8 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3008, 1692))),
-        "[0:v]scale=3840:-1:flags=bicubic[dis];\
-         [1:v]scale=3840:-1:flags=bicubic[ref];\
+        "[0:v]scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+         [1:v]scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:model=version=vmaf_4k_v0.6.1"
     );
 }
@@ -257,7 +269,8 @@ fn vmaf_lavfi_small_width_custom_model() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "libvmaf=model=version=foo:n_threads=5:n_subsample=4"
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];\
+         [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
 
@@ -277,8 +290,8 @@ fn vmaf_lavfi_custom_model_and_width() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "[0:v]scale=123:-1:flags=bicubic[dis];\
-        [1:v]scale=123:-1:flags=bicubic[ref];\
+        "[0:v]scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+        [1:v]scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
         [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
@@ -291,6 +304,6 @@ fn vmaf_lavfi_1080p() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1920, 1080))),
-        "libvmaf=n_threads=5:n_subsample=4"
+        "[0:v]setpts=PTS-STARTPTS[dis];[1:v]setpts=PTS-STARTPTS[ref];[dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
