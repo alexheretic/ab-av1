@@ -36,7 +36,7 @@ pub async fn copy(
 
     // Note: `-ss` before `-i` & `-frames:v` instead of `-t`
     // See https://github.com/alexheretic/ab-av1/issues/36#issuecomment-1146634936
-    let out = Command::new("ffmpeg")
+    let mut out = Command::new("ffmpeg")
         .arg("-y")
         .arg2("-ss", sample_start.as_secs().to_string())
         .arg2("-i", input)
@@ -48,6 +48,26 @@ pub async fn copy(
         .output()
         .await
         .context("ffmpeg copy")?;
+
+    if !out.status.success()
+        && String::from_utf8_lossy(&out.stderr)
+            .contains("Can't write packet with unknown timestamp")
+    {
+        out = Command::new("ffmpeg")
+            .arg("-y")
+            // try +genpts workaround
+            .arg2("-fflags", "+genpts")
+            .arg2("-ss", sample_start.as_secs().to_string())
+            .arg2("-i", input)
+            .arg2("-frames:v", frames)
+            .arg2("-c:v", "copy")
+            .arg("-an")
+            .arg(&dest)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .context("ffmpeg copy")?;
+    }
 
     ensure_success("ffmpeg copy", &out)?;
     Ok(dest)
