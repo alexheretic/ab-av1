@@ -2,6 +2,8 @@
 * Print failing ffmpeg stderr output.
 * Preserve all input file streams (e.g. audio, subs, attachments) into output.
 * Support concurrent running processes out of the box by segregating temp-dirs & fixing cache access.
+* Automatically workaround ffmpeg _"Can't write packet with unknown timestamp"_ sample generation failures
+  (typically encountered with old avi files) by using \`-fflags +genpts\`.
 
 # v0.7.1
 * Fix _crf-search_ incorrectly picking a rate that exceeds the `--max-encoded-percent`.
