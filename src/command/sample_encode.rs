@@ -101,7 +101,7 @@ pub async fn run(
     let input_len = fs::metadata(&*input).await?.len();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
     let duration = input_probe.duration.clone()?;
-    let fps = input_probe.fps.clone()?;
+    let input_fps = input_probe.fps.clone()?;
     let samples = sample_args.sample_count(duration).max(1);
     let temp_dir = sample_args.temp_dir;
 
@@ -133,7 +133,7 @@ pub async fn run(
                     sample_idx,
                     samples,
                     duration,
-                    fps,
+                    input_fps,
                     sample_temp.clone(),
                 )
                 .await;
@@ -228,7 +228,8 @@ pub async fn run(
                         VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                             bar.set_position(
                                 sample_duration_s
-                                    + time.as_secs()
+                                    // *24/fps adjusts for vmaf `-r 24`
+                                    + (time.as_secs_f64() * (24.0 / input_fps)).round() as u64
                                     + sample_idx * sample_duration_s * 2,
                             );
                             if fps > 0.0 {

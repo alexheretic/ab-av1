@@ -22,6 +22,20 @@ impl Ffprobe {
         let pf = self.pix_fmt.as_deref()?;
         PixelFormat::try_from(pf).ok()
     }
+
+    pub fn nframes(&self) -> Result<u64, ProbeError> {
+        match (&self.fps, &self.duration) {
+            (Ok(fps), Ok(duration)) => {
+                let frames = (fps * duration.as_secs_f64()).round();
+                if frames.is_normal() && frames.is_sign_positive() {
+                    Ok(frames as _)
+                } else {
+                    Err(ProbeError(format!("Invalid nframes {frames}")))
+                }
+            }
+            (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+        }
+    }
 }
 
 /// Try to ffprobe the given input.

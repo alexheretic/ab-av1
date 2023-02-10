@@ -61,9 +61,9 @@ pub async fn vmaf(
     let dpix_fmt = dprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
     let rprobe = ffprobe::probe(&reference);
     let rpix_fmt = rprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
-    let duration = dprobe.duration.or(rprobe.duration);
-    if let Ok(d) = duration {
-        bar.set_length(d.as_secs().max(1));
+    let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
+    if let Ok(nframes) = nframes {
+        bar.set_length(nframes);
     }
 
     let mut vmaf = vmaf::run(
@@ -80,15 +80,15 @@ pub async fn vmaf(
                 vmaf_score = score;
                 break;
             }
-            VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+            VmafOut::Progress(FfmpegOut::Progress { frame, fps, .. }) => {
                 if fps > 0.0 {
                     bar.set_message(format!("vmaf {fps} fps, "));
                 }
-                if duration.is_ok() {
-                    bar.set_position(time.as_secs());
+                if nframes.is_ok() {
+                    bar.set_position(frame);
                 }
             }
-            VmafOut::Progress(_) => {}
+            VmafOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
             VmafOut::Err(e) => return Err(e),
         }
     }

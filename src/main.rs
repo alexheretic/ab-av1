@@ -7,7 +7,6 @@ mod process;
 mod sample;
 mod temporary;
 mod vmaf;
-mod yuv;
 
 use anyhow::anyhow;
 use clap::Parser;
