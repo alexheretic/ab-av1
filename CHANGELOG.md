@@ -1,4 +1,4 @@
-# Unreleased (v0.7.2)
+# v0.7.2
 * Print failing ffmpeg stderr output.
 * Preserve all input file streams (e.g. audio, subs, attachments) into output.
 * Support concurrent running processes out of the box by segregating temp-dirs & fixing cache access.
