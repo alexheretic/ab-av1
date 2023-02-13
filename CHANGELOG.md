@@ -1,3 +1,7 @@
+# Unreleased (v0.7.3)
+* Include all other non-main video streams by copying instead of encoding them with the same
+  settings as the main video stream.
+
 # v0.7.2
 * Print failing ffmpeg stderr output.
 * Preserve all input file streams (e.g. audio, subs, attachments) into output.
