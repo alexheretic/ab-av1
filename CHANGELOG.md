@@ -1,6 +1,8 @@
 # Unreleased (v0.7.3)
 * Include all other non-main video streams by copying instead of encoding them with the same
   settings as the main video stream.
+* Always copy audio unless `--acodec` or `--downmix-to-stereo` are specified. Previously would
+  re-encode to opus when changing container.
 
 # v0.7.2
 * Print failing ffmpeg stderr output.

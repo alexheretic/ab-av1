@@ -129,8 +129,11 @@ pub fn encode(
     let add_cues_to_front =
         matches!(output_ext, Some("mkv") | Some("webm")) && !oargs.contains("-cues_to_front");
 
-    let audio_codec = audio_codec
-        .unwrap_or_else(|| default_audio_codec(input, output, downmix_to_stereo, has_audio));
+    let audio_codec = audio_codec.unwrap_or(if downmix_to_stereo && has_audio {
+        "libopus"
+    } else {
+        "copy"
+    });
 
     let set_ba_128k = audio_codec == "libopus" && !oargs.contains("-b:a");
     let downmix_to_stereo = downmix_to_stereo && !oargs.contains("-ac");
@@ -197,20 +200,5 @@ impl VCodecSpecific for Arc<str> {
         } else {
             "-crf"
         }
-    }
-}
-
-pub fn default_audio_codec(
-    input: &Path,
-    output: &Path,
-    downmix_to_stereo: bool,
-    has_audio: bool,
-) -> &'static str {
-    // use `-c:a copy` if the extensions are the same, otherwise re-encode with opus
-    match input.extension() {
-        _ if downmix_to_stereo => "libopus",
-        ext if ext.is_some() && ext == output.extension() => "copy",
-        _ if !has_audio => "copy",
-        _ => "libopus",
     }
 }

@@ -23,8 +23,7 @@ pub struct EncodeToOutput {
     pub output: Option<PathBuf>,
 
     /// Set the output ffmpeg audio codec.
-    /// By default when the input & output file extension match 'copy' is used,
-    /// otherwise 'libopus'.
+    /// By default 'copy' is used. Otherwise, if re-encoding is necessary, 'libopus' is default.
     ///
     /// See https://ffmpeg.org/ffmpeg.html#Audio-Options.
     #[arg(long = "acodec")]
