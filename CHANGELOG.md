@@ -1,4 +1,4 @@
-# Unreleased (v0.7.3)
+# v0.7.3
 * Include all other non-main video streams by copying instead of encoding them with the same
   settings as the main video stream.
 * Always copy audio unless `--acodec` or `--downmix-to-stereo` are specified. Previously would
