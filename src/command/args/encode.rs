@@ -254,6 +254,16 @@ impl Encode {
             args.push("-b:v".to_owned().into());
             args.push("0".to_owned().into());
         }
+        
+        // add `-look_ahead 1 -lookahead-depth 40` for qsv encoders to use "lookahead" mode
+        if matches!(&*vcodec, "av1_qsv" | "hevc_qsv" | "h264_qsv")
+            && !args.iter().any(|arg| &**arg == "-look_ahead")
+        {
+            args.push("-look_ahead".to_owned().into());
+            args.push("1".to_owned().into());
+            args.push("-lookahead-depth".to_owned().into());
+            args.push("40".to_owned().into());
+        }
 
         let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
             vc if vc.contains("av1") => PixelFormat::Yuv420p10le,
