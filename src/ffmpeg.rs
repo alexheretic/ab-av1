@@ -197,6 +197,9 @@ impl VCodecSpecific for Arc<str> {
         } else if self.ends_with("nvenc") {
             // Use -cq for nvenc codecs as crf is not supported
             "-cq"
+        } else if self.ends_with("qsv") {
+            // Use -global_quality for qsv codecs as crf is not supported
+            "-global_quality"
         } else {
             "-crf"
         }
