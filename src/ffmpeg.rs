@@ -191,14 +191,12 @@ impl VCodecSpecific for Arc<str> {
     }
 
     fn crf_arg(&self) -> &str {
-        if self.ends_with("vaapi") {
-            // Use -qp for vaapi codecs as crf is not supported
+        // use crf-like args to support encoders that don't have crf
+        if self.ends_with("_vaapi") {
             "-qp"
-        } else if self.ends_with("nvenc") {
-            // Use -cq for nvenc codecs as crf is not supported
+        } else if self.ends_with("_nvenc") {
             "-cq"
-        } else if self.ends_with("qsv") {
-            // Use -global_quality for qsv codecs as crf is not supported
+        } else if self.ends_with("_qsv") {
             "-global_quality"
         } else {
             "-crf"
