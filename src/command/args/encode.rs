@@ -247,12 +247,11 @@ impl Encode {
             }
         }
 
-        // add `-b:v 0` for aom & vp9 to use "constant quality" mode
-        if matches!(&*vcodec, "libaom-av1" | "libvpx-vp9")
-            && !args.iter().any(|arg| &**arg == "-b:v")
-        {
-            args.push("-b:v".to_owned().into());
-            args.push("0".to_owned().into());
+        for (name, val) in self.encoder.default_ffmpeg_args() {
+            if !args.iter().any(|arg| &**arg == name) {
+                args.push(name.to_string().into());
+                args.push(val.to_string().into());
+            }
         }
 
         let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
@@ -354,6 +353,19 @@ impl Encoder {
             "libx264" | "libx265" => 46.0,
             // Works well for svt-av1
             _ => 55.0,
+        }
+    }
+
+    /// Additional encoder specific ffmpeg arg defaults.
+    fn default_ffmpeg_args(&self) -> &[(&'static str, &'static str)] {
+        match self.as_str() {
+            // add `-b:v 0` for aom & vp9 to use "constant quality" mode
+            "libaom-av1" | "libvpx-vp9" => &[("-b:v", "0")],
+            // add `-look_ahead 1 -lookahead-depth 40` for qsv encoders to use "lookahead" mode
+            "av1_qsv" | "hevc_qsv" | "h264_qsv" => {
+                &[("-look_ahead", "1"), ("-lookahead-depth", "40")]
+            }
+            _ => &[],
         }
     }
 }
