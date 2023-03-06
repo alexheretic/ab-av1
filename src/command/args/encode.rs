@@ -261,6 +261,10 @@ impl Encode {
         {
             args.push("-look_ahead".to_owned().into());
             args.push("1".to_owned().into());
+        }
+        if matches!(&*vcodec, "av1_qsv" | "hevc_qsv" | "h264_qsv")
+            && !args.iter().any(|arg| &**arg == "-lookahead-depth")
+        {
             args.push("-lookahead-depth".to_owned().into());
             args.push("40".to_owned().into());
         }
