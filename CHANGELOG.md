@@ -1,6 +1,6 @@
 # Unreleased (v0.7.4)
 * Add `--encoder` support for qsv family of ffmpeg encoders: av1_qsv, hevc_qsv, vp9_qsv, h264_qsv and mpeg2_qsv.
-* Enable default look_ahead=1, lookahead-depth=40 args for encoders: av1_qsv, hevc_qsv, h264_qsv.
+* Enable lookahead mode by default for encoders: av1_qsv, hevc_qsv, h264_qsv.
 
 # v0.7.3
 * Include all other non-main video streams by copying instead of encoding them with the same

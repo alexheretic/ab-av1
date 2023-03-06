@@ -361,10 +361,12 @@ impl Encoder {
         match self.as_str() {
             // add `-b:v 0` for aom & vp9 to use "constant quality" mode
             "libaom-av1" | "libvpx-vp9" => &[("-b:v", "0")],
-            // add `-look_ahead 1 -lookahead-depth 40` for qsv encoders to use "lookahead" mode
-            "av1_qsv" | "hevc_qsv" | "h264_qsv" => {
-                &[("-look_ahead", "1"), ("-extbrc", "1"), ("-look_ahead_depth", "40")]
-            }
+            // enable lookahead mode for qsv encoders
+            "av1_qsv" | "hevc_qsv" | "h264_qsv" => &[
+                ("-look_ahead", "1"),
+                ("-extbrc", "1"),
+                ("-look_ahead_depth", "40"),
+            ],
             _ => &[],
         }
     }
