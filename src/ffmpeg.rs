@@ -186,13 +186,14 @@ impl VCodecSpecific for Arc<str> {
     fn preset_arg(&self) -> &str {
         match &**self {
             "libaom-av1" | "libvpx-vp9" => "-cpu-used",
+            "librav1e" => "-speed",
             _ => "-preset",
         }
     }
 
     fn crf_arg(&self) -> &str {
         // use crf-like args to support encoders that don't have crf
-        if self.ends_with("_vaapi") {
+        if &**self == "librav1e" || self.ends_with("_vaapi") {
             "-qp"
         } else if self.ends_with("_nvenc") {
             "-cq"

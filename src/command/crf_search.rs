@@ -46,7 +46,7 @@ pub struct Args {
 
     /// Maximum (lowest quality) crf value to try.
     ///
-    /// [default: 55, 46 for x264,x265]
+    /// [default: 55, 46 for x264,x265, 255 for rav1e]
     #[arg(long)]
     pub max_crf: Option<f32>,
 
