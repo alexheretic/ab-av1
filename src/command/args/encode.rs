@@ -351,6 +351,8 @@ impl Encoder {
     pub fn default_max_crf(&self) -> f32 {
         match self.as_str() {
             "libx264" | "libx265" => 46.0,
+            // rav1e: use max -qp
+            "librav1e" => 255.0,
             // Works well for svt-av1
             _ => 55.0,
         }
