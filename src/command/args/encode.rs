@@ -85,25 +85,10 @@ pub struct Encode {
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
-    let mut arg = arg.to_owned();
-    if !arg.starts_with('-') {
-        if arg.find('=') == Some(1) || arg.len() == 1 {
-            arg.insert(0, '-');
-        } else {
-            arg.insert_str(0, "--");
-        }
-    }
+    let arg = arg.trim_start_matches('-').to_owned();
 
-    for deny in [
-        "-i",
-        "-b",
-        "--crf",
-        "--preset",
-        "--keyint",
-        "--scd",
-        "--input-depth",
-    ] {
-        ensure!(!arg.starts_with(deny), "svt arg {deny} cannot be used here");
+    for deny in ["i", "b", "crf", "preset", "keyint", "scd", "input-depth"] {
+        ensure!(!arg.starts_with(deny), "'{deny}' cannot be used here");
     }
 
     Ok(arg.into())
@@ -114,6 +99,13 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
     if !arg.starts_with('-') {
         arg.insert(0, '-');
     }
+
+    ensure!(
+        !arg.starts_with("-svtav1-params"),
+        "'svtav1-params' cannot be set here, use `--svt`"
+    );
+    ensure!(!arg.starts_with("-i"), "'i' cannot be used");
+
     Ok(arg)
 }
 
@@ -166,7 +158,6 @@ impl Encode {
             write!(hint, " --vfilter {filter:?}").unwrap();
         }
         for arg in svt_args {
-            let arg = arg.trim_start_matches('-');
             write!(hint, " --svt {arg}").unwrap();
         }
         for arg in enc_input_args {
@@ -210,11 +201,7 @@ impl Encode {
             };
             svtav1_params.push(format!("scd={scd}"));
             // add all --svt args
-            svtav1_params.extend(
-                self.svt_args
-                    .iter()
-                    .map(|a| a.trim_start_matches('-').to_owned()),
-            );
+            svtav1_params.extend(self.svt_args.iter().map(|a| a.to_string()));
         }
 
         let mut args: Vec<Arc<String>> = self
