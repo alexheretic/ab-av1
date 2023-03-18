@@ -1,5 +1,6 @@
 # Unreleased (v0.7.5)
 * Add `-e librav1e` support. Map `--crf` to ffmpeg `-qp` (default max 255), `--preset` to `-speed` (0-10).
+* Disallow `--enc svtav1-params=` usage. libsvtav1 params should instead be set with `--svt`.
 
 # v0.7.4
 * Add `--encoder` support for qsv family of ffmpeg encoders: av1_qsv, hevc_qsv, vp9_qsv, h264_qsv and mpeg2_qsv.
