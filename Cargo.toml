@@ -16,7 +16,7 @@ blake3 = "1.3.3"
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 console = "0.15.4"
-dirs = "4"
+dirs = "5"
 ffprobe = "0.3"
 futures = "0.3.19"
 humantime = "2.1"
