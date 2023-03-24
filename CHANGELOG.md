@@ -1,4 +1,4 @@
-# Unreleased (v0.7.5)
+# v0.7.5
 * Add `-e librav1e` support. Map `--crf` to ffmpeg `-qp` (default max 255), `--preset` to `-speed` (0-10).
 * Disallow `--enc svtav1-params=` usage. libsvtav1 params should instead be set with `--svt`.
 
