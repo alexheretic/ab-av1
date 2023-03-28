@@ -6,6 +6,7 @@ use rand::{
 };
 use std::{
     collections::HashMap,
+    env,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -45,7 +46,7 @@ pub async fn clean_all() {
     let mut files: Vec<_> = std::mem::take(&mut *TEMPS.lock().unwrap())
         .into_keys()
         .collect();
-    files.sort_by_key(|f| f.is_dir()); // rm dirs at the end
+    files.sort_by_key(|f| f.is_dir()); // rm dir at the end
 
     for file in files {
         match file.is_dir() {
@@ -63,7 +64,7 @@ async fn clean_non_keepables() {
         .filter(|(_, k)| **k == TempKind::NotKeepable)
         .map(|(f, _)| f.clone())
         .collect();
-    matching.sort_by_key(|f| f.is_dir()); // rm dirs at the end
+    matching.sort_by_key(|f| f.is_dir()); // rm dir at the end
 
     for file in matching {
         match file.is_dir() {
@@ -76,16 +77,16 @@ async fn clean_non_keepables() {
 
 /// Return a temporary directory that is distinct per process/run.
 ///
-/// Configured --temp-dir is used as a parent or, if not set, the input parent dir.
-pub fn process_dir(conf_parent: Option<PathBuf>, input: &Path) -> PathBuf {
+/// Configured --temp-dir is used as a parent or, if not set, the current working dir.
+pub fn process_dir(conf_parent: Option<PathBuf>) -> PathBuf {
     static SUBDIR: Lazy<String> = Lazy::new(|| {
         let mut subdirname = Alphanumeric.sample_string(&mut thread_rng(), 12);
-        subdirname.insert_str(0, "ab-av1-");
+        subdirname.insert_str(0, ".ab-av1-");
         subdirname
     });
 
     let mut temp_dir =
-        conf_parent.unwrap_or_else(|| input.parent().expect("input has no parent dir").into());
+        conf_parent.unwrap_or_else(|| env::current_dir().expect("current working directory"));
     temp_dir.push(&*SUBDIR);
 
     if !temp_dir.exists() {
