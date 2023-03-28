@@ -1,3 +1,8 @@
+# Unreleased (v0.7.6)
+* Fix nested temp directories not being cleaned properly.
+* Temp directories will now start with "." and be created in the working dir instead of the input parent
+  (unless setting --temp-dir).
+
 # v0.7.5
 * Add `-e librav1e` support. Map `--crf` to ffmpeg `-qp` (default max 255), `--preset` to `-speed` (0-10).
 * Disallow `--enc svtav1-params=` usage. libsvtav1 params should instead be set with `--svt`.

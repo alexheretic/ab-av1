@@ -20,7 +20,7 @@ pub async fn copy(
     frames: u32,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<PathBuf> {
-    let mut dest = temporary::process_dir(temp_dir, input);
+    let mut dest = temporary::process_dir(temp_dir);
     // Always using mkv for the samples works better than, e.g. using mp4 for mp4s
     // see https://github.com/alexheretic/ab-av1/issues/82#issuecomment-1337306325
     dest.push(
