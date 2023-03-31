@@ -1,4 +1,4 @@
-# Unreleased (v0.7.6)
+# v0.7.6
 * Fix nested temp directories not being cleaned properly.
 * Temp directories will now start with "." and be created in the working dir instead of the input parent
   (unless setting --temp-dir).
