@@ -30,7 +30,7 @@ shell-escape = "0.1.5"
 sled = "0.34.7"
 time = { version = "0.3", features = ["parsing", "macros"] }
 tokio = { version = "1.15", features = ["rt", "macros", "process", "fs", "signal"] }
-tokio-process-stream = "0.3"
+tokio-process-stream = "0.4"
 tokio-stream = "0.1"
 
 [target.'cfg(unix)'.dependencies]
