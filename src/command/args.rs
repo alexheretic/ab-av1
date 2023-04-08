@@ -35,6 +35,12 @@ pub struct EncodeToOutput {
     /// No effect if the input audio has 3 or fewer channels.
     #[arg(long)]
     pub downmix_to_stereo: bool,
+
+    /// Only process the main video stream, drop all other streams.
+    ///
+    /// The output will be a single video stream.
+    #[arg(long)]
+    pub video_only: bool,
 }
 
 /// Sampling arguments.

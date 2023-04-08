@@ -1,3 +1,6 @@
+# Unreleased
+* Add `--video-only` option for _encode_ & _auto-encode_.
+
 # v0.7.6
 * Fix nested temp directories not being cleaned properly.
 * Temp directories will now start with "." and be created in the working dir instead of the input parent

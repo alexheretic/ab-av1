@@ -290,6 +290,7 @@ impl Encode {
             preset,
             output_args: args,
             input_args,
+            video_only: false,
         })
     }
 
@@ -557,6 +558,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         preset,
         output_args,
         input_args,
+        video_only,
     } = enc
         .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
         .expect("to_ffmpeg_args");
@@ -567,6 +569,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
     assert_eq!(crf, 32.0);
     assert_eq!(preset, Some("8".into()));
     assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
+    assert!(!video_only);
 
     assert!(
         output_args
@@ -620,6 +623,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         preset,
         output_args,
         input_args,
+        video_only,
     } = enc
         .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
         .expect("to_ffmpeg_args");
@@ -630,6 +634,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
     assert_eq!(crf, 32.0);
     assert_eq!(preset, Some("7".into()));
     assert_eq!(pix_fmt, PixelFormat::Yuv420p);
+    assert!(!video_only);
 
     assert!(
         !output_args.iter().any(|a| a.as_str() == "-g"),

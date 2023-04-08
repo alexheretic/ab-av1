@@ -28,6 +28,7 @@ pub struct FfmpegEncodeArgs<'a> {
     pub preset: Option<Arc<str>>,
     pub output_args: Vec<Arc<String>>,
     pub input_args: Vec<Arc<String>>,
+    pub video_only: bool,
 }
 
 impl FfmpegEncodeArgs<'_> {
@@ -66,6 +67,7 @@ pub fn encode_sample(
         preset,
         output_args,
         input_args,
+        video_only: _,
     }: FfmpegEncodeArgs,
     temp_dir: Option<PathBuf>,
     dest_ext: &str,
@@ -116,6 +118,7 @@ pub fn encode(
         preset,
         output_args,
         input_args,
+        video_only,
     }: FfmpegEncodeArgs,
     output: &Path,
     has_audio: bool,
@@ -137,13 +140,17 @@ pub fn encode(
 
     let set_ba_128k = audio_codec == "libopus" && !oargs.contains("-b:a");
     let downmix_to_stereo = downmix_to_stereo && !oargs.contains("-ac");
+    let map = match video_only {
+        true => "0:v:0",
+        false => "0",
+    };
 
     let enc = Command::new("ffmpeg")
         .kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
-        .arg2("-map", "0")
+        .arg2("-map", map)
         .arg2("-c:v", "copy")
         .arg2("-c:v:0", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
