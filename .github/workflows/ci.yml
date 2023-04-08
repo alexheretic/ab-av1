@@ -12,7 +12,9 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+      RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
     steps:
+    - run: sudo apt install -y lld
     - run: rustup update stable
     - uses: actions/checkout@v2
     - run: cargo test --locked
