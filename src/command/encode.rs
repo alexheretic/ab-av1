@@ -56,6 +56,7 @@ pub async fn run(
                 output,
                 audio_codec,
                 downmix_to_stereo,
+                video_only,
             },
     }: Args,
     probe: Arc<Ffprobe>,
@@ -74,7 +75,8 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let enc_args = args.to_encoder_args(crf, &probe)?;
+    let mut enc_args = args.to_encoder_args(crf, &probe)?;
+    enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
     if let Ok(d) = probe.duration {
         bar.set_length(d.as_secs().max(1));
