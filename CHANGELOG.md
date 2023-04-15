@@ -1,4 +1,4 @@
-# Unreleased
+# v0.7.7
 * Add `--video-only` option for _encode_ & _auto-encode_.
 
 # v0.7.6
