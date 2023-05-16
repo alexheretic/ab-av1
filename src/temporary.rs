@@ -1,12 +1,8 @@
 //! temp file logic
 use once_cell::sync::Lazy;
-use rand::{
-    distributions::{Alphanumeric, DistString},
-    thread_rng,
-};
 use std::{
     collections::HashMap,
-    env,
+    env, iter,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -80,9 +76,9 @@ async fn clean_non_keepables() {
 /// Configured --temp-dir is used as a parent or, if not set, the current working dir.
 pub fn process_dir(conf_parent: Option<PathBuf>) -> PathBuf {
     static SUBDIR: Lazy<String> = Lazy::new(|| {
-        let mut subdirname = Alphanumeric.sample_string(&mut thread_rng(), 12);
-        subdirname.insert_str(0, ".ab-av1-");
-        subdirname
+        let mut subdir = String::from(".ab-av1-");
+        subdir.extend(iter::repeat_with(fastrand::alphanumeric).take(12));
+        subdir
     });
 
     let mut temp_dir =

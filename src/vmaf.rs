@@ -135,13 +135,11 @@ mod yuv {
             input: &Path,
             pix_fmt: PixelFormat,
         ) -> anyhow::Result<(String, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
-            use rand::{
-                distributions::{Alphanumeric, DistString},
-                thread_rng,
+            let in_name = {
+                let mut n = String::from(r"\\.\pipe\ab-av1-in-");
+                n.extend(std::iter::repeat_with(fastrand::alphanumeric).take(12));
+                n
             };
-
-            let mut in_name = Alphanumeric.sample_string(&mut thread_rng(), 12);
-            in_name.insert_str(0, r"\\.\pipe\ab-av1-in-");
 
             let in_server = tokio::net::windows::named_pipe::ServerOptions::new()
                 .access_outbound(false)
@@ -198,10 +196,6 @@ mod yuv {
     pub mod unix {
         use super::*;
         use crate::temporary::{self, TempKind};
-        use rand::{
-            distributions::{Alphanumeric, DistString},
-            thread_rng,
-        };
         use std::path::PathBuf;
 
         /// ffmpeg yuv4mpegpipe returning the temporary fifo path & [`FfmpegProgress`] stream.
@@ -211,7 +205,9 @@ mod yuv {
         ) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
             let fifo = PathBuf::from(format!(
                 "/tmp/ab-av1-{}.fifo",
-                Alphanumeric.sample_string(&mut thread_rng(), 12)
+                std::iter::repeat_with(fastrand::alphanumeric)
+                    .take(12)
+                    .collect::<String>()
             ));
             unix_named_pipe::create(&fifo, None)?;
             temporary::add(&fifo, TempKind::NotKeepable);
