@@ -13,7 +13,11 @@ use clap::{ArgAction, Parser};
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use std::{sync::Arc, time::Duration};
+use std::{
+    io::{self, IsTerminal},
+    sync::Arc,
+    time::Duration,
+};
 
 const BAR_LEN: u64 = 1000;
 
@@ -297,7 +301,7 @@ impl Sample {
 
         let msg =
             format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}");
-        if atty::is(atty::Stream::Stderr) {
+        if io::stderr().is_terminal() {
             bar.println(msg);
         } else {
             eprintln!("{msg}");
