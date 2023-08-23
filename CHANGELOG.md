@@ -1,3 +1,6 @@
+# Unreleased (v0.7.8)
+* Fix ETA calculation overflow panic scenario.
+
 # v0.7.7
 * Add `--video-only` option for _encode_ & _auto-encode_.
 
