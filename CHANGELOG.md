@@ -1,4 +1,4 @@
-# Unreleased (v0.7.8)
+# v0.7.8
 * Fix ETA calculation overflow panic scenario.
 
 # v0.7.7
