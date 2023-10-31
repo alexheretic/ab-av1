@@ -11,10 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: cargo test --locked
     # check print-completions don't fail
     - run: cargo run --locked -- print-completions bash
@@ -25,15 +24,14 @@ jobs:
     runs-on: windows-latest
     env:
       RUST_BACKTRACE: 1
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: cargo check
 
   rustfmt:
     runs-on: ubuntu-latest
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: cargo fmt -- --check

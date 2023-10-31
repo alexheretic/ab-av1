@@ -9,11 +9,9 @@ jobs:
   win-bin:
     name: Build Windows binary
     runs-on: windows-latest
-    env:
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: cargo build --release --locked
     - uses: svenstaro/upload-release-action@v2
       with:
