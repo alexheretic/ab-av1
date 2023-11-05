@@ -104,7 +104,6 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
         !arg.starts_with("-svtav1-params"),
         "'svtav1-params' cannot be set here, use `--svt`"
     );
-    ensure!(!arg.starts_with("-i"), "'i' cannot be used");
 
     Ok(arg)
 }

@@ -1,3 +1,6 @@
+# Unreleased (v0.7.9)
+* Fix validation preventing use of ffmpeg --enc args starting with "-i", e.g. "-init_hw_device".
+
 # v0.7.8
 * Fix ETA calculation overflow panic scenario.
 
