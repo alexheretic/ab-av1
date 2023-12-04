@@ -87,7 +87,7 @@ pub struct Encode {
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
     let arg = arg.trim_start_matches('-').to_owned();
 
-    for deny in ["b", "crf", "preset", "keyint", "scd", "input-depth"] {
+    for deny in ["crf", "preset", "keyint", "scd", "input-depth"] {
         ensure!(!arg.starts_with(deny), "'{deny}' cannot be used here");
     }
 
