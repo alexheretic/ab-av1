@@ -1,4 +1,4 @@
-# Unreleased (0.7.10)
+# v0.7.10
 * Fix validation preventing use of svt args starting with "-i", "-b".
 
 # v0.7.9
