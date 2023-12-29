@@ -3,7 +3,7 @@ use clap::Parser;
 use std::{fmt::Display, sync::Arc, thread};
 
 /// Common vmaf options.
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Hash)]
 pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///

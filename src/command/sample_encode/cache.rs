@@ -17,6 +17,7 @@ pub async fn cached_encode(
     input_size: u64,
     full_pass: bool,
     enc_args: &FfmpegEncodeArgs<'_>,
+    vmaf_args: &impl Hash,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
         return (None, None);
@@ -34,6 +35,7 @@ pub async fn cached_encode(
             full_pass,
         ),
         enc_args,
+        vmaf_args,
     );
 
     let key = Key(hash);
@@ -96,11 +98,16 @@ fn open_db() -> sled::Result<sled::Db> {
 #[derive(Debug, Clone, Copy)]
 pub struct Key(blake3::Hash);
 
-fn hash_encode(input_info: impl Hash, enc_args: &FfmpegEncodeArgs<'_>) -> blake3::Hash {
+fn hash_encode(
+    input_info: impl Hash,
+    enc_args: &FfmpegEncodeArgs<'_>,
+    vmaf_args: &impl Hash,
+) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     let mut std_hasher = BlakeStdHasher(&mut hasher);
     input_info.hash(&mut std_hasher);
     enc_args.sample_encode_hash(&mut std_hasher);
+    vmaf_args.hash(&mut std_hasher);
     hasher.finalize()
 }
 
