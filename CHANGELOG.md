@@ -1,3 +1,6 @@
+# Unreleased
+* Fix sample-encode caching to consider vmaf args.
+
 # v0.7.10
 * Fix validation preventing use of svt args starting with "-i", "-b".
 

@@ -3,7 +3,7 @@ use clap::Parser;
 use std::{fmt::Display, sync::Arc, thread};
 
 /// Common vmaf options.
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Hash)]
 pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
@@ -34,6 +34,10 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
+    pub fn is_default(&self) -> bool {
+        self.vmaf_args.is_empty() && self.vmaf_scale == VmafScale::Auto
+    }
+
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
     pub fn ffmpeg_lavfi(&self, distorted_res: Option<(u32, u32)>) -> String {
         let mut args = self.vmaf_args.clone();
