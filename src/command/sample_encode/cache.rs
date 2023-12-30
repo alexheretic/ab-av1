@@ -1,5 +1,5 @@
 //! _sample-encode_ file system caching logic.
-use crate::ffmpeg::FfmpegEncodeArgs;
+use crate::{command::args::Vmaf, ffmpeg::FfmpegEncodeArgs};
 use anyhow::Context;
 use std::{
     ffi::OsStr,
@@ -9,6 +9,7 @@ use std::{
 };
 
 /// Return a previous stored encode result for the same sample & args.
+#[allow(clippy::too_many_arguments)]
 pub async fn cached_encode(
     cache: bool,
     sample: &Path,
@@ -17,7 +18,7 @@ pub async fn cached_encode(
     input_size: u64,
     full_pass: bool,
     enc_args: &FfmpegEncodeArgs<'_>,
-    vmaf_args: &impl Hash,
+    vmaf_args: &Vmaf,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
         return (None, None);

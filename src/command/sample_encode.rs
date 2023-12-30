@@ -168,7 +168,7 @@ pub async fn run(
             input_len,
             full_pass,
             &enc_args,
-            &vmaf
+            &vmaf,
         )
         .await
         {
