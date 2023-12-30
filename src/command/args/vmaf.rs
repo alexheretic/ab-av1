@@ -34,6 +34,10 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
+    pub fn is_default(&self) -> bool {
+        self.vmaf_args.is_empty() && self.vmaf_scale == VmafScale::Auto
+    }
+
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
     pub fn ffmpeg_lavfi(&self, distorted_res: Option<(u32, u32)>) -> String {
         let mut args = self.vmaf_args.clone();

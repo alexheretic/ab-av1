@@ -102,13 +102,16 @@ pub struct Key(blake3::Hash);
 fn hash_encode(
     input_info: impl Hash,
     enc_args: &FfmpegEncodeArgs<'_>,
-    vmaf_args: &impl Hash,
+    vmaf_args: &Vmaf,
 ) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     let mut std_hasher = BlakeStdHasher(&mut hasher);
     input_info.hash(&mut std_hasher);
     enc_args.sample_encode_hash(&mut std_hasher);
-    vmaf_args.hash(&mut std_hasher);
+    if !vmaf_args.is_default() {
+        // avoid hashing if default for back compat
+        vmaf_args.hash(&mut std_hasher);
+    }
     hasher.finalize()
 }
 
