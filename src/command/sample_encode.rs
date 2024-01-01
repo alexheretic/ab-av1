@@ -92,16 +92,16 @@ pub async fn run(
         stdout_format,
         vmaf,
     }: Args,
-    input_probe: Arc<Ffprobe>,
+    input_probe: Ffprobe,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
-    let input = Arc::new(args.input.clone());
+    let input = args.input;
     let input_pixel_format = input_probe.pixel_format();
     let input_is_image = input_probe.is_image;
     let input_len = fs::metadata(&*input).await?.len();
     let enc_args = args.to_encoder_args(crf, &input_probe)?;
-    let duration = input_probe.duration.clone()?;
-    let input_fps = input_probe.fps.clone()?;
+    let duration = input_probe.duration?;
+    let input_fps = input_probe.fps?;
     let samples = sample_args.sample_count(duration).max(1);
     let temp_dir = sample_args.temp_dir;
 
@@ -190,7 +190,7 @@ pub async fn run(
                 let b = Instant::now();
                 let (encoded_sample, mut output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
-                        input: &sample,
+                        input: sample,
                         ..enc_args.clone()
                     },
                     temp_dir.clone(),
@@ -316,13 +316,13 @@ pub async fn run(
 
 /// Copy a sample from the input to the temp_dir (or input dir).
 async fn sample(
-    input: Arc<PathBuf>,
+    input: PathBuf,
     sample_idx: u64,
     samples: u64,
     duration: Duration,
     fps: f64,
     temp_dir: Option<PathBuf>,
-) -> anyhow::Result<(Arc<PathBuf>, u64)> {
+) -> anyhow::Result<(PathBuf, u64)> {
     let sample_n = sample_idx + 1;
 
     let sample_start =

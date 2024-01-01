@@ -11,7 +11,7 @@ pub struct Vmaf {
     ///
     /// Also see https://ffmpeg.org/ffmpeg-filters.html#libvmaf.
     #[arg(long = "vmaf", value_parser = parse_vmaf_arg)]
-    pub vmaf_args: Vec<Arc<str>>,
+    pub vmaf_args: Vec<String>,
 
     /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicupic
     /// scaled to this width during VMAF analysis. `auto` (default) automatically sets
@@ -29,7 +29,7 @@ pub struct Vmaf {
     pub vmaf_scale: VmafScale,
 }
 
-fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
+fn parse_vmaf_arg(arg: &str) -> anyhow::Result<String> {
     Ok(arg.to_owned().into())
 }
 
@@ -155,7 +155,7 @@ impl Default for VmafModel {
 }
 
 impl VmafModel {
-    fn from_args(args: &[Arc<str>]) -> Option<Self> {
+    fn from_args(args: &[String]) -> Option<Self> {
         let mut using_custom_model: Vec<_> = args.iter().filter(|v| v.contains("model")).collect();
 
         match using_custom_model.len() {

@@ -18,19 +18,21 @@ use tokio_stream::Stream;
 
 /// Exposed ffmpeg encoding args.
 #[derive(Debug, Clone)]
-pub struct FfmpegEncodeArgs<'a> {
-    pub input: &'a Path,
-    pub vcodec: Arc<str>,
-    pub vfilter: Option<&'a str>,
+pub struct FfmpegEncodeArgs {
+    // TODO make &'as in to Arc's
+    // TODO Arc<String> really needed?
+    pub input: PathBuf,
+    pub vcodec: String,
+    pub vfilter: Option<String>,
     pub pix_fmt: PixelFormat,
     pub crf: f32,
-    pub preset: Option<Arc<str>>,
-    pub output_args: Vec<Arc<String>>,
-    pub input_args: Vec<Arc<String>>,
+    pub preset: Option<String>,
+    pub output_args: Vec<String>,
+    pub input_args: Vec<String>,
     pub video_only: bool,
 }
 
-impl FfmpegEncodeArgs<'_> {
+impl FfmpegEncodeArgs {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
         static SVT_AV1_V: OnceLock<Vec<u8>> = OnceLock::new();
 
@@ -89,7 +91,7 @@ pub fn encode_sample(
         .kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
-        .arg2("-i", input)
+        .arg2("-i", input.as_path())
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
         .arg2(vcodec.crf_arg(), crf)
@@ -190,7 +192,7 @@ trait VCodecSpecific {
     /// Arg to use crf values with, normally `-crf`.
     fn crf_arg(&self) -> &str;
 }
-impl VCodecSpecific for Arc<str> {
+impl VCodecSpecific for &str {
     fn preset_arg(&self) -> &str {
         match &**self {
             "libaom-av1" | "libvpx-vp9" => "-cpu-used",

@@ -1,5 +1,9 @@
 //! _sample-encode_ file system caching logic.
-use crate::{command::args::Vmaf, ffmpeg::FfmpegEncodeArgs};
+use crate::{
+    command::args::Vmaf,
+    command::cache::{open_db, EncArgs},
+    ffmpeg::FfmpegEncodeArgs,
+};
 use anyhow::Context;
 use std::{
     ffi::OsStr,
@@ -17,7 +21,7 @@ pub async fn cached_encode(
     input_extension: Option<&OsStr>,
     input_size: u64,
     full_pass: bool,
-    enc_args: &FfmpegEncodeArgs<'_>,
+    enc_args: &FfmpegEncodeArgs,
     vmaf_args: &Vmaf,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
@@ -64,7 +68,11 @@ pub async fn cached_encode(
     }
 }
 
-pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Result<()> {
+pub async fn cache_result(
+    key: Key,
+    args: EncArgs,
+    result: &super::EncodeResult,
+) -> anyhow::Result<()> {
     let data = serde_json::to_vec(result)?;
     let insert = tokio::task::spawn_blocking(move || {
         let db = open_db()?;
@@ -81,27 +89,12 @@ pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Res
     Ok(())
 }
 
-fn open_db() -> sled::Result<sled::Db> {
-    const LOCK_MAX_WAIT: Duration = Duration::from_secs(2);
-
-    let mut path = dirs::cache_dir().expect("no cache dir found");
-    path.push("ab-av1");
-    path.push("sample-encode-cache");
-    let a = Instant::now();
-    let mut db = sled::open(&path);
-    while db.is_err() && a.elapsed() < LOCK_MAX_WAIT {
-        std::thread::yield_now();
-        db = sled::open(&path);
-    }
-    db
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Key(blake3::Hash);
 
 fn hash_encode(
     input_info: impl Hash,
-    enc_args: &FfmpegEncodeArgs<'_>,
+    enc_args: &FfmpegEncodeArgs,
     vmaf_args: &Vmaf,
 ) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();

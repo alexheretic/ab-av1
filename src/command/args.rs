@@ -70,7 +70,7 @@ pub struct Sample {
 
     /// Extension preference for encoded samples (ffmpeg encoder only).
     #[arg(skip)]
-    pub extension: Option<Arc<str>>,
+    pub extension: Option<String>,
 }
 
 impl Sample {
