@@ -67,6 +67,11 @@ pub struct Args {
     #[arg(long)]
     pub crf_increment: Option<f32>,
 
+    // TODO refactor into Samples ArgGroup
+    /// Keep temporary files after exiting.
+    #[arg(long)]
+    pub keep: bool,
+
     /// Enable sample-encode caching.
     #[arg(
         long,
@@ -125,6 +130,7 @@ pub async fn run(
         thorough,
         sample,
         quiet,
+        keep,
         cache,
         vmaf,
     }: &Args,
@@ -146,7 +152,7 @@ pub async fn run(
         args: args.clone(),
         crf: 0.0,
         sample: sample.clone(),
-        keep: false,
+        keep: *keep,
         cache: *cache,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),

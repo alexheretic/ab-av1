@@ -59,6 +59,7 @@ impl Command {
     fn keep_temp_files(&self) -> bool {
         match self {
             Self::SampleEncode(args) => args.keep,
+            Self::CrfSearch(args) => args.keep,
             _ => false,
         }
     }
