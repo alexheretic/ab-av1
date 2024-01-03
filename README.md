@@ -68,6 +68,9 @@ ab-av1 vmaf --reference <REFERENCE> --distorted <DISTORTED>
 ### Arch Linux
 Available in the [AUR](https://aur.archlinux.org/packages/ab-av1).
 
+### Linux
+Pre-built statically linked x86_64-unknown-linux-musl binary included in the [latest release](https://github.com/alexheretic/ab-av1/releases/latest).
+
 ### Windows
 Pre-built **ab-av1.exe** included in the [latest release](https://github.com/alexheretic/ab-av1/releases/latest).
 
