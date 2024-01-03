@@ -6,6 +6,22 @@ on:
     - '*'
 
 jobs:
+  linux-bin:
+    name: Build Linux musl binary
+    runs-on: ubuntu-latest
+    steps:
+    - run: rustup update stable
+    - run: rustup target add x86_64-unknown-linux-musl
+    - uses: actions/checkout@v4
+    - run: cargo build --release --locked --target=x86_64-unknown-linux-musl
+    - run: tar c ab-av1 | zstd -T0 -19 > ab-av1-$GITHUB_REF_NAME-x86_64-unknown-linux-musl.tar.zst
+      working-directory: target/x86_64-unknown-linux-musl/release/
+    - uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/x86_64-unknown-linux-musl/release/ab-av1-$GITHUB_REF_NAME-x86_64-unknown-linux-musl.tar.zst
+        tag: ${{ github.ref }}
+        overwrite: true
   win-bin:
     name: Build Windows binary
     runs-on: windows-latest
