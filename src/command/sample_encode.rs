@@ -3,7 +3,7 @@ mod cache;
 use crate::{
     command::{
         args::{self, PixelFormat},
-        PROGRESS_CHARS,
+        SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
@@ -115,8 +115,8 @@ pub async fn run(
             (samples, SAMPLE_SIZE, false)
         }
     };
-    let sample_duration_s = sample_duration.as_secs();
-    bar.set_length(sample_duration_s * samples * 2);
+    let sample_duration_us = sample_duration.as_micros_u64();
+    bar.set_length(sample_duration_us * samples * 2);
 
     // Start creating copy samples async, this is IO bound & not cpu intensive
     let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
@@ -173,7 +173,7 @@ pub async fn run(
         .await
         {
             (Some(result), _) => {
-                bar.set_position(sample_n * sample_duration_s * 2);
+                bar.set_position(sample_n * sample_duration_us * 2);
                 bar.println(
                     style!(
                         "- Sample {sample_n} ({:.0}%) vmaf {:.2} (cache)",
@@ -198,7 +198,9 @@ pub async fn run(
                 )?;
                 while let Some(progress) = output.next().await {
                     if let FfmpegOut::Progress { time, fps, .. } = progress? {
-                        bar.set_position(time.as_secs() + sample_idx * sample_duration_s * 2);
+                        bar.set_position(
+                            time.as_micros_u64() + sample_idx * sample_duration_us * 2,
+                        );
                         if fps > 0.0 {
                             bar.set_message(format!("enc {fps} fps,"));
                         }
@@ -228,10 +230,10 @@ pub async fn run(
                         }
                         VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                             bar.set_position(
-                                sample_duration_s
+                                sample_duration_us
                                     // *24/fps adjusts for vmaf `-r 24`
-                                    + (time.as_secs_f64() * (24.0 / input_fps)).round() as u64
-                                    + sample_idx * sample_duration_s * 2,
+                                    + (time.as_micros_u64() as f64 * (24.0 / input_fps)).round() as u64
+                                    + sample_idx * sample_duration_us * 2,
                             );
                             if fps > 0.0 {
                                 bar.set_message(format!("vmaf {fps} fps,"));

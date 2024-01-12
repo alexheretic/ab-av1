@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-const BAR_LEN: u64 = 1000;
+const BAR_LEN: u64 = 1_000_000_000;
 
 /// Interpolated binary search using sample-encode to find the best crf
 /// value delivering min-vmaf & max-encoded-percent.
