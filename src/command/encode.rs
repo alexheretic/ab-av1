@@ -78,8 +78,8 @@ pub async fn run(
     let mut enc_args = args.to_encoder_args(crf, &probe)?;
     enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
-    if let Ok(micros) = probe.duration.as_ref().map(|d| d.as_micros_u64()) {
-        bar.set_length(micros.max(1));
+    if let Ok(d) = &probe.duration {
+        bar.set_length(d.as_micros_u64().max(1));
     }
 
     // only downmix if achannels > 3
