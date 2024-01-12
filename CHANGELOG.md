@@ -1,3 +1,6 @@
+# Unreleased
+* Improve eta stability.
+
 # v0.7.11
 * Fix sample-encode caching to consider vmaf args.
 

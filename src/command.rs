@@ -14,3 +14,15 @@ pub use sample_encode::sample_encode;
 pub use vmaf::vmaf;
 
 const PROGRESS_CHARS: &str = "##-";
+
+/// Helper trait for durations under 584942 years or so.
+trait SmallDuration {
+    /// Returns the total number of whole microseconds.
+    fn as_micros_u64(&self) -> u64;
+}
+
+impl SmallDuration for std::time::Duration {
+    fn as_micros_u64(&self) -> u64 {
+        self.as_micros().try_into().unwrap_or(u64::MAX)
+    }
+}
