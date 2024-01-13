@@ -1,4 +1,4 @@
-# Unreleased
+# v0.7.12
 * Improve eta stability.
 
 # v0.7.11
