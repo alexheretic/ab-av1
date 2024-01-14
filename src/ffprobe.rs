@@ -15,6 +15,7 @@ pub struct Ffprobe {
     pub resolution: Option<(u32, u32)>,
     pub is_image: bool,
     pub pix_fmt: Option<String>,
+    pub vcodec_name: Option<String>,
 }
 
 impl Ffprobe {
@@ -53,6 +54,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 resolution: None,
                 is_image: false,
                 pix_fmt: None,
+                vcodec_name: None,
             }
         }
     };
@@ -82,9 +84,15 @@ pub fn probe(input: &Path) -> Ffprobe {
 
     let pix_fmt = probe
         .streams
+        .iter()
+        .filter(|s| s.codec_type.as_deref() == Some("video"))
+        .find_map(|s| s.pix_fmt.clone());
+
+    let codec_name = probe
+        .streams
         .into_iter()
         .filter(|s| s.codec_type.as_deref() == Some("video"))
-        .find_map(|s| s.pix_fmt);
+        .find_map(|s| s.codec_name);
 
     Ffprobe {
         duration: duration.map_err(ProbeError::from),
@@ -94,6 +102,7 @@ pub fn probe(input: &Path) -> Ffprobe {
         resolution,
         is_image,
         pix_fmt,
+        vcodec_name: codec_name,
     }
 }
 

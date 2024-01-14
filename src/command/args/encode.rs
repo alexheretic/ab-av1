@@ -546,6 +546,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         resolution: Some((1280, 720)),
         is_image: false,
         pix_fmt: None,
+        vcodec_name: Some("h264".into()),
     };
 
     let FfmpegEncodeArgs {
@@ -611,6 +612,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         resolution: Some((1280, 720)),
         is_image: false,
         pix_fmt: None,
+        vcodec_name: Some("h264".into()),
     };
 
     let FfmpegEncodeArgs {

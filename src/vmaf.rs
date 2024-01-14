@@ -12,22 +12,48 @@ pub fn run(
     reference: &Path,
     distorted: &Path,
     filter_complex: &str,
-    cuda: bool,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    if cuda {
-        eprintln!("\nDEBUG: Using ffmpeg -filter_complex {filter_complex}");
-    }
+    let vmaf: ProcessChunkStream = Command::new("ffmpeg")
+        .kill_on_drop(true)
+        .arg2("-r", "24")
+        .arg2("-i", distorted)
+        .arg2("-r", "24")
+        .arg2("-i", reference)
+        .arg2("-filter_complex", filter_complex)
+        .arg2("-f", "null")
+        .arg("-")
+        .try_into()
+        .context("ffmpeg vmaf")?;
+
+    let mut chunks = Chunks::default();
+    let vmaf = vmaf.filter_map(move |item| match item {
+        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &mut chunks),
+        Item::Stdout(_) => None,
+        Item::Done(code) => VmafOut::ignore_ok(exit_ok_stderr("ffmpeg vmaf", code, &chunks)),
+    });
+
+    Ok(vmaf)
+}
+
+pub fn run_cuda(
+    reference: &Path,
+    ref_codec: &str,
+    distorted: &Path,
+    dist_codec: &str,
+    filter_complex: &str,
+) -> anyhow::Result<impl Stream<Item = VmafOut>> {
+    eprintln!("\nDEBUG: Using ffmpeg -filter_complex {filter_complex}");
 
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
         .kill_on_drop(true)
-        .arg2_if(cuda, "-hwaccel", "cuda")
-        .arg2_if(cuda, "-hwaccel_output_format", "cuda")
-        .arg2_if(cuda, "-codec:v", "av1_cuvid") // TODO: determine this automatically?
+        .arg2("-hwaccel", "cuda")
+        .arg2("-hwaccel_output_format", "cuda")
+        .arg2("-c:v", ref_codec)
         .arg2("-r", "24")
         .arg2("-i", distorted)
-        .arg2_if(cuda, "-hwaccel", "cuda")
-        .arg2_if(cuda, "-hwaccel_output_format", "cuda")
-        .arg2_if(cuda, "-codec:v", "av1_cuvid") // TODO: determine this automatically?
+        .arg2("-hwaccel", "cuda")
+        .arg2("-hwaccel_output_format", "cuda")
+        .arg2("-c:v", dist_codec)
         .arg2("-r", "24")
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)

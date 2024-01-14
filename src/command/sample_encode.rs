@@ -222,7 +222,6 @@ pub async fn run(
                             .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
                         args.vfilter.as_deref(),
                     ),
-                    false,
                 )?;
                 let mut vmaf_score = -1.0;
                 while let Some(vmaf) = vmaf.next().await {

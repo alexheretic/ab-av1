@@ -212,3 +212,8 @@ impl VCodecSpecific for Arc<str> {
         }
     }
 }
+
+/// Map a vcodec to the equivalent *_cuvid CUDA codec name.
+pub fn to_cuda_vcodec(vcodec: &str) -> String {
+    format!("{vcodec}_cuvid")
+}
