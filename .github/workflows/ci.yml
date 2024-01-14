@@ -20,14 +20,15 @@ jobs:
     - run: cargo run --locked -- print-completions fish
     - run: cargo run --locked -- print-completions zsh
 
-  test-windows:
-    runs-on: windows-latest
-    env:
-      RUST_BACKTRACE: 1
-    steps:
-    - run: rustup update stable
-    - uses: actions/checkout@v4
-    - run: cargo check
+  # Disabled while we no longer need cfg(windows) code
+  # test-windows:
+  #   runs-on: windows-latest
+  #   env:
+  #     RUST_BACKTRACE: 1
+  #   steps:
+  #   - run: rustup update stable
+  #   - uses: actions/checkout@v4
+  #   - run: cargo check
 
   rustfmt:
     runs-on: ubuntu-latest

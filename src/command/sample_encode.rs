@@ -214,12 +214,14 @@ pub async fn run(
                 bar.set_message("vmaf running,");
                 let mut vmaf = vmaf::run(
                     &sample,
-                    args.vfilter.as_deref(),
                     &encoded_sample,
-                    &vmaf.ffmpeg_lavfi(encoded_probe.resolution),
-                    enc_args
-                        .pix_fmt
-                        .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                    &vmaf.ffmpeg_lavfi(
+                        encoded_probe.resolution,
+                        enc_args
+                            .pix_fmt
+                            .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                        args.vfilter.as_deref(),
+                    ),
                 )?;
                 let mut vmaf_score = -1.0;
                 while let Some(vmaf) = vmaf.next().await {
