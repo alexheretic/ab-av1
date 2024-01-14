@@ -12,11 +12,22 @@ pub fn run(
     reference: &Path,
     distorted: &Path,
     filter_complex: &str,
+    cuda: bool,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
+    if cuda {
+        eprintln!("\nDEBUG: Using ffmpeg -filter_complex {filter_complex}");
+    }
+
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
         .kill_on_drop(true)
+        .arg2_if(cuda, "-hwaccel", "cuda")
+        .arg2_if(cuda, "-hwaccel_output_format", "cuda")
+        .arg2_if(cuda, "-codec:v", "av1_cuvid") // TODO: determine this automatically?
         .arg2("-r", "24")
         .arg2("-i", distorted)
+        .arg2_if(cuda, "-hwaccel", "cuda")
+        .arg2_if(cuda, "-hwaccel_output_format", "cuda")
+        .arg2_if(cuda, "-codec:v", "av1_cuvid") // TODO: determine this automatically?
         .arg2("-r", "24")
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)

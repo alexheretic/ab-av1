@@ -39,6 +39,10 @@ pub struct Args {
 
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
+
+    /// Enable CUDA acceleration.
+    #[arg(long)]
+    pub cuda: bool,
 }
 
 pub async fn vmaf(
@@ -47,6 +51,7 @@ pub async fn vmaf(
         reference_vfilter,
         distorted,
         vmaf,
+        cuda,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -69,11 +74,19 @@ pub async fn vmaf(
     let mut vmaf = vmaf::run(
         &reference,
         &distorted,
-        &vmaf.ffmpeg_lavfi(
-            dprobe.resolution,
-            dpix_fmt.max(rpix_fmt),
-            reference_vfilter.as_deref(),
-        ),
+        &match cuda {
+            true => vmaf.ffmpeg_lavfi_cuda(
+                dprobe.resolution,
+                dpix_fmt.max(rpix_fmt),
+                reference_vfilter.as_deref(),
+            ),
+            _ => vmaf.ffmpeg_lavfi(
+                dprobe.resolution,
+                dpix_fmt.max(rpix_fmt),
+                reference_vfilter.as_deref(),
+            ),
+        },
+        cuda,
     )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {

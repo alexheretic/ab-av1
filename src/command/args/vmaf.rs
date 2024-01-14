@@ -96,6 +96,52 @@ impl Vmaf {
         lavfi
     }
 
+    /// [`Self::ffmpeg_lavfi`] for CUDA.
+    pub fn ffmpeg_lavfi_cuda(
+        &self,
+        distorted_res: Option<(u32, u32)>,
+        pix_fmt: PixelFormat,
+        ref_vfilter: Option<&str>,
+    ) -> String {
+        let mut lavfi = self.vmaf_args.join(":");
+        lavfi.insert_str(0, "libvmaf_cuda=");
+
+        let mut model = VmafModel::from_args(&self.vmaf_args);
+        if let (None, Some((w, h))) = (model, distorted_res) {
+            if w > 2560 && h > 1440 {
+                // for >2k resoultions use 4k model
+                lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
+                model = Some(VmafModel::Vmaf4K);
+            }
+        }
+
+        let ref_vf: Cow<_> = match ref_vfilter {
+            None => "".into(),
+            Some(vf) if vf.ends_with(',') => vf.into(),
+            Some(vf) => format!("{vf},").into(),
+        };
+
+        // prefix:
+        // * Add reference-vfilter if any
+        // * convert both streams to common pixel format
+        // * scale to vmaf width if necessary
+        // * sync presentation timestamp
+        let prefix = if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
+            format!(
+                "[0:v]scale_cuda=format={pix_fmt},scale_cuda={w}:{h},setpts=PTS-STARTPTS[dis];\
+                 [1:v]scale_cuda=format={pix_fmt},scale_cuda={w}:{h},{ref_vf},setpts=PTS-STARTPTS[ref];[dis][ref]"
+            )
+        } else {
+            format!(
+                "[0:v]scale_cuda=format={pix_fmt},setpts=PTS-STARTPTS[dis];\
+                 [1:v]scale_cuda=format={pix_fmt},{ref_vf}setpts=PTS-STARTPTS[ref];[dis][ref]"
+            )
+        };
+
+        lavfi.insert_str(0, &prefix);
+        lavfi
+    }
+
     fn vf_scale(&self, model: VmafModel, distorted_res: Option<(u32, u32)>) -> Option<(i32, i32)> {
         match (self.vmaf_scale, distorted_res) {
             (VmafScale::Auto, Some((w, h))) => match model {
