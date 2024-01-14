@@ -29,7 +29,7 @@ pub struct Args {
     pub reference: PathBuf,
 
     /// Ffmpeg video filter applied to the reference before analysis.
-    /// E.g. --vfilter "scale=1280:-1,fps=24".
+    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
     #[arg(long)]
     pub reference_vfilter: Option<String>,
 
@@ -68,10 +68,12 @@ pub async fn vmaf(
 
     let mut vmaf = vmaf::run(
         &reference,
-        reference_vfilter.as_deref(),
         &distorted,
-        &vmaf.ffmpeg_lavfi(dprobe.resolution),
-        dpix_fmt.max(rpix_fmt),
+        &vmaf.ffmpeg_lavfi(
+            dprobe.resolution,
+            dpix_fmt.max(rpix_fmt),
+            reference_vfilter.as_deref(),
+        ),
     )?;
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {

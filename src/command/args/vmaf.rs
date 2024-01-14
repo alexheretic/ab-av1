@@ -1,6 +1,7 @@
+use crate::command::args::PixelFormat;
 use anyhow::Context;
 use clap::Parser;
-use std::{fmt::Display, sync::Arc, thread};
+use std::{borrow::Cow, fmt::Display, sync::Arc, thread};
 
 /// Common vmaf options.
 #[derive(Parser, Clone, Hash)]
@@ -39,7 +40,12 @@ impl Vmaf {
     }
 
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
-    pub fn ffmpeg_lavfi(&self, distorted_res: Option<(u32, u32)>) -> String {
+    pub fn ffmpeg_lavfi(
+        &self,
+        distorted_res: Option<(u32, u32)>,
+        pix_fmt: PixelFormat,
+        ref_vfilter: Option<&str>,
+    ) -> String {
         let mut args = self.vmaf_args.clone();
         if !args.iter().any(|a| a.contains("n_threads")) {
             // default n_threads to all cores
@@ -63,14 +69,26 @@ impl Vmaf {
             }
         }
 
-        if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
-            // scale both streams to the vmaf width
-            lavfi.insert_str(
-                0,
-                &format!("[0:v]scale={w}:{h}:flags=bicubic[dis];[1:v]scale={w}:{h}:flags=bicubic[ref];[dis][ref]"),
-            );
-        }
+        let ref_vf: Cow<_> = match ref_vfilter {
+            None => "".into(),
+            Some(vf) if vf.ends_with(',') => vf.into(),
+            Some(vf) => format!("{vf},").into(),
+        };
 
+        // prefix:
+        // * Add reference-vfilter if any
+        // * convert both streams to common pixel format
+        // * scale to vmaf width if necessary
+        let prefix = if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
+            format!(
+                "[0:v]scale={w}:{h}:flags=bicubic,format={pix_fmt}[dis];\
+                 [1:v]{ref_vf}scale={w}:{h}:flags=bicubic,format={pix_fmt}[ref];[dis][ref]"
+            )
+        } else {
+            format!("[0:v]format={pix_fmt}[dis];[1:v]{ref_vf}format={pix_fmt}[ref];[dis][ref]")
+        };
+
+        lavfi.insert_str(0, &prefix);
         lavfi
     }
 
@@ -176,7 +194,12 @@ fn vmaf_lavfi() {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
     };
-    assert_eq!(vmaf.ffmpeg_lavfi(None), "libvmaf=n_threads=5:n_subsample=4");
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, Some("scale=1280:-1,fps=24")),
+        "[0:v]format=yuv420p[dis];\
+         [1:v]scale=1280:-1,fps=24,format=yuv420p[ref];\
+         [dis][ref]libvmaf=n_threads=5:n_subsample=4"
+    );
 }
 
 #[test]
@@ -186,10 +209,15 @@ fn vmaf_lavfi_default() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "libvmaf=n_threads={}",
+        "[0:v]format=yuv420p10le[dis];\
+         [1:v]format=yuv420p10le[ref];\
+         [dis][ref]libvmaf=n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
-    assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p10le, None),
+        expected
+    );
 }
 
 #[test]
@@ -199,10 +227,15 @@ fn vmaf_lavfi_include_n_threads() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "libvmaf=log_path=output.xml:n_threads={}",
+        "[0:v]format=yuv420p[dis];\
+         [1:v]format=yuv420p[ref];\
+         [dis][ref]libvmaf=log_path=output.xml:n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
-    assert_eq!(vmaf.ffmpeg_lavfi(None), expected);
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, None),
+        expected
+    );
 }
 
 /// Low resolution videos should be upscaled to 1080p
@@ -213,9 +246,9 @@ fn vmaf_lavfi_small_width() {
         vmaf_scale: VmafScale::Auto,
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "[0:v]scale=1920:-1:flags=bicubic[dis];\
-         [1:v]scale=1920:-1:flags=bicubic[ref];\
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        "[0:v]scale=1920:-1:flags=bicubic,format=yuv420p[dis];\
+         [1:v]scale=1920:-1:flags=bicubic,format=yuv420p[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
@@ -228,8 +261,10 @@ fn vmaf_lavfi_4k() {
         vmaf_scale: VmafScale::Auto,
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3840, 2160))),
-        "libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
+        vmaf.ffmpeg_lavfi(Some((3840, 2160)), PixelFormat::Yuv420p, None),
+        "[0:v]format=yuv420p[dis];\
+         [1:v]format=yuv420p[ref];\
+         [dis][ref]libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
     );
 }
 
@@ -241,9 +276,9 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
         vmaf_scale: VmafScale::Auto,
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3008, 1692))),
-        "[0:v]scale=3840:-1:flags=bicubic[dis];\
-         [1:v]scale=3840:-1:flags=bicubic[ref];\
+        vmaf.ffmpeg_lavfi(Some((3008, 1692)), PixelFormat::Yuv420p, None),
+        "[0:v]scale=3840:-1:flags=bicubic,format=yuv420p[dis];\
+         [1:v]scale=3840:-1:flags=bicubic,format=yuv420p[ref];\
          [dis][ref]libvmaf=n_threads=5:model=version=vmaf_4k_v0.6.1"
     );
 }
@@ -260,8 +295,10 @@ fn vmaf_lavfi_small_width_custom_model() {
         vmaf_scale: VmafScale::Auto,
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "libvmaf=model=version=foo:n_threads=5:n_subsample=4"
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        "[0:v]format=yuv420p[dis];\
+         [1:v]format=yuv420p[ref];\
+         [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
 
@@ -280,10 +317,10 @@ fn vmaf_lavfi_custom_model_and_width() {
         },
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720))),
-        "[0:v]scale=123:-1:flags=bicubic[dis];\
-        [1:v]scale=123:-1:flags=bicubic[ref];\
-        [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        "[0:v]scale=123:-1:flags=bicubic,format=yuv420p[dis];\
+         [1:v]scale=123:-1:flags=bicubic,format=yuv420p[ref];\
+         [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
 
@@ -294,7 +331,9 @@ fn vmaf_lavfi_1080p() {
         vmaf_scale: VmafScale::Auto,
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1920, 1080))),
-        "libvmaf=n_threads=5:n_subsample=4"
+        vmaf.ffmpeg_lavfi(Some((1920, 1080)), PixelFormat::Yuv420p, None),
+        "[0:v]format=yuv420p[dis];\
+         [1:v]format=yuv420p[ref];\
+         [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }

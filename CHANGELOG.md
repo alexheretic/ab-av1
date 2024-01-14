@@ -1,3 +1,6 @@
+# Unreleased
+* Use a single ffmpeg process to calculate VMAF replacing multi process piping.
+
 # v0.7.12
 * Improve eta stability.
 
