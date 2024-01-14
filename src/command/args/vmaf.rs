@@ -79,13 +79,17 @@ impl Vmaf {
         // * Add reference-vfilter if any
         // * convert both streams to common pixel format
         // * scale to vmaf width if necessary
+        // * sync presentation timestamp
         let prefix = if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
             format!(
-                "[0:v]scale={w}:{h}:flags=bicubic,format={pix_fmt}[dis];\
-                 [1:v]{ref_vf}scale={w}:{h}:flags=bicubic,format={pix_fmt}[ref];[dis][ref]"
+                "[0:v]format={pix_fmt},scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+                 [1:v]format={pix_fmt},{ref_vf}scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS[ref];[dis][ref]"
             )
         } else {
-            format!("[0:v]format={pix_fmt}[dis];[1:v]{ref_vf}format={pix_fmt}[ref];[dis][ref]")
+            format!(
+                "[0:v]format={pix_fmt},setpts=PTS-STARTPTS[dis];\
+                 [1:v]format={pix_fmt},{ref_vf}setpts=PTS-STARTPTS[ref];[dis][ref]"
+            )
         };
 
         lavfi.insert_str(0, &prefix);
@@ -196,8 +200,8 @@ fn vmaf_lavfi() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, Some("scale=1280:-1,fps=24")),
-        "[0:v]format=yuv420p[dis];\
-         [1:v]scale=1280:-1,fps=24,format=yuv420p[ref];\
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
@@ -209,8 +213,8 @@ fn vmaf_lavfi_default() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "[0:v]format=yuv420p10le[dis];\
-         [1:v]format=yuv420p10le[ref];\
+        "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p10le,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
@@ -227,8 +231,8 @@ fn vmaf_lavfi_include_n_threads() {
         vmaf_scale: VmafScale::Auto,
     };
     let expected = format!(
-        "[0:v]format=yuv420p[dis];\
-         [1:v]format=yuv420p[ref];\
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=log_path=output.xml:n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
@@ -247,8 +251,8 @@ fn vmaf_lavfi_small_width() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
-        "[0:v]scale=1920:-1:flags=bicubic,format=yuv420p[dis];\
-         [1:v]scale=1920:-1:flags=bicubic,format=yuv420p[ref];\
+        "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
@@ -262,8 +266,8 @@ fn vmaf_lavfi_4k() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3840, 2160)), PixelFormat::Yuv420p, None),
-        "[0:v]format=yuv420p[dis];\
-         [1:v]format=yuv420p[ref];\
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
     );
 }
@@ -277,8 +281,8 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3008, 1692)), PixelFormat::Yuv420p, None),
-        "[0:v]scale=3840:-1:flags=bicubic,format=yuv420p[dis];\
-         [1:v]scale=3840:-1:flags=bicubic,format=yuv420p[ref];\
+        "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:model=version=vmaf_4k_v0.6.1"
     );
 }
@@ -296,8 +300,8 @@ fn vmaf_lavfi_small_width_custom_model() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
-        "[0:v]format=yuv420p[dis];\
-         [1:v]format=yuv420p[ref];\
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
@@ -318,8 +322,8 @@ fn vmaf_lavfi_custom_model_and_width() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
-        "[0:v]scale=123:-1:flags=bicubic,format=yuv420p[dis];\
-         [1:v]scale=123:-1:flags=bicubic,format=yuv420p[ref];\
+        "[0:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=model=version=foo:n_threads=5:n_subsample=4"
     );
 }
@@ -332,8 +336,8 @@ fn vmaf_lavfi_1080p() {
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1920, 1080)), PixelFormat::Yuv420p, None),
-        "[0:v]format=yuv420p[dis];\
-         [1:v]format=yuv420p[ref];\
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,setpts=PTS-STARTPTS[ref];\
          [dis][ref]libvmaf=n_threads=5:n_subsample=4"
     );
 }
