@@ -3,10 +3,11 @@ mod encode;
 mod vmaf;
 
 pub use encode::*;
+use strum::EnumCount;
 pub use vmaf::*;
 
 use crate::{command::encode::default_output_ext, ffprobe::Ffprobe};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -21,6 +22,10 @@ pub struct EncodeToOutput {
     /// E.g. if unspecified: -i vid.mkv --> vid.av1.mkv
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// What to do if the output file already exists.
+    #[arg(long, default_value("rename"))]
+    pub on_duplicate: Option<OnDuplicate>,
 
     /// Set the output ffmpeg audio codec.
     /// By default 'copy' is used. Otherwise, if re-encoding is necessary, 'libopus' is default.
@@ -93,5 +98,32 @@ impl Sample {
 
     pub fn set_extension_from_output(&mut self, output: &Path) {
         self.extension = output.extension().and_then(|e| e.to_str().map(Into::into));
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash, EnumCount)]
+pub enum OnDuplicate {
+    Overwrite,
+    Skip,
+    #[default]
+    Rename,
+    Ask,
+}
+
+impl ValueEnum for OnDuplicate {
+    fn value_variants<'a>() -> &'a [Self] {
+        let variants = &[Self::Overwrite, Self::Skip, Self::Rename, Self::Ask];
+        // safety check in case one forgets to add a new variant
+        debug_assert!(OnDuplicate::COUNT == variants.len());
+        variants
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            OnDuplicate::Overwrite => Some(clap::builder::PossibleValue::new("overwrite")),
+            OnDuplicate::Skip => Some(clap::builder::PossibleValue::new("skip")),
+            OnDuplicate::Rename => Some(clap::builder::PossibleValue::new("rename").help("Tries to rename the output file by appending and incrementing a number.\nE.g. `vid.av1.mkv` -> `vid.av1_1.mkv` -> `vid.av1_2.mkv` etc.")),
+            OnDuplicate::Ask => Some(clap::builder::PossibleValue::new("ask")),
+        }
     }
 }

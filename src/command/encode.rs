@@ -1,6 +1,6 @@
 use crate::{
     command::{
-        args::{self, Encoder},
+        args::{self, Encoder, OnDuplicate},
         SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
@@ -9,10 +9,12 @@ use crate::{
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
+use anyhow::{anyhow, bail};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -54,6 +56,7 @@ pub async fn run(
         encode:
             args::EncodeToOutput {
                 output,
+                on_duplicate,
                 audio_codec,
                 downmix_to_stereo,
                 video_only,
@@ -62,17 +65,69 @@ pub async fn run(
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
-    let defaulting_output = output.is_none();
     // let probe = ffprobe::probe(&args.input);
     let output =
         output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
+    let on_duplicate = on_duplicate.unwrap_or(OnDuplicate::default());
+
+    let output = match on_duplicate {
+        OnDuplicate::Overwrite => output,
+        OnDuplicate::Rename => rename_if_exists(output)?,
+        OnDuplicate::Skip => {
+            if output.exists() {
+                bar.println(format!(
+                    "{} {}",
+                    style("Skipping").dim(),
+                    style(output.display()).dim(),
+                ));
+                bail!("Output file already exists");
+            } else {
+                output
+            }
+        }
+        OnDuplicate::Ask => {
+            if output.exists() {
+                /*bar.
+                ));*/
+                bar.suspend(|| loop {
+                    let mut input = String::new();
+                    print!(
+                        "{} {}. {}",
+                        style("Output file already exists:"),
+                        style(output.display()).dim(),
+                        style("Overwrite, rename, skip, or quit? [o/r/s/q]").italic()
+                    );
+                    std::io::stdout().flush()?;
+                    std::io::stdin().read_line(&mut input)?;
+                    match input.trim() {
+                        "o" | "overwrite" => {
+                            break Ok(output);
+                        }
+                        "r" | "rename" => {
+                            break rename_if_exists(output);
+                        }
+                        "s" | "skip" => {
+                            bail!("Output file already exists");
+                        }
+                        "q" | "quit" => {
+                            bail!("User quit");
+                        }
+                        _ => {
+                            eprintln!("Invalid input");
+                        }
+                    }
+                })?
+            } else {
+                output
+            }
+        }
+    };
+
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
-    if defaulting_output {
-        let out = shell_escape::escape(output.display().to_string().into());
-        bar.println(style!("Encoding {out}").dim().to_string());
-    }
+    let out = shell_escape::escape(output.display().to_string().into());
+    bar.println(style!("Encoding {out}").dim().to_string());
     bar.set_message("encoding, ");
 
     let mut enc_args = args.to_encoder_args(crf, &probe)?;
@@ -142,6 +197,97 @@ pub async fn run(
     }
     eprintln!("{}", style(")").dim());
 
+    Ok(())
+}
+
+fn rename_if_exists(mut output: PathBuf) -> anyhow::Result<PathBuf> {
+    while output.exists() {
+        // get basename without extension, or full name in case that fails
+        let name = output
+            .file_stem()
+            .or_else(|| output.file_name())
+            .ok_or(anyhow!("Could not parse file name from {:?}", output))?
+            .to_string_lossy();
+
+        // if the last part of the file stem after an underscore is a valid positive integer,
+        // increment it by one. Otherwise add an "_1" suffix.
+        let mut parts: Vec<String> = name.split('_').map(&str::to_owned).collect();
+        if let Some(last_part) = parts.pop() {
+            if let Ok(number) = last_part.parse::<u32>() {
+                parts.push((number + 1).to_string());
+            } else {
+                parts.push(last_part);
+                parts.push("1".to_owned());
+            }
+        } else {
+            // this shouldn't happen since the name would have to be equal to "" (the empty string)
+            bail!("Output name vector {:?} should't be empty", parts);
+        }
+
+        let name = parts.join("_")
+            + &output
+                .extension()
+                .map(|e| ".".to_owned() + &e.to_string_lossy())
+                .unwrap_or("".to_owned());
+        output = output.with_file_name(name);
+    }
+    Ok(output)
+}
+
+#[test]
+fn test_rename_if_exists() -> anyhow::Result<()> {
+    use anyhow::ensure;
+    use std::ops::Range;
+    use std::panic::catch_unwind;
+
+    let temp_dir = mktemp::Temp::new_dir()?;
+    let mut temp_file = PathBuf::new();
+    temp_file.push(&temp_dir);
+
+    touch(&temp_file, "test.mkv")?;
+    _do(&temp_file, "test.mkv", "test_{}.mkv", 1..13)?;
+
+    touch(&temp_dir, "test_1_2_3")?;
+    _do(&temp_file, "test_1_2_1", "test_1_2_{}", 1..3)?;
+    assert!(catch_unwind(|| { _do(&temp_file, "test_1_2_1", "test_1_2_{}", 3..4) }).is_err());
+    _do(&temp_file, "test_1_2_1", "test_1_2_{}", 4..7)?;
+
+    _do(&temp_file, "test_1_2", "test_1_{}", 2..6)?;
+
+    touch(&temp_file, ".hidden_27")?;
+    _do(&temp_file, ".hidden", ".hidden", 0..1)?;
+    _do(&temp_file, ".hidden", ".hidden_{}", 1..27)?;
+    assert!(catch_unwind(|| { _do(&temp_file, ".hidden", ".hidden_{}", 27..28) }).is_err());
+    _do(&temp_file, ".hidden", ".hidden_{}", 28..31)?;
+
+    fn touch(f: &Path, name: &str) -> anyhow::Result<()> {
+        let mut p = PathBuf::new();
+        p.push(f);
+        p.push(name);
+        std::process::Command::new("touch").arg(p).output()?;
+        Ok(())
+    }
+
+    fn _do(temp_dir: &Path, name: &str, pattern: &str, range: Range<usize>) -> anyhow::Result<()> {
+        ensure!(range.len() > 0, "range must be non-empty");
+
+        let mut temp_file = PathBuf::new();
+        temp_file.push(temp_dir);
+        temp_file.push(name);
+
+        for i in range {
+            let result = rename_if_exists(temp_file.clone())?;
+            let actual = result
+                .file_name()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or("".into());
+            let expected = pattern.replace("{}", i.to_string().as_str());
+            assert_eq!(actual, expected);
+
+            std::process::Command::new("touch").arg(&result).output()?;
+        }
+        Ok(())
+    }
     Ok(())
 }
 

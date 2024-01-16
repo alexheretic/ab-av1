@@ -26,10 +26,28 @@ serde = { version = "1.0.185", features = ["derive"] }
 serde_json = "1.0.105"
 shell-escape = "0.1.5"
 sled = "0.34.7"
+strum = { version = "0.25.0", features = ["derive"] }
+strum_macros = "0.25.3"
 time = { version = "0.3", features = ["parsing", "macros"] }
-tokio = { version = "1.15", features = ["rt", "macros", "process", "fs", "signal"] }
+tokio = { version = "1.15", features = [
+    "rt",
+    "macros",
+    "process",
+    "fs",
+    "signal",
+] }
 tokio-process-stream = "0.4"
 tokio-stream = "0.1"
+
+[dev-dependencies]
+mktemp = "0.5.1"
+
+[target.'cfg(unix)'.dependencies]
+unix-named-pipe = "0.2"
+
+[target.'cfg(windows)'.dependencies.tokio]
+version = "1.15"
+features = ["net"]
 
 [profile.release]
 lto = true
