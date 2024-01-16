@@ -1,5 +1,6 @@
 # Unreleased
 * Use a single ffmpeg process to calculate VMAF replacing multi process piping.
+* Exclude subtitle tracks from samples.
 
 # v0.7.12
 * Improve eta stability.
