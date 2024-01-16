@@ -46,10 +46,6 @@ pub struct Args {
     #[clap(flatten)]
     pub sample: args::Sample,
 
-    /// Keep temporary files after exiting.
-    #[arg(long)]
-    pub keep: bool,
-
     /// Enable sample-encode caching.
     #[arg(
         long,
@@ -87,7 +83,6 @@ pub async fn run(
         args,
         crf,
         sample: sample_args,
-        keep,
         cache,
         stdout_format,
         vmaf,
@@ -103,6 +98,7 @@ pub async fn run(
     let duration = input_probe.duration.clone()?;
     let input_fps = input_probe.fps.clone()?;
     let samples = sample_args.sample_count(duration).max(1);
+    let keep = sample_args.keep;
     let temp_dir = sample_args.temp_dir;
 
     let (samples, sample_duration, full_pass) = {

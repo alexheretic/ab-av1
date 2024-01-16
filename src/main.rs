@@ -56,11 +56,16 @@ async fn main() -> anyhow::Result<()> {
 }
 
 impl Command {
+    // IMPORTANT: All clauses mentioned explicitly to enforce keeping this
+    // in sync with the list of commands that expose args::Sample.
     fn keep_temp_files(&self) -> bool {
         match self {
-            Self::SampleEncode(args) => args.keep,
-            Self::CrfSearch(args) => args.keep,
-            _ => false,
+            Self::SampleEncode(args) => args.sample.keep,
+            Self::CrfSearch(args) => args.sample.keep,
+            Self::AutoEncode(args) => args.search.sample.keep,
+            Self::Vmaf(_) => false,
+            Self::Encode(_) => false,
+            Self::PrintCompletions(_) => false,
         }
     }
 }
