@@ -12,7 +12,7 @@ use crate::{
 use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{sync::Arc, time::Duration};
+use std::{fs, sync::Arc, time::Duration};
 
 /// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 ///
@@ -39,6 +39,9 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
     let input_probe = Arc::new(ffprobe::probe(&search.args.input));
+
+    // Keep image samples so we can use the best sample as the final image
+    search.keep = input_probe.is_probably_an_image();
 
     let output = encode.output.unwrap_or_else(|| {
         default_output_name(
@@ -99,6 +102,21 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         style(best.enc.vmaf).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
+
+    // We don't need to do a final encode for images since we already did it when searching for the best CRF
+    if input_probe.is_probably_an_image() {
+        let output_path_with_best_crf = &output.with_extension(format!("crf{}.avif", best.crf()));
+
+        // Check if we actually have a real sample or if our best CRF was just read from the cache
+        if output_path_with_best_crf.exists() {
+            fs::rename(output_path_with_best_crf, output)?;
+            temporary::clean_all().await;
+            return Ok(());
+        }
+
+        // If the best CRF was read from the cache then we don't have an image to re-use, so we just continue as normal
+    }
+
     temporary::clean_all().await;
 
     let bar = ProgressBar::new(12).with_style(
