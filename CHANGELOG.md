@@ -1,6 +1,7 @@
 # Unreleased
 * Use a single ffmpeg process to calculate VMAF replacing multi process piping.
 * Exclude subtitle tracks from samples.
+* Add `--keep` option for _crf-search_.
 
 # v0.7.12
 * Improve eta stability.
