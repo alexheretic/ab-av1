@@ -50,22 +50,25 @@ async fn main() -> anyhow::Result<()> {
         _ = signal::ctrl_c() => Err(anyhow!("ctrl_c")),
     };
 
+    // Final cleanup. Samples are already deleted (if wished by the user) during `command::sample_encode::run`.
     temporary::clean(keep).await;
 
     out
 }
 
 impl Command {
-    // IMPORTANT: All clauses mentioned explicitly to enforce keeping this
-    // in sync with the list of commands that expose args::Sample.
+    /// This decides what commands will keep temp files.
+    ///
+    /// # Important
+    ///
+    /// Add commands using the sample sub-args here referencing the `keep` flag,
+    /// or the temp files will be removed anyways.
     fn keep_temp_files(&self) -> bool {
         match self {
             Self::SampleEncode(args) => args.sample.keep,
             Self::CrfSearch(args) => args.sample.keep,
             Self::AutoEncode(args) => args.search.sample.keep,
-            Self::Vmaf(_) => false,
-            Self::Encode(_) => false,
-            Self::PrintCompletions(_) => false,
+            _ => false,
         }
     }
 }
