@@ -66,6 +66,7 @@ pub enum FfmpegOut {
 impl FfmpegOut {
     pub fn try_parse(line: &str) -> Option<Self> {
         if line.starts_with("frame=") {
+            eprintln!("{}", line);
             let frame: u64 = parse_label_substr("frame=", line)?.parse().ok()?;
             let fps: f32 = parse_label_substr("fps=", line)?.parse().ok()?;
             let (h, m, s, ns) = time::Time::parse(
@@ -74,11 +75,11 @@ impl FfmpegOut {
             )
             .ok()?
             .as_hms_nano();
-            return Some(Self::Progress {
+            return Some(dbg!(Self::Progress {
                 frame,
                 fps,
                 time: Duration::new(h as u64 * 60 * 60 + m as u64 * 60 + s as u64, ns),
-            });
+            }));
         }
         if line.starts_with("video:") && line.contains("muxing overhead") {
             let video = parse_label_size("video:", line)?;
