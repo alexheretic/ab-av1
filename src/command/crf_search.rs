@@ -146,7 +146,6 @@ pub async fn run(
         args: args.clone(),
         crf: 0.0,
         sample: sample.clone(),
-        keep: false,
         cache: *cache,
         stdout_format: sample_encode::StdoutFormat::Json,
         vmaf: vmaf.clone(),

@@ -63,6 +63,10 @@ pub struct Sample {
     #[arg(long)]
     pub min_samples: Option<u64>,
 
+    /// Keep temporary files after exiting.
+    #[arg(long)]
+    pub keep: bool,
+
     /// Directory to store temporary sample data in.
     /// Defaults to using the input's directory.
     #[arg(long, env = "AB_AV1_TEMP_DIR")]
