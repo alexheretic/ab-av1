@@ -1,3 +1,5 @@
 /target
 /aur
 *.log
+.DS_Store
+*.json
