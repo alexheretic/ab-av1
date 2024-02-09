@@ -4,7 +4,7 @@ use crate::{
     float::TerseF32,
 };
 use anyhow::ensure;
-use clap::Parser;
+use clap::{Parser, ValueHint};
 use std::{
     collections::HashMap,
     fmt::{self, Write},
@@ -23,7 +23,7 @@ pub struct Encode {
     pub encoder: Encoder,
 
     /// Input video file.
-    #[arg(short, long)]
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
 
     /// Ffmpeg video filter applied to the input before av1 encoding.

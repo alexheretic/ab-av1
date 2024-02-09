@@ -6,7 +6,7 @@ pub use encode::*;
 pub use vmaf::*;
 
 use crate::{command::encode::default_output_ext, ffprobe::Ffprobe};
-use clap::Parser;
+use clap::{Parser, ValueHint};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -19,7 +19,7 @@ pub struct EncodeToOutput {
     /// Output file, by default the same as input with `.av1` before the extension.
     ///
     /// E.g. if unspecified: -i vid.mkv --> vid.av1.mkv
-    #[arg(short, long)]
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
 
     /// Set the output ffmpeg audio codec.
@@ -69,7 +69,7 @@ pub struct Sample {
 
     /// Directory to store temporary sample data in.
     /// Defaults to using the input's directory.
-    #[arg(long, env = "AB_AV1_TEMP_DIR")]
+    #[arg(long, env = "AB_AV1_TEMP_DIR", value_hint = ValueHint::DirPath)]
     pub temp_dir: Option<PathBuf>,
 
     /// Extension preference for encoded samples (ffmpeg encoder only).
