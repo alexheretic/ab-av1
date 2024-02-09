@@ -94,6 +94,7 @@ pub async fn vmaf(
             VmafOut::Err(e) => return Err(e),
         }
     }
+    std::thread::sleep(std::time::Duration::new(1, 0));
     bar.finish();
 
     println!("{vmaf_score}");
