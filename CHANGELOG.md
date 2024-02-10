@@ -1,4 +1,4 @@
-# Unreleased
+# v0.7.14
 * Fix bash completions of some filenames.
 
 # v0.7.13
