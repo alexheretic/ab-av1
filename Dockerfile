@@ -8,7 +8,7 @@ COPY src ./src
 RUN cargo fetch
 RUN cargo build --release
 
-FROM debian:bookworm-slim as dependencies
+FROM debian:bookworm-slim as runtime
 
 RUN apt-get update && apt-get install -y \
     wget \
@@ -23,8 +23,6 @@ RUN dpkgArch="$(dpkg --print-architecture)" \
                 tar -xvf /tmp/ffmpeg.tar.xz  && cd ffmpeg-n6.1-latest-linuxarm64-gpl-6.1/bin && mv ffmpeg ffprobe /usr/local/bin ;; \
         *) echo "Unsupported architecture: ${dpkgArch}"; exit 1 ;; \
     esac
-
-FROM dependencies as runtime
 
 COPY --from=builder /build/target/release/ab-av1 /app/ab-av1
 
