@@ -1,6 +1,6 @@
 [package]
 name = "ab-av1"
-version = "0.7.13"
+version = "0.7.14"
 authors = ["Alex Butler <alexheretic@gmail.com>"]
 edition = "2021"
 description = "AV1 encoding with fast VMAF sampling"

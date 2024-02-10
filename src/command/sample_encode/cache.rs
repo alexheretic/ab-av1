@@ -41,7 +41,7 @@ pub async fn cached_encode(
 
     let key = Key(hash);
 
-    match tokio::task::spawn_blocking::<_, anyhow::Result<_>>(move || {
+    let cached = tokio::task::spawn_blocking::<_, anyhow::Result<_>>(move || {
         let db = open_db()?;
         Ok(match db.get(key.0.to_hex().as_bytes())? {
             Some(data) => Some(serde_json::from_slice::<super::EncodeResult>(&data)?),
@@ -50,8 +50,9 @@ pub async fn cached_encode(
     })
     .await
     .context("db.get task failed")
-    .and_then(|r| r)
-    {
+    .and_then(|r| r);
+
+    match cached {
         Ok(Some(mut result)) => {
             result.from_cache = true;
             (Some(result), Some(key))
