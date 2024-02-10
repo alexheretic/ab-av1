@@ -1,8 +1,6 @@
 //! Shared argument logic.
-mod encode;
 mod vmaf;
 
-pub use encode::*;
 pub use vmaf::*;
 
 use crate::{command::encode::default_output_ext, ffprobe::Ffprobe};

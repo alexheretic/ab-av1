@@ -283,6 +283,12 @@ impl_arg_string_as_ref!(&'_ &'_ str);
 impl_arg_string_as_ref!(&'_ std::path::Path);
 impl_arg_string_as_ref!(&'_ std::path::PathBuf);
 
+impl ArgString for Arc<std::path::PathBuf> {
+    fn arg_string(&self) -> Cow<'_, OsStr> {
+        Cow::Borrowed(self.as_os_str().as_ref())
+    }
+}
+
 macro_rules! impl_arg_string_display {
     ($t:ty) => {
         impl ArgString for $t {

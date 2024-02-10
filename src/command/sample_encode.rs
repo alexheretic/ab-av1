@@ -2,7 +2,9 @@ mod cache;
 
 use crate::{
     command::{
-        args::{self, PixelFormat},
+        args::{self},
+        encoders::svtav1::SvtEncoder,
+        encoders::{Encoder, PixelFormat},
         SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
@@ -14,7 +16,7 @@ use crate::{
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueHint};
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{
@@ -37,11 +39,14 @@ use tokio_stream::StreamExt;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub args: args::Encode,
+    pub args: SvtEncoder,
 
-    /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[arg(long)]
-    pub crf: f32,
+    // /// Encoder constant rate factor (1-63). Lower means better quality.
+    // #[arg(long)]
+    // pub crf: f32,
+    /// Input video file.
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
 
     #[clap(flatten)]
     pub sample: args::Sample,
@@ -71,9 +76,8 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    let probe = ffprobe::probe(&args.args.input);
-    args.sample
-        .set_extension_from_input(&args.args.input, &probe);
+    let probe = ffprobe::probe(&args.input);
+    args.sample.set_extension_from_input(&args.input, &probe);
     run(args, probe.into(), bar).await?;
     Ok(())
 }
@@ -81,7 +85,8 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
 pub async fn run(
     Args {
         args,
-        crf,
+        // crf,
+        input,
         sample: sample_args,
         cache,
         stdout_format,
@@ -90,11 +95,18 @@ pub async fn run(
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> anyhow::Result<Output> {
-    let input = Arc::new(args.input.clone());
+    let args_ref = Arc::new(args);
+    let input = Arc::new(input.clone());
     let input_pixel_format = input_probe.pixel_format();
     let input_is_image = input_probe.is_image;
     let input_len = fs::metadata(&*input).await?.len();
-    let enc_args = args.to_encoder_args(crf, &input_probe)?;
+    let enc_args = FfmpegEncodeArgs::from_enc(
+        input.clone(),
+        None,
+        Arc::clone(&args_ref),
+        &input_probe,
+        false,
+    )?;
     let duration = input_probe.duration.clone()?;
     let input_fps = input_probe.fps.clone()?;
     let samples = sample_args.sample_count(duration).max(1);
@@ -184,14 +196,32 @@ pub async fn run(
             (None, key) => {
                 bar.set_message("encoding,");
                 let b = Instant::now();
-                let (encoded_sample, mut output) = ffmpeg::encode_sample(
-                    FfmpegEncodeArgs {
-                        input: &sample,
-                        ..enc_args.clone()
-                    },
+                // let (encoded_sample, mut output) = ffmpeg::encode_sample(
+                //     FfmpegEncodeArgs {
+                //         input: &sample,
+                //         ..enc_args.clone()
+                //     },
+                //     temp_dir.clone(),
+                //     sample_args.extension.as_deref().unwrap_or("mkv"),
+                // )?;
+                // let (encoded_sample, mut output) = ffmpeg::encode_sample(
+                //     FfmpegEncodeArgs::from_enc(
+                //         sample.clone(),
+                //         temp_dir.clone(),
+                //         Arc::clone(&args_ref),
+                //         &input_probe,
+                //         true,
+                //     )
+                //     .unwrap(),
+                let ffmpeg_enc = FfmpegEncodeArgs::from_enc(
+                    sample.clone(),
                     temp_dir.clone(),
-                    sample_args.extension.as_deref().unwrap_or("mkv"),
-                )?;
+                    Arc::clone(&args_ref),
+                    &input_probe,
+                    true,
+                )
+                .unwrap();
+                let (mut output) = ffmpeg_enc.encode(false, None, false)?;
                 while let Some(progress) = output.next().await {
                     if let FfmpegOut::Progress { time, fps, .. } = progress? {
                         bar.set_position(
@@ -203,20 +233,20 @@ pub async fn run(
                     }
                 }
                 let encode_time = b.elapsed();
-                let encoded_size = fs::metadata(&encoded_sample).await?.len();
-                let encoded_probe = ffprobe::probe(&encoded_sample);
+                let encoded_size = fs::metadata(&ffmpeg_enc.output).await?.len();
+                let encoded_probe = ffprobe::probe(&ffmpeg_enc.output);
 
                 // calculate vmaf
                 bar.set_message("vmaf running,");
                 let mut vmaf = vmaf::run(
                     &sample,
-                    &encoded_sample,
+                    &ffmpeg_enc.output,
                     &vmaf.ffmpeg_lavfi(
                         encoded_probe.resolution,
                         enc_args
                             .pix_fmt
                             .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
-                        args.vfilter.as_deref(),
+                        args_ref.vfilter.as_deref(),
                     ),
                 )?;
                 let mut vmaf_score = -1.0;
@@ -271,7 +301,7 @@ pub async fn run(
                 // Early clean. Note: Avoid cleaning copy samples
                 temporary::clean(true).await;
                 if !keep {
-                    let _ = tokio::fs::remove_file(encoded_sample).await;
+                    let _ = tokio::fs::remove_file(ffmpeg_enc.output).await;
                 }
 
                 result
@@ -299,7 +329,7 @@ pub async fn run(
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
-            style(args.encode_hint(crf)).dim().italic(),
+            style(args_ref.encode_hint()).dim().italic(),
         );
         // stdout result
         stdout_format.print_result(

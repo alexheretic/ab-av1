@@ -1,3 +1,4 @@
+#![allow(unused)]
 mod command;
 mod console_ext;
 mod ffmpeg;

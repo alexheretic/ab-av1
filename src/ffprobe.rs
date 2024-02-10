@@ -1,5 +1,5 @@
 //! ffprobe logic
-use crate::command::args::PixelFormat;
+use crate::command::encoders::PixelFormat;
 use anyhow::{anyhow, Context};
 use std::{fmt, fs::File, io::Read, path::Path, time::Duration};
 

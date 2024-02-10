@@ -1,6 +1,7 @@
 use crate::{
     command::{
-        args::{self, PixelFormat},
+        args::{self},
+        encoders::PixelFormat,
         PROGRESS_CHARS,
     },
     ffprobe,

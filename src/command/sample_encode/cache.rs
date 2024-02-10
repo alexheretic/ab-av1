@@ -17,7 +17,7 @@ pub async fn cached_encode(
     input_extension: Option<&OsStr>,
     input_size: u64,
     full_pass: bool,
-    enc_args: &FfmpegEncodeArgs<'_>,
+    enc_args: &FfmpegEncodeArgs,
     vmaf_args: &Vmaf,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
@@ -101,7 +101,7 @@ pub struct Key(blake3::Hash);
 
 fn hash_encode(
     input_info: impl Hash,
-    enc_args: &FfmpegEncodeArgs<'_>,
+    enc_args: &FfmpegEncodeArgs,
     vmaf_args: &Vmaf,
 ) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();

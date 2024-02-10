@@ -3,18 +3,22 @@ mod err;
 pub use err::Error;
 
 use crate::{
-    command::{args, crf_search::err::ensure_or_no_good_crf, sample_encode, PROGRESS_CHARS},
+    command::{
+        args, crf_search::err::ensure_or_no_good_crf, encoders::svtav1::SvtEncoder,
+        encoders::Encoder, sample_encode, PROGRESS_CHARS,
+    },
     console_ext::style,
     ffprobe,
     ffprobe::Ffprobe,
     float::TerseF32,
 };
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueHint};
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use std::{
     io::{self, IsTerminal},
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -34,7 +38,11 @@ const BAR_LEN: u64 = 1_000_000_000;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub args: args::Encode,
+    pub args: SvtEncoder,
+
+    /// Input video file.
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
 
     /// Desired min VMAF score to deliver.
     #[arg(long, default_value_t = 95.0)]
@@ -93,10 +101,9 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
             .progress_chars(PROGRESS_CHARS)
     );
 
-    let probe = ffprobe::probe(&args.args.input);
+    let probe = ffprobe::probe(&args.input);
     let input_is_image = probe.is_image;
-    args.sample
-        .set_extension_from_input(&args.args.input, &probe);
+    args.sample.set_extension_from_input(&args.input, &probe);
 
     let best = run(&args, probe.into(), bar.clone()).await;
     bar.finish();
@@ -106,7 +113,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     eprintln!(
         "\n{} {}\n",
         style("Encode with:").dim(),
-        style(args.args.encode_hint(best.crf())).dim().italic(),
+        style(args.args.encode_hint()).dim().italic(),
     );
 
     StdoutFormat::Human.print_result(&best, input_is_image);
@@ -117,6 +124,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
 pub async fn run(
     Args {
         args,
+        input,
         min_vmaf,
         max_encoded_percent,
         min_crf,
@@ -144,7 +152,8 @@ pub async fn run(
 
     let mut args = sample_encode::Args {
         args: args.clone(),
-        crf: 0.0,
+        input: input.clone(),
+        // crf: 0.0,
         sample: sample.clone(),
         cache: *cache,
         stdout_format: sample_encode::StdoutFormat::Json,
@@ -163,8 +172,8 @@ pub async fn run(
             // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
             _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
         };
-        args.crf = q.to_crf(crf_increment);
-        bar.set_message(format!("sampling crf {}, ", TerseF32(args.crf)));
+        args.args.crf = q.to_crf(crf_increment);
+        bar.set_message(format!("sampling crf {}, ", TerseF32(args.args.crf)));
         let mut sample_task = tokio::task::spawn_local(sample_encode::run(
             args.clone(),
             input_probe.clone(),

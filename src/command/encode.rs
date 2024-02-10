@@ -1,15 +1,18 @@
 use crate::{
     command::{
-        args::{self, Encoder},
+        args::{self},
+        encoders::svtav1::SvtEncoder,
+        encoders::{Encoder, EncoderString},
         SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg,
+    ffmpeg::FfmpegEncodeArgs,
     ffprobe::{self, Ffprobe},
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
-use clap::Parser;
+use clap::{Parser, ValueHint};
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::{
@@ -25,11 +28,11 @@ use tokio_stream::StreamExt;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub args: args::Encode,
+    pub args: SvtEncoder,
 
-    /// Encoder constant rate factor (1-63). Lower means better quality.
-    #[arg(long)]
-    pub crf: f32,
+    /// Input video file.
+    #[arg(short, long, value_hint = ValueHint::FilePath)]
+    pub input: PathBuf,
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
@@ -43,14 +46,14 @@ pub async fn encode(args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    let probe = ffprobe::probe(&args.args.input);
+    let probe = ffprobe::probe(&args.input);
     run(args, probe.into(), &bar).await
 }
 
 pub async fn run(
     Args {
         args,
-        crf,
+        input,
         encode:
             args::EncodeToOutput {
                 output,
@@ -62,10 +65,12 @@ pub async fn run(
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
+    let input = Arc::new(input.clone());
+    let args_ref = Arc::new(args);
     let defaulting_output = output.is_none();
     // let probe = ffprobe::probe(&args.input);
     let output =
-        output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
+        output.unwrap_or_else(|| default_output_name(&input, &args_ref.encoder, probe.is_image));
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -75,7 +80,9 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let mut enc_args = args.to_encoder_args(crf, &probe)?;
+    // let mut enc_args = args.to_encoder_args(&probe)?;
+    let mut enc_args =
+        FfmpegEncodeArgs::from_enc(input.clone(), None, Arc::clone(&args_ref), &probe, false)?;
     enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
     if let Ok(d) = &probe.duration {
@@ -89,7 +96,8 @@ pub async fn run(
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
     }
 
-    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    // let mut enc = ffmpeg::encode(enc_args, has_audio, audio_codec, stereo_downmix)?;
+    let mut enc = enc_args.encode(has_audio, audio_codec, stereo_downmix)?;
 
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
@@ -117,7 +125,7 @@ pub async fn run(
 
     // print output info
     let output_size = fs::metadata(&output).await?.len();
-    let output_percent = 100.0 * output_size as f64 / fs::metadata(&args.input).await?.len() as f64;
+    let output_percent = 100.0 * output_size as f64 / fs::metadata(&*input).await?.len() as f64;
     let output_size = style(HumanBytes(output_size)).dim().bold();
     let output_percent = style!("{}%", output_percent.round()).dim().bold();
     eprint!(
@@ -159,7 +167,7 @@ pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
 }
 
 /// E.g. vid.mkv -> "vid.av1.mkv"
-pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
+pub fn default_output_name(input: &Path, encoder: &EncoderString, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
     let ext = default_output_ext(input, is_image);
     input.with_extension(format!("{pre}.{ext}"))

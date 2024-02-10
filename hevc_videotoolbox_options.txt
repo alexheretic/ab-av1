@@ -1,0 +1,19 @@
+Encoder hevc_videotoolbox [VideoToolbox H.265 Encoder]:
+    General capabilities: dr1 delay hardware 
+    Threading capabilities: none
+    Supported hardware devices: videotoolbox 
+    Supported pixel formats: videotoolbox_vld nv12 yuv420p bgra p010le
+hevc_videotoolbox AVOptions:
+  -profile           <int>        E..V....... Profile (from -99 to INT_MAX) (default -99)
+     main            1            E..V....... Main Profile
+     main10          2            E..V....... Main10 Profile
+  -alpha_quality     <double>     E..V....... Compression quality for the alpha channel (from 0 to 1) (default 0)
+  -constant_bit_rate <boolean>    E..V....... Require constant bit rate (macOS 13 or newer) (default false)
+  -allow_sw          <boolean>    E..V....... Allow software encoding (default false)
+  -require_sw        <boolean>    E..V....... Require software encoding (default false)
+  -realtime          <boolean>    E..V....... Hint that encoding should happen in real-time if not faster (e.g. capturing from camera). (default false)
+  -frames_before     <boolean>    E..V....... Other frames will come before the frames in this session. This helps smooth concatenation issues. (default false)
+  -frames_after      <boolean>    E..V....... Other frames will come after the frames in this session. This helps smooth concatenation issues. (default false)
+  -prio_speed        <boolean>    E..V....... prioritize encoding speed (default auto)
+  -power_efficient   <int>        E..V....... Set to 1 to enable more power-efficient encoding if supported. (from -1 to 1) (default -1)
+  -max_ref_frames    <int>        E..V....... Sets the maximum number of reference frames. This only has an effect when the value is less than the maximum allowed by the profile/level. (from 0 to INT_MAX) (default 0)
