@@ -36,14 +36,14 @@ impl FfmpegEncodeArgs<'_> {
 
         // hashing svt-av1 version means new encoder releases will avoid old cache data
         if &*self.vcodec == "libsvtav1" {
-            let svtav1_verion = SVT_AV1_V.get_or_init(|| {
+            let svtav1_version = SVT_AV1_V.get_or_init(|| {
                 use std::process::Command;
                 match Command::new("SvtAv1EncApp").arg("--version").output() {
                     Ok(out) => out.stdout,
                     _ => <_>::default(),
                 }
             });
-            svtav1_verion.hash(state);
+            svtav1_version.hash(state);
         }
 
         // input not relevant to sample encoding

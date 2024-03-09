@@ -334,7 +334,7 @@ async fn sample(
     let sample = sample::copy(&input, sample_start, sample_frames, temp_dir).await?;
     let sample_size = fs::metadata(&sample).await?.len();
     ensure!(
-        // ffmpeg copy may fail sucessfully and give us a small/empty output
+        // ffmpeg copy may fail successfully and give us a small/empty output
         sample_size > 1024,
         "ffmpeg copy failed: encoded sample too small"
     );

@@ -63,7 +63,7 @@ impl Vmaf {
         let mut model = VmafModel::from_args(&args);
         if let (None, Some((w, h))) = (model, distorted_res) {
             if w > 2560 && h > 1440 {
-                // for >2k resoultions use 4k model
+                // for >2k resolutions use 4k model
                 lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
                 model = Some(VmafModel::Vmaf4K);
             }
@@ -287,7 +287,7 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
     );
 }
 
-/// If user has overriden the model, don't default a vmaf width
+/// If user has overridden the model, don't default a vmaf width
 #[test]
 fn vmaf_lavfi_small_width_custom_model() {
     let vmaf = Vmaf {
