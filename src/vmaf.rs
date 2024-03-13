@@ -14,7 +14,6 @@ pub fn run(
     filter_complex: &str,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
     let vmaf: ProcessChunkStream = Command::new("ffmpeg")
-        .kill_on_drop(true)
         .arg2("-r", "24")
         .arg2("-i", distorted)
         .arg2("-r", "24")
