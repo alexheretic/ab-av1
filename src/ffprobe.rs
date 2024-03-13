@@ -3,6 +3,7 @@ use crate::command::args::PixelFormat;
 use anyhow::{anyhow, Context};
 use std::{fmt, fs::File, io::Read, path::Path, time::Duration};
 
+#[derive(Clone)]
 pub struct Ffprobe {
     /// Duration of video.
     pub duration: Result<Duration, ProbeError>,
