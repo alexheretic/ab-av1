@@ -224,9 +224,6 @@ fn parse_ffmpeg_stream_sizes() {
 }
 
 pub trait CommandExt {
-    /// Adds an argument if `condition` otherwise noop.
-    fn arg_if(&mut self, condition: bool, a: impl ArgString) -> &mut Self;
-
     /// Adds two arguments.
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self;
 
@@ -237,13 +234,6 @@ pub trait CommandExt {
     fn arg2_if(&mut self, condition: bool, a: impl ArgString, b: impl ArgString) -> &mut Self;
 }
 impl CommandExt for tokio::process::Command {
-    fn arg_if(&mut self, c: bool, arg: impl ArgString) -> &mut Self {
-        match c {
-            true => self.arg(arg.arg_string()),
-            false => self,
-        }
-    }
-
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self {
         self.arg(a.arg_string()).arg(b.arg_string())
     }
