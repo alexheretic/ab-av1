@@ -3,15 +3,17 @@ use crate::{
         args::{self, PixelFormat},
         PROGRESS_CHARS,
     },
+    ffmpeg::to_cuda_vcodec,
     ffprobe,
     process::FfmpegOut,
     vmaf,
     vmaf::VmafOut,
 };
+use anyhow::Context;
 use clap::Parser;
+use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{path::PathBuf, time::Duration};
-use tokio_stream::StreamExt;
 
 /// Full VMAF score calculation, distorted file vs reference file.
 /// Works with videos and images.
@@ -39,6 +41,10 @@ pub struct Args {
 
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
+
+    /// Enable CUDA acceleration.
+    #[arg(long)]
+    pub cuda: bool,
 }
 
 pub async fn vmaf(
@@ -47,6 +53,7 @@ pub async fn vmaf(
         reference_vfilter,
         distorted,
         vmaf,
+        cuda,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -66,15 +73,41 @@ pub async fn vmaf(
         bar.set_length(nframes);
     }
 
-    let mut vmaf = vmaf::run(
-        &reference,
-        &distorted,
-        &vmaf.ffmpeg_lavfi(
+    let mut vmaf = if cuda {
+        let rcodec = rprobe
+            .vcodec_name
+            .as_deref()
+            .context("unknown reference vcodec")?;
+        let dcodec = dprobe
+            .vcodec_name
+            .as_deref()
+            .context("unknown reference vcodec")?;
+        let lavfi = vmaf.ffmpeg_lavfi_cuda(
             dprobe.resolution,
             dpix_fmt.max(rpix_fmt),
             reference_vfilter.as_deref(),
-        ),
-    )?;
+        );
+        vmaf::run_cuda(
+            &reference,
+            &to_cuda_vcodec(rcodec),
+            &distorted,
+            &to_cuda_vcodec(dcodec),
+            &lavfi,
+        )?
+        .left_stream()
+    } else {
+        vmaf::run(
+            &reference,
+            &distorted,
+            &vmaf.ffmpeg_lavfi(
+                dprobe.resolution,
+                dpix_fmt.max(rpix_fmt),
+                reference_vfilter.as_deref(),
+            ),
+        )?
+        .right_stream()
+    };
+
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {
