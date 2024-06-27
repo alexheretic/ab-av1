@@ -42,10 +42,15 @@ pub fn exit_ok(name: &'static str, done: io::Result<ExitStatus>) -> anyhow::Resu
 pub fn exit_ok_stderr(
     name: &'static str,
     done: io::Result<ExitStatus>,
+    cmd_str: &str,
     stderr: &Chunks,
 ) -> anyhow::Result<()> {
-    exit_ok(name, done)
-        .map_err(|e| anyhow!("{e}\n---stderr---\n{}\n------------", stderr.out.trim()))
+    exit_ok(name, done).map_err(|e| {
+        anyhow!(
+            "{e}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
+            stderr.out.trim()
+        )
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -98,6 +103,7 @@ impl FfmpegOut {
     pub fn stream(
         child: Child,
         name: &'static str,
+        cmd_str: String,
     ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
         let mut chunks = Chunks::default();
         ProcessChunkStream::from(child).filter_map(move |item| match item {
@@ -106,7 +112,7 @@ impl FfmpegOut {
                 FfmpegOut::try_parse(chunks.last_line()).map(Ok)
             }
             Item::Stdout(_) => None,
-            Item::Done(code) => match exit_ok_stderr(name, code, &chunks) {
+            Item::Done(code) => match exit_ok_stderr(name, code, &cmd_str, &chunks) {
                 Ok(_) => None,
                 Err(err) => Some(Err(err)),
             },
@@ -232,6 +238,9 @@ pub trait CommandExt {
 
     /// Adds two arguments if `condition` otherwise noop.
     fn arg2_if(&mut self, condition: bool, a: impl ArgString, b: impl ArgString) -> &mut Self;
+
+    /// Convert to readable shell-like string.
+    fn to_cmd_str(&self) -> String;
 }
 impl CommandExt for tokio::process::Command {
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self {
@@ -250,6 +259,18 @@ impl CommandExt for tokio::process::Command {
             true => self.arg2(a, b),
             false => self,
         }
+    }
+
+    fn to_cmd_str(&self) -> String {
+        let cmd = self.as_std();
+        cmd.get_args().map(|a| a.to_string_lossy()).fold(
+            cmd.get_program().to_string_lossy().to_string(),
+            |mut all, next| {
+                all.push(' ');
+                all += &next;
+                all
+            },
+        )
     }
 }
 

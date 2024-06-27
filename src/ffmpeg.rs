@@ -85,8 +85,8 @@ pub fn encode_sample(
 
     temporary::add(&dest, TempKind::Keepable);
 
-    let enc = Command::new("ffmpeg")
-        .kill_on_drop(true)
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
@@ -100,11 +100,12 @@ pub fn encode_sample(
         .arg(&dest)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg encode_sample")?;
+        .stderr(Stdio::piped());
+    let cmd_str = cmd.to_cmd_str();
 
-    let stream = FfmpegOut::stream(enc, "ffmpeg encode_sample");
+    let enc = cmd.spawn().context("ffmpeg encode_sample")?;
+
+    let stream = FfmpegOut::stream(enc, "ffmpeg encode_sample", cmd_str);
     Ok((dest, stream))
 }
 
@@ -146,8 +147,8 @@ pub fn encode(
         false => "0",
     };
 
-    let enc = Command::new("ffmpeg")
-        .kill_on_drop(true)
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
@@ -168,11 +169,12 @@ pub fn encode(
         .arg(output)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg encode")?;
+        .stderr(Stdio::piped());
+    let cmd_str = cmd.to_cmd_str();
 
-    Ok(FfmpegOut::stream(enc, "ffmpeg encode"))
+    let enc = cmd.spawn().context("ffmpeg encode")?;
+
+    Ok(FfmpegOut::stream(enc, "ffmpeg encode", cmd_str))
 }
 
 pub fn pre_extension_name(vcodec: &str) -> &str {

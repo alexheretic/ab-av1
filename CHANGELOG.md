@@ -1,3 +1,6 @@
+# Unreleased
+* Show full ffmpeg command after errors.
+
 # v0.7.14
 * Fix bash completions of some filenames.
 

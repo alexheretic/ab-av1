@@ -13,23 +13,26 @@ pub fn run(
     distorted: &Path,
     filter_complex: &str,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
-    let vmaf: ProcessChunkStream = Command::new("ffmpeg")
-        .kill_on_drop(true)
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
         .arg2("-r", "24")
         .arg2("-i", distorted)
         .arg2("-r", "24")
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
-        .arg("-")
-        .try_into()
-        .context("ffmpeg vmaf")?;
+        .arg("-");
+
+    let cmd_str = cmd.to_cmd_str();
+    let vmaf: ProcessChunkStream = cmd.try_into().context("ffmpeg vmaf")?;
 
     let mut chunks = Chunks::default();
     let vmaf = vmaf.filter_map(move |item| match item {
         Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &mut chunks),
         Item::Stdout(_) => None,
-        Item::Done(code) => VmafOut::ignore_ok(exit_ok_stderr("ffmpeg vmaf", code, &chunks)),
+        Item::Done(code) => {
+            VmafOut::ignore_ok(exit_ok_stderr("ffmpeg vmaf", code, &cmd_str, &chunks))
+        }
     });
 
     Ok(vmaf)
