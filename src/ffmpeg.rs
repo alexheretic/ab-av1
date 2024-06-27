@@ -202,15 +202,16 @@ impl VCodecSpecific for Arc<str> {
     }
 
     fn crf_arg(&self) -> &str {
-        // use crf-like args to support encoders that don't have crf
-        if &**self == "librav1e" || self.ends_with("_vaapi") {
-            "-qp"
-        } else if self.ends_with("_nvenc") {
-            "-cq"
-        } else if self.ends_with("_qsv") {
-            "-global_quality"
-        } else {
-            "-crf"
+        // // use crf-like args to support encoders that don't have crf
+        match &**self {
+            // https://ffmpeg.org//ffmpeg-codecs.html#librav1e
+            "librav1e" => "-qp",
+            // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
+            e if e.ends_with("_vaapi") => "-q",
+            e if e.ends_with("_nvenc") => "-cq",
+            // https://ffmpeg.org//ffmpeg-codecs.html#QSV-Encoders
+            e if e.ends_with("_qsv") => "-global_quality",
+            _ => "-crf",
         }
     }
 }

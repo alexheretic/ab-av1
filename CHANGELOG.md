@@ -1,5 +1,7 @@
 # Unreleased
 * Show full ffmpeg command after errors.
+* For *_vaapi encoders map `--crf` to ffmpeg `-q` (instead of `-qp`).
+* Set av1_vaapi default `--max-crf` to 255.
 
 # v0.7.14
 * Fix bash completions of some filenames.
