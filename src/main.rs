@@ -12,7 +12,7 @@ mod vmaf;
 use anyhow::anyhow;
 use clap::Parser;
 use futures::FutureExt;
-use std::time::Duration;
+use std::{env, io::IsTerminal, time::Duration};
 use tokio::signal;
 
 const SAMPLE_SIZE_S: u64 = 20;
@@ -31,7 +31,11 @@ enum Command {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    if !std::io::stderr().is_terminal() && env::var_os("RUST_LOG").is_none() {
+        env::set_var("RUST_LOG", "ab_av1=info");
+    }
     env_logger::init();
+
     let action = Command::parse();
 
     let keep = action.keep_temp_files();
