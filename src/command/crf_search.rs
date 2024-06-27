@@ -13,6 +13,7 @@ use clap::{ArgAction, Parser};
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
     io::{self, IsTerminal},
     sync::Arc,
@@ -111,6 +112,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
         );
     }
 
+    info!("crf {} successful", best.crf());
     StdoutFormat::Human.print_result(&best, input_is_image);
 
     Ok(())
