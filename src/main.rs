@@ -9,6 +9,7 @@ mod sample;
 mod temporary;
 mod vmaf;
 
+use ::log::{error, LevelFilter};
 use anyhow::anyhow;
 use clap::Parser;
 use futures::FutureExt;
@@ -30,11 +31,15 @@ enum Command {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-    if !std::io::stderr().is_terminal() && env::var_os("RUST_LOG").is_none() {
+async fn main() {
+    let stderr_term = std::io::stderr().is_terminal();
+    if !stderr_term && env::var_os("RUST_LOG").is_none() {
         env::set_var("RUST_LOG", "ab_av1=info");
     }
-    env_logger::init();
+    env_logger::builder()
+        .filter_level(LevelFilter::Off)
+        .parse_default_env()
+        .init();
 
     let action = Command::parse();
 
@@ -59,7 +64,13 @@ async fn main() -> anyhow::Result<()> {
     // Final cleanup. Samples are already deleted (if wished by the user) during `command::sample_encode::run`.
     temporary::clean(keep).await;
 
-    out
+    if let Err(err) = out {
+        error!("{err}");
+        if stderr_term {
+            eprintln!("Error: {err}");
+        }
+        std::process::exit(1);
+    }
 }
 
 impl Command {

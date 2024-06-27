@@ -7,6 +7,7 @@
 * Support logging enabled when stderr is not a terminal or by setting env var `RUST_LOG`. E.g:
   - `RUST_LOG=ab_av1=info` "info" level logs various progress results like sample encode info
   - `RUST_LOG=ab_av1=debug` "debug" level logs include ffmpeg calls
+* Don't panic on non-zero status exit.
 
 # v0.7.14
 * Fix bash completions of some filenames.
