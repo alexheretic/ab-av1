@@ -2,6 +2,11 @@
 * Show full ffmpeg command after errors.
 * For *_vaapi encoders map `--crf` to ffmpeg `-q` (instead of `-qp`).
 * Set av1_vaapi default `--max-crf` to 255.
+* Fix sample-encode printing output to non-terminals.
+* Omit "Encode with: ..." stderr hint for non-terminals.
+* Support logging enabled when stderr is not a terminal or by setting env var `RUST_LOG`. E.g:
+  - `RUST_LOG=ab_av1=info` "info" level logs various progress results like sample encode info
+  - `RUST_LOG=ab_av1=debug` "debug" level logs include ffmpeg calls
 
 # v0.7.14
 * Fix bash completions of some filenames.

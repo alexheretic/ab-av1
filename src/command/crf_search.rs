@@ -13,6 +13,7 @@ use clap::{ArgAction, Parser};
 use console::style;
 use err::ensure_other;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
     io::{self, IsTerminal},
     sync::Arc,
@@ -102,12 +103,14 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     bar.finish();
     let best = best?;
 
-    // encode how-to hint + predictions
-    eprintln!(
-        "\n{} {}\n",
-        style("Encode with:").dim(),
-        style(args.args.encode_hint(best.crf())).dim().italic(),
-    );
+    if std::io::stderr().is_terminal() {
+        // encode how-to hint
+        eprintln!(
+            "\n{} {}\n",
+            style("Encode with:").dim(),
+            style(args.args.encode_hint(best.crf())).dim().italic(),
+        );
+    }
 
     StdoutFormat::Human.print_result(&best, input_is_image);
 
@@ -115,6 +118,16 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
 }
 
 pub async fn run(
+    args: &Args,
+    input_probe: Arc<Ffprobe>,
+    bar: ProgressBar,
+) -> Result<Sample, Error> {
+    _run(args, input_probe, bar)
+        .await
+        .inspect(|s| info!("crf {} successful", s.crf()))
+}
+
+async fn _run(
     Args {
         args,
         min_vmaf,
@@ -169,6 +182,7 @@ pub async fn run(
             args.clone(),
             input_probe.clone(),
             sample_bar.clone(),
+            false,
         ));
 
         let sample_task = loop {

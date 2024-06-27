@@ -8,16 +8,19 @@ use crate::{
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe::{self, Ffprobe},
+    log::ProgressLogger,
     process::FfmpegOut,
-    sample, temporary, vmaf,
-    vmaf::VmafOut,
+    sample, temporary,
+    vmaf::{self, VmafOut},
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
 use clap::{ArgAction, Parser};
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
+    io::IsTerminal,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -74,7 +77,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     let probe = ffprobe::probe(&args.args.input);
     args.sample
         .set_extension_from_input(&args.args.input, &probe);
-    run(args, probe.into(), bar).await?;
+    run(args, probe.into(), bar, true).await?;
     Ok(())
 }
 
@@ -89,6 +92,7 @@ pub async fn run(
     }: Args,
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
+    print_output: bool,
 ) -> anyhow::Result<Output> {
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
@@ -155,6 +159,8 @@ pub async fn run(
 
         let (sample, sample_size) = sample?;
 
+        info!("encoding sample {sample_n}/{samples} crf {crf}",);
+
         // encode sample
         let result = match cache::cached_encode(
             cache,
@@ -179,11 +185,19 @@ pub async fn run(
                     .dim()
                     .to_string(),
                 );
+                if samples > 1 {
+                    info!(
+                        "sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
+                        result.vmaf_score,
+                        100.0 * result.encoded_size as f32 / sample_size as f32,
+                    );
+                }
                 result
             }
             (None, key) => {
                 bar.set_message("encoding,");
                 let b = Instant::now();
+                let mut logger = ProgressLogger::new(module_path!(), b);
                 let (encoded_sample, mut output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
                         input: &sample,
@@ -200,6 +214,7 @@ pub async fn run(
                         if fps > 0.0 {
                             bar.set_message(format!("enc {fps} fps,"));
                         }
+                        logger.update(SAMPLE_SIZE, time, fps);
                     }
                 }
                 let encode_time = b.elapsed();
@@ -219,6 +234,7 @@ pub async fn run(
                         args.vfilter.as_deref(),
                     ),
                 )?;
+                let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
                 let mut vmaf_score = -1.0;
                 while let Some(vmaf) = vmaf.next().await {
                     match vmaf {
@@ -236,6 +252,7 @@ pub async fn run(
                             if fps > 0.0 {
                                 bar.set_message(format!("vmaf {fps} fps,"));
                             }
+                            logger.update(SAMPLE_SIZE, time, fps);
                         }
                         VmafOut::Progress(_) => {}
                         VmafOut::Err(e) => return Err(e),
@@ -250,6 +267,12 @@ pub async fn run(
                     .dim()
                     .to_string(),
                 );
+                if samples > 1 {
+                    info!(
+                        "sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
+                        100.0 * encoded_size as f32 / sample_size as f32,
+                    );
+                }
 
                 let result = EncodeResult {
                     vmaf_score,
@@ -293,14 +316,24 @@ pub async fn run(
         predicted_encode_time: results.estimate_encode_time(duration, full_pass),
         from_cache: results.iter().all(|r| r.from_cache),
     };
+    info!(
+        "crf {crf} VMAF {:.2} predicted video stream size {} ({:.0}%) taking {}{}",
+        output.vmaf,
+        HumanBytes(output.predicted_encode_size),
+        output.encode_percent,
+        HumanDuration(output.predicted_encode_time),
+        if output.from_cache { " (cache)" } else { "" }
+    );
 
-    if !bar.is_hidden() {
-        // encode how-to hint + predictions
-        eprintln!(
-            "\n{} {}\n",
-            style("Encode with:").dim(),
-            style(args.encode_hint(crf)).dim().italic(),
-        );
+    if print_output {
+        if std::io::stderr().is_terminal() {
+            // encode how-to hint
+            eprintln!(
+                "\n{} {}\n",
+                style("Encode with:").dim(),
+                style(args.encode_hint(crf)).dim().italic(),
+            );
+        }
         // stdout result
         stdout_format.print_result(
             output.vmaf,
