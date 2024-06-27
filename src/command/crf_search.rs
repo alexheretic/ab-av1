@@ -104,7 +104,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let best = best?;
 
     if std::io::stderr().is_terminal() {
-        // encode how-to hint + predictions
+        // encode how-to hint
         eprintln!(
             "\n{} {}\n",
             style("Encode with:").dim(),
@@ -112,13 +112,22 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
         );
     }
 
-    info!("crf {} successful", best.crf());
     StdoutFormat::Human.print_result(&best, input_is_image);
 
     Ok(())
 }
 
 pub async fn run(
+    args: &Args,
+    input_probe: Arc<Ffprobe>,
+    bar: ProgressBar,
+) -> Result<Sample, Error> {
+    _run(args, input_probe, bar)
+        .await
+        .inspect(|s| info!("crf {} successful", s.crf()))
+}
+
+async fn _run(
     Args {
         args,
         min_vmaf,

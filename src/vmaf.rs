@@ -1,7 +1,7 @@
 //! vmaf logic
 use crate::process::{exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
 use anyhow::Context;
-use log::debug;
+use log::{debug, info};
 use std::path::Path;
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
@@ -14,6 +14,12 @@ pub fn run(
     distorted: &Path,
     filter_complex: &str,
 ) -> anyhow::Result<impl Stream<Item = VmafOut>> {
+    info!(
+        "vmaf {} vs reference {}",
+        distorted.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+        reference.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+    );
+
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
         .arg2("-r", "24")

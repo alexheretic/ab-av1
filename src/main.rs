@@ -3,6 +3,7 @@ mod console_ext;
 mod ffmpeg;
 mod ffprobe;
 mod float;
+mod log;
 mod process;
 mod sample;
 mod temporary;

@@ -8,9 +8,10 @@ use crate::{
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe::{self, Ffprobe},
+    log::ProgressLogger,
     process::FfmpegOut,
-    sample, temporary, vmaf,
-    vmaf::VmafOut,
+    sample, temporary,
+    vmaf::{self, VmafOut},
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::ensure;
@@ -158,6 +159,8 @@ pub async fn run(
 
         let (sample, sample_size) = sample?;
 
+        info!("encoding sample {sample_n}/{samples} crf {crf}",);
+
         // encode sample
         let result = match cache::cached_encode(
             cache,
@@ -184,7 +187,7 @@ pub async fn run(
                 );
                 if samples > 1 {
                     info!(
-                        "Sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
+                        "sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
                         result.vmaf_score,
                         100.0 * result.encoded_size as f32 / sample_size as f32,
                     );
@@ -194,6 +197,7 @@ pub async fn run(
             (None, key) => {
                 bar.set_message("encoding,");
                 let b = Instant::now();
+                let mut logger = ProgressLogger::new(module_path!(), b);
                 let (encoded_sample, mut output) = ffmpeg::encode_sample(
                     FfmpegEncodeArgs {
                         input: &sample,
@@ -210,6 +214,7 @@ pub async fn run(
                         if fps > 0.0 {
                             bar.set_message(format!("enc {fps} fps,"));
                         }
+                        logger.update(SAMPLE_SIZE, time, fps);
                     }
                 }
                 let encode_time = b.elapsed();
@@ -229,6 +234,7 @@ pub async fn run(
                         args.vfilter.as_deref(),
                     ),
                 )?;
+                let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
                 let mut vmaf_score = -1.0;
                 while let Some(vmaf) = vmaf.next().await {
                     match vmaf {
@@ -246,6 +252,7 @@ pub async fn run(
                             if fps > 0.0 {
                                 bar.set_message(format!("vmaf {fps} fps,"));
                             }
+                            logger.update(SAMPLE_SIZE, time, fps);
                         }
                         VmafOut::Progress(_) => {}
                         VmafOut::Err(e) => return Err(e),
@@ -262,7 +269,7 @@ pub async fn run(
                 );
                 if samples > 1 {
                     info!(
-                        "Sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
+                        "sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
                         100.0 * encoded_size as f32 / sample_size as f32,
                     );
                 }
@@ -320,7 +327,7 @@ pub async fn run(
 
     if print_output {
         if std::io::stderr().is_terminal() {
-            // encode how-to hint + predictions
+            // encode how-to hint
             eprintln!(
                 "\n{} {}\n",
                 style("Encode with:").dim(),

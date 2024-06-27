@@ -4,13 +4,16 @@ use crate::{
         PROGRESS_CHARS,
     },
     ffprobe,
+    log::ProgressLogger,
     process::FfmpegOut,
-    vmaf,
-    vmaf::VmafOut,
+    vmaf::{self, VmafOut},
 };
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use tokio_stream::StreamExt;
 
 /// Full VMAF score calculation, distorted file vs reference file.
@@ -62,6 +65,7 @@ pub async fn vmaf(
     let rprobe = ffprobe::probe(&reference);
     let rpix_fmt = rprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
+    let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
         bar.set_length(nframes);
     }
@@ -75,6 +79,7 @@ pub async fn vmaf(
             reference_vfilter.as_deref(),
         ),
     )?;
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut vmaf_score = -1.0;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {
@@ -82,12 +87,17 @@ pub async fn vmaf(
                 vmaf_score = score;
                 break;
             }
-            VmafOut::Progress(FfmpegOut::Progress { frame, fps, .. }) => {
+            VmafOut::Progress(FfmpegOut::Progress {
+                frame, fps, time, ..
+            }) => {
                 if fps > 0.0 {
                     bar.set_message(format!("vmaf {fps} fps, "));
                 }
                 if nframes.is_ok() {
                     bar.set_position(frame);
+                }
+                if let Ok(total) = duration {
+                    logger.update(*total, time, fps);
                 }
             }
             VmafOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
