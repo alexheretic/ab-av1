@@ -102,12 +102,14 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     bar.finish();
     let best = best?;
 
-    // encode how-to hint + predictions
-    eprintln!(
-        "\n{} {}\n",
-        style("Encode with:").dim(),
-        style(args.args.encode_hint(best.crf())).dim().italic(),
-    );
+    if std::io::stderr().is_terminal() {
+        // encode how-to hint + predictions
+        eprintln!(
+            "\n{} {}\n",
+            style("Encode with:").dim(),
+            style(args.args.encode_hint(best.crf())).dim().italic(),
+        );
+    }
 
     StdoutFormat::Human.print_result(&best, input_is_image);
 
@@ -169,6 +171,7 @@ pub async fn run(
             args.clone(),
             input_probe.clone(),
             sample_bar.clone(),
+            false,
         ));
 
         let sample_task = loop {

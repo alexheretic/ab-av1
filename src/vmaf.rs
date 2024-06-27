@@ -1,6 +1,7 @@
 //! vmaf logic
 use crate::process::{exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
 use anyhow::Context;
+use log::debug;
 use std::path::Path;
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
@@ -24,6 +25,7 @@ pub fn run(
         .arg("-");
 
     let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
     let vmaf: ProcessChunkStream = cmd.try_into().context("ffmpeg vmaf")?;
 
     let mut chunks = Chunks::default();

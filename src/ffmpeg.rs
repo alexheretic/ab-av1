@@ -6,6 +6,7 @@ use crate::{
     temporary::{self, TempKind},
 };
 use anyhow::Context;
+use log::debug;
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
@@ -102,6 +103,7 @@ pub fn encode_sample(
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
 
     let enc = cmd.spawn().context("ffmpeg encode_sample")?;
 
@@ -171,6 +173,7 @@ pub fn encode(
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
 
     let enc = cmd.spawn().context("ffmpeg encode")?;
 

@@ -30,6 +30,7 @@ enum Command {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let action = Command::parse();
 
     let keep = action.keep_temp_files();

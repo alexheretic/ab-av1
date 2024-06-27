@@ -17,7 +17,9 @@ use anyhow::ensure;
 use clap::{ArgAction, Parser};
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
+    io::IsTerminal,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -74,7 +76,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     let probe = ffprobe::probe(&args.args.input);
     args.sample
         .set_extension_from_input(&args.args.input, &probe);
-    run(args, probe.into(), bar).await?;
+    run(args, probe.into(), bar, true).await?;
     Ok(())
 }
 
@@ -89,6 +91,7 @@ pub async fn run(
     }: Args,
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
+    print_output: bool,
 ) -> anyhow::Result<Output> {
     let input = Arc::new(args.input.clone());
     let input_pixel_format = input_probe.pixel_format();
@@ -179,6 +182,13 @@ pub async fn run(
                     .dim()
                     .to_string(),
                 );
+                if samples > 1 {
+                    info!(
+                        "Sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
+                        result.vmaf_score,
+                        100.0 * result.encoded_size as f32 / sample_size as f32,
+                    );
+                }
                 result
             }
             (None, key) => {
@@ -250,6 +260,12 @@ pub async fn run(
                     .dim()
                     .to_string(),
                 );
+                if samples > 1 {
+                    info!(
+                        "Sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
+                        100.0 * encoded_size as f32 / sample_size as f32,
+                    );
+                }
 
                 let result = EncodeResult {
                     vmaf_score,
@@ -293,14 +309,24 @@ pub async fn run(
         predicted_encode_time: results.estimate_encode_time(duration, full_pass),
         from_cache: results.iter().all(|r| r.from_cache),
     };
+    info!(
+        "crf {crf} VMAF {:.2} predicted video stream size {} ({:.0}%) taking {}{}",
+        output.vmaf,
+        HumanBytes(output.predicted_encode_size),
+        output.encode_percent,
+        HumanDuration(output.predicted_encode_time),
+        if output.from_cache { " (cache)" } else { "" }
+    );
 
-    if !bar.is_hidden() {
-        // encode how-to hint + predictions
-        eprintln!(
-            "\n{} {}\n",
-            style("Encode with:").dim(),
-            style(args.encode_hint(crf)).dim().italic(),
-        );
+    if print_output {
+        if std::io::stderr().is_terminal() {
+            // encode how-to hint + predictions
+            eprintln!(
+                "\n{} {}\n",
+                style("Encode with:").dim(),
+                style(args.encode_hint(crf)).dim().italic(),
+            );
+        }
         // stdout result
         stdout_format.print_result(
             output.vmaf,
