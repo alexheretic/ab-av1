@@ -215,7 +215,7 @@ pub async fn run(
                         if fps > 0.0 {
                             bar.set_message(format!("enc {fps} fps,"));
                         }
-                        logger.update(SAMPLE_SIZE, time, fps);
+                        logger.update(sample_duration, time, fps);
                     }
                 }
                 let encode_time = b.elapsed();
@@ -253,7 +253,7 @@ pub async fn run(
                             if fps > 0.0 {
                                 bar.set_message(format!("vmaf {fps} fps,"));
                             }
-                            logger.update(SAMPLE_SIZE, time, fps);
+                            logger.update(sample_duration, time, fps);
                         }
                         VmafOut::Progress(_) => {}
                         VmafOut::Err(e) => return Err(e),
