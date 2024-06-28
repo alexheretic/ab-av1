@@ -9,7 +9,7 @@ mod sample;
 mod temporary;
 mod vmaf;
 
-use ::log::{error, LevelFilter};
+use ::log::LevelFilter;
 use anyhow::anyhow;
 use clap::Parser;
 use futures_util::FutureExt;
@@ -65,10 +65,7 @@ async fn main() {
     temporary::clean(keep).await;
 
     if let Err(err) = out {
-        error!("{err}");
-        if stderr_term {
-            eprintln!("Error: {err}");
-        }
+        eprintln!("Error: {err}");
         std::process::exit(1);
     }
 }
