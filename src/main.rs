@@ -12,7 +12,7 @@ mod vmaf;
 use ::log::{error, LevelFilter};
 use anyhow::anyhow;
 use clap::Parser;
-use futures::FutureExt;
+use futures_util::FutureExt;
 use std::{env, io::IsTerminal, time::Duration};
 use tokio::signal;
 

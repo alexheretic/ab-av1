@@ -2,6 +2,7 @@ use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
     ffi::OsStr,
+    fmt::Display,
     io,
     process::{ExitStatus, Output},
     sync::Arc,
@@ -45,12 +46,14 @@ pub fn exit_ok_stderr(
     cmd_str: &str,
     stderr: &Chunks,
 ) -> anyhow::Result<()> {
-    exit_ok(name, done).map_err(|e| {
-        anyhow!(
-            "{e}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
-            stderr.out.trim()
-        )
-    })
+    exit_ok(name, done).map_err(|e| cmd_err(e, cmd_str, stderr))
+}
+
+pub fn cmd_err(err: impl Display, cmd_str: &str, stderr: &Chunks) -> anyhow::Error {
+    anyhow!(
+        "{err}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
+        stderr.out.trim()
+    )
 }
 
 #[derive(Debug, PartialEq)]

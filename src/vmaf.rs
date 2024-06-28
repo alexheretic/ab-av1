@@ -1,5 +1,5 @@
 //! vmaf logic
-use crate::process::{exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
+use crate::process::{cmd_err, exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
 use anyhow::Context;
 use log::{debug, info};
 use std::path::Path;
@@ -34,16 +34,36 @@ pub fn run(
     debug!("cmd `{cmd_str}`");
     let vmaf: ProcessChunkStream = cmd.try_into().context("ffmpeg vmaf")?;
 
-    let mut chunks = Chunks::default();
-    let vmaf = vmaf.filter_map(move |item| match item {
-        Item::Stderr(chunk) => VmafOut::try_from_chunk(&chunk, &mut chunks),
-        Item::Stdout(_) => None,
-        Item::Done(code) => {
-            VmafOut::ignore_ok(exit_ok_stderr("ffmpeg vmaf", code, &cmd_str, &chunks))
+    Ok(async_stream::stream! {
+        let mut vmaf = vmaf;
+        let mut chunks = Chunks::default();
+        let mut parsed_done = false;
+        let mut exit_ok = false;
+        while let Some(next) = vmaf.next().await {
+            match next {
+                Item::Stderr(chunk) => {
+                    if let Some(out) = VmafOut::try_from_chunk(&chunk, &mut chunks) {
+                        if matches!(out, VmafOut::Done(_)) {
+                            parsed_done = true;
+                        }
+                        yield out;
+                    }
+                }
+                Item::Stdout(_) => {}
+                Item::Done(code) => match exit_ok_stderr("ffmpeg vmaf", code, &cmd_str, &chunks) {
+                    Ok(_) => exit_ok = true,
+                    Err(err) => yield VmafOut::Err(err),
+                },
+            }
         }
-    });
-
-    Ok(vmaf)
+        if exit_ok && !parsed_done {
+            yield VmafOut::Err(cmd_err(
+                "could not parse ffmpeg vmaf score",
+                &cmd_str,
+                &chunks,
+            ));
+        }
+    })
 }
 
 #[derive(Debug)]
@@ -54,13 +74,6 @@ pub enum VmafOut {
 }
 
 impl VmafOut {
-    fn ignore_ok<T>(result: anyhow::Result<T>) -> Option<Self> {
-        match result {
-            Ok(_) => None,
-            Err(err) => Some(Self::Err(err)),
-        }
-    }
-
     fn try_from_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<Self> {
         chunks.push(chunk);
         let line = chunks.last_line();

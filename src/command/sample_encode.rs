@@ -14,7 +14,7 @@ use crate::{
     vmaf::{self, VmafOut},
     SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use clap::{ArgAction, Parser};
 use console::style;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
@@ -22,6 +22,7 @@ use log::info;
 use std::{
     io::IsTerminal,
     path::{Path, PathBuf},
+    pin::pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -223,7 +224,7 @@ pub async fn run(
 
                 // calculate vmaf
                 bar.set_message("vmaf running,");
-                let mut vmaf = vmaf::run(
+                let mut vmaf = pin!(vmaf::run(
                     &sample,
                     &encoded_sample,
                     &vmaf.ffmpeg_lavfi(
@@ -233,13 +234,13 @@ pub async fn run(
                             .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
                         args.vfilter.as_deref(),
                     ),
-                )?;
+                )?);
                 let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
-                let mut vmaf_score = -1.0;
+                let mut vmaf_score = None;
                 while let Some(vmaf) = vmaf.next().await {
                     match vmaf {
                         VmafOut::Done(score) => {
-                            vmaf_score = score;
+                            vmaf_score = Some(score);
                             break;
                         }
                         VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
@@ -258,6 +259,7 @@ pub async fn run(
                         VmafOut::Err(e) => return Err(e),
                     }
                 }
+                let vmaf_score = vmaf_score.context("no vmaf score")?;
 
                 bar.println(
                     style!(

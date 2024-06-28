@@ -8,10 +8,12 @@ use crate::{
     process::FfmpegOut,
     vmaf::{self, VmafOut},
 };
+use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
+    pin::pin,
     time::{Duration, Instant},
 };
 use tokio_stream::StreamExt;
@@ -70,7 +72,7 @@ pub async fn vmaf(
         bar.set_length(nframes);
     }
 
-    let mut vmaf = vmaf::run(
+    let mut vmaf = pin!(vmaf::run(
         &reference,
         &distorted,
         &vmaf.ffmpeg_lavfi(
@@ -78,13 +80,13 @@ pub async fn vmaf(
             dpix_fmt.max(rpix_fmt),
             reference_vfilter.as_deref(),
         ),
-    )?;
+    )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
-    let mut vmaf_score = -1.0;
+    let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {
             VmafOut::Done(score) => {
-                vmaf_score = score;
+                vmaf_score = Some(score);
                 break;
             }
             VmafOut::Progress(FfmpegOut::Progress {
@@ -106,6 +108,6 @@ pub async fn vmaf(
     }
     bar.finish();
 
-    println!("{vmaf_score}");
+    println!("{}", vmaf_score.context("no vmaf score")?);
     Ok(())
 }
