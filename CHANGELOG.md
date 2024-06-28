@@ -9,6 +9,8 @@
   - `RUST_LOG=ab_av1=debug` "debug" level logs include ffmpeg calls
 * Don't panic on non-zero status exit.
 * When unable to parse a vmaf score fail faster and include ffmpeg output.
+* Add `--reference-vfilter` arg to _sample-encode_, _crf-search_, _auto-encode_ to allow
+  overriding `--vfilter` for VMAF.
 
 # v0.7.14
 * Fix bash completions of some filenames.

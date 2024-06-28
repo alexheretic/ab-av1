@@ -33,11 +33,6 @@ pub struct Args {
     #[arg(long)]
     pub reference: PathBuf,
 
-    /// Ffmpeg video filter applied to the reference before analysis.
-    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
-    #[arg(long)]
-    pub reference_vfilter: Option<String>,
-
     /// Re-encoded/distorted video file.
     #[arg(long)]
     pub distorted: PathBuf,
@@ -49,7 +44,6 @@ pub struct Args {
 pub async fn vmaf(
     Args {
         reference,
-        reference_vfilter,
         distorted,
         vmaf,
     }: Args,
@@ -78,7 +72,7 @@ pub async fn vmaf(
         &vmaf.ffmpeg_lavfi(
             dprobe.resolution,
             dpix_fmt.max(rpix_fmt),
-            reference_vfilter.as_deref(),
+            vmaf.reference_vfilter.as_deref(),
         ),
     )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());

@@ -28,6 +28,13 @@ pub struct Vmaf {
     /// Scaling happens after any input/reference vfilters.
     #[arg(long, default_value_t = VmafScale::Auto, value_parser = parse_vmaf_scale)]
     pub vmaf_scale: VmafScale,
+
+    /// Ffmpeg video filter applied to the VMAF reference before analysis.
+    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
+    ///
+    /// Overrides --vfilter which would otherwise be used.
+    #[arg(long)]
+    pub reference_vfilter: Option<String>,
 }
 
 fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -69,7 +76,7 @@ impl Vmaf {
             }
         }
 
-        let ref_vf: Cow<_> = match ref_vfilter {
+        let ref_vf: Cow<_> = match self.reference_vfilter.as_deref().or(ref_vfilter) {
             None => "".into(),
             Some(vf) if vf.ends_with(',') => vf.into(),
             Some(vf) => format!("{vf},").into(),
@@ -197,6 +204,7 @@ fn vmaf_lavfi() {
     let vmaf = Vmaf {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, Some("scale=1280:-1,fps=24")),
@@ -207,10 +215,30 @@ fn vmaf_lavfi() {
 }
 
 #[test]
+fn vmaf_lavfi_override_reference_vfilter() {
+    let vmaf = Vmaf {
+        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+        vmaf_scale: VmafScale::Auto,
+        reference_vfilter: Some("scale=2560:-1".into()),
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(
+            None,
+            PixelFormat::Yuv420p,
+            Some("scale_vaapi=w=2560:h=1280")
+        ),
+        "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
+         [1:v]format=yuv420p,scale=2560:-1,setpts=PTS-STARTPTS[ref];\
+         [dis][ref]libvmaf=n_threads=5:n_subsample=4"
+    );
+}
+
+#[test]
 fn vmaf_lavfi_default() {
     let vmaf = Vmaf {
         vmaf_args: vec![],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     let expected = format!(
         "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS[dis];\
@@ -229,6 +257,7 @@ fn vmaf_lavfi_include_n_threads() {
     let vmaf = Vmaf {
         vmaf_args: vec!["log_path=output.xml".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     let expected = format!(
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS[dis];\
@@ -248,6 +277,7 @@ fn vmaf_lavfi_small_width() {
     let vmaf = Vmaf {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
@@ -263,6 +293,7 @@ fn vmaf_lavfi_4k() {
     let vmaf = Vmaf {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3840, 2160)), PixelFormat::Yuv420p, None),
@@ -278,6 +309,7 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
     let vmaf = Vmaf {
         vmaf_args: vec!["n_threads=5".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((3008, 1692)), PixelFormat::Yuv420p, None),
@@ -297,6 +329,7 @@ fn vmaf_lavfi_small_width_custom_model() {
             "n_subsample=4".into(),
         ],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
@@ -319,6 +352,7 @@ fn vmaf_lavfi_custom_model_and_width() {
             width: 123,
             height: 720,
         },
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
@@ -333,6 +367,7 @@ fn vmaf_lavfi_1080p() {
     let vmaf = Vmaf {
         vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
         vmaf_scale: VmafScale::Auto,
+        reference_vfilter: None,
     };
     assert_eq!(
         vmaf.ffmpeg_lavfi(Some((1920, 1080)), PixelFormat::Yuv420p, None),
