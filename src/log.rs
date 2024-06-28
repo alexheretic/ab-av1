@@ -37,7 +37,7 @@ impl ProgressLogger {
                 return;
             }
 
-            let eta = Duration::from_secs_f64(elapsed.as_secs_f64() / done) - elapsed;
+            let eta = Duration::from_secs_f64(elapsed.as_secs_f64() / done).saturating_sub(elapsed);
             info!(
                 target: self.target,
                 "{:.0}%, {fps} fps, eta {}",
