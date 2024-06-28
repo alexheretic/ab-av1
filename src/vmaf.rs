@@ -38,7 +38,6 @@ pub fn run(
         let mut vmaf = vmaf;
         let mut chunks = Chunks::default();
         let mut parsed_done = false;
-        let mut exit_ok = false;
         while let Some(next) = vmaf.next().await {
             match next {
                 Item::Stderr(chunk) => {
@@ -50,13 +49,14 @@ pub fn run(
                     }
                 }
                 Item::Stdout(_) => {}
-                Item::Done(code) => match exit_ok_stderr("ffmpeg vmaf", code, &cmd_str, &chunks) {
-                    Ok(_) => exit_ok = true,
-                    Err(err) => yield VmafOut::Err(err),
-                },
+                Item::Done(code) => {
+                    if let Err(err) = exit_ok_stderr("ffmpeg vmaf", code, &cmd_str, &chunks) {
+                        yield VmafOut::Err(err);
+                    }
+                }
             }
         }
-        if exit_ok && !parsed_done {
+        if !parsed_done {
             yield VmafOut::Err(cmd_err(
                 "could not parse ffmpeg vmaf score",
                 &cmd_str,
