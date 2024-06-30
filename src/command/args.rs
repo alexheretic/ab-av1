@@ -46,7 +46,7 @@ pub struct EncodeToOutput {
 /// Sampling arguments.
 #[derive(Parser, Clone)]
 pub struct Sample {
-    /// Number of 20s samples to use across the input video. Overrides --sample-every.
+    /// Number of samples to use across the input video. Overrides --sample-every.
     /// More samples take longer but may provide a more accurate result.
     #[arg(long)]
     pub samples: Option<u64>,
@@ -62,6 +62,10 @@ pub struct Sample {
     /// Minimum number of samples. So at least this many samples will be used.
     #[arg(long)]
     pub min_samples: Option<u64>,
+
+    /// Duration of each sample.
+    #[arg(long, default_value = "20s", value_parser = humantime::parse_duration)]
+    pub sample_duration: Duration,
 
     /// Keep temporary files after exiting.
     #[arg(long)]

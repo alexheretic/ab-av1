@@ -12,7 +12,6 @@ use crate::{
     process::FfmpegOut,
     sample, temporary,
     vmaf::{self, VmafOut},
-    SAMPLE_SIZE, SAMPLE_SIZE_S,
 };
 use anyhow::{ensure, Context};
 use clap::{ArgAction, Parser};
@@ -109,11 +108,20 @@ pub async fn run(
     let (samples, sample_duration, full_pass) = {
         if input_is_image {
             (1, duration.max(Duration::from_secs(1)), true)
-        } else if SAMPLE_SIZE * samples as _ >= duration.mul_f64(0.85) {
+        } else if sample_args.sample_duration.is_zero()
+            || sample_args.sample_duration * samples as _ >= duration.mul_f64(0.85)
+        {
             // if the sample time is most of the full input time just encode the whole thing
             (1, duration, true)
         } else {
-            (samples, SAMPLE_SIZE, false)
+            let sample_duration = if input_fps > 0.0 {
+                // if sample-length is lower than a single frame use the frame time
+                let one_frame_duration = Duration::from_secs_f64(1.0 / input_fps);
+                sample_args.sample_duration.max(one_frame_duration)
+            } else {
+                sample_args.sample_duration
+            };
+            (samples, sample_duration, false)
         }
     };
     let sample_duration_us = sample_duration.as_micros_u64();
@@ -133,6 +141,7 @@ pub async fn run(
                     sample_in.clone(),
                     sample_idx,
                     samples,
+                    sample_duration,
                     duration,
                     input_fps,
                     sample_temp.clone(),
@@ -354,19 +363,22 @@ async fn sample(
     input: Arc<PathBuf>,
     sample_idx: u64,
     samples: u64,
+    sample_duration: Duration,
     duration: Duration,
     fps: f64,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(Arc<PathBuf>, u64)> {
     let sample_n = sample_idx + 1;
 
-    let sample_start =
-        Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
-            * sample_n as _
-            + SAMPLE_SIZE * sample_idx as _;
-    let sample_frames = (SAMPLE_SIZE_S as f64 * fps).round() as u32;
+    let sample_start = (duration.saturating_sub(sample_duration * samples as _)
+        / (samples as u32 + 1))
+        * sample_n as _
+        + sample_duration * sample_idx as _;
 
-    let sample = sample::copy(&input, sample_start, sample_frames, temp_dir).await?;
+    let sample_frames = ((sample_duration.as_secs_f64() * fps).round() as u32).max(1);
+    let floor_to_sec = sample_duration >= Duration::from_secs(2);
+
+    let sample = sample::copy(&input, sample_start, floor_to_sec, sample_frames, temp_dir).await?;
     let sample_size = fs::metadata(&sample).await?.len();
     ensure!(
         // ffmpeg copy may fail successfully and give us a small/empty output

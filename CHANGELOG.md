@@ -11,6 +11,7 @@
 * When unable to parse a vmaf score fail faster and include ffmpeg output.
 * Add `--reference-vfilter` arg to _sample-encode_, _crf-search_, _auto-encode_ to allow
   overriding `--vfilter` for VMAF.
+* Add `--sample-duration` arg to configure the duration of each sample. Default 20s.
 
 # v0.7.14
 * Fix bash completions of some filenames.

@@ -13,11 +13,8 @@ use ::log::LevelFilter;
 use anyhow::anyhow;
 use clap::Parser;
 use futures_util::FutureExt;
-use std::{env, io::IsTerminal, time::Duration};
+use std::{env, io::IsTerminal};
 use tokio::signal;
-
-const SAMPLE_SIZE_S: u64 = 20;
-const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 
 #[derive(Parser)]
 #[command(version, about)]
