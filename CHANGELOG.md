@@ -1,3 +1,6 @@
+# Unreleased
+* Fix VMAF score parse failure of certain successful ffmpeg outputs.
+
 # v0.7.15
 * Show full ffmpeg command after errors.
 * For *_vaapi encoders map `--crf` to ffmpeg `-q` (instead of `-qp`).

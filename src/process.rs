@@ -52,7 +52,7 @@ pub fn exit_ok_stderr(
 pub fn cmd_err(err: impl Display, cmd_str: &str, stderr: &Chunks) -> anyhow::Error {
     anyhow!(
         "{err}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
-        stderr.out.trim()
+        String::from_utf8_lossy(&stderr.out).trim()
     )
 }
 
@@ -148,7 +148,7 @@ fn parse_label_size(label: &str, line: &str) -> Option<u64> {
 /// Stores up to ~4k chunk data on the heap.
 #[derive(Default)]
 pub struct Chunks {
-    out: String,
+    out: Vec<u8>,
 }
 
 impl Chunks {
@@ -156,34 +156,45 @@ impl Chunks {
     pub fn push(&mut self, chunk: &[u8]) {
         const MAX_LEN: usize = 4000;
 
-        self.out.push_str(&String::from_utf8_lossy(chunk));
+        self.out.extend(chunk);
 
         // truncate beginning if too long
-        let len = self.out.len();
-        if len > MAX_LEN + 100 {
-            self.out = String::from_utf8_lossy(&self.out.as_bytes()[len - MAX_LEN..]).into();
+        if self.out.len() > MAX_LEN + 100 {
+            // remove lines until small
+            while self.out.len() > MAX_LEN {
+                let mut next_eol = self
+                    .out
+                    .iter()
+                    .position(|b| *b == b'\n')
+                    .unwrap_or(self.out.len() - 1);
+                if self.out.get(next_eol + 1) == Some(&b'\r') {
+                    next_eol += 1;
+                }
+
+                self.out.splice(..next_eol + 1, []);
+            }
         }
     }
 
-    fn rlines(&self) -> impl Iterator<Item = &'_ str> {
-        self.out
-            .rsplit_terminator('\n')
-            .flat_map(|l| l.rsplit_terminator('\r'))
+    pub fn rfind_line(&self, predicate: impl Fn(&str) -> bool) -> Option<&str> {
+        let lines = self
+            .out
+            .rsplit(|b| *b == b'\n')
+            .flat_map(|l| l.rsplit(|b| *b == b'\r'));
+        for line in lines {
+            if let Ok(line) = std::str::from_utf8(line) {
+                if predicate(line) {
+                    return Some(line);
+                }
+            }
+        }
+        None
     }
 
     /// Returns last non-empty line, if any.
     pub fn last_line(&self) -> &str {
-        self.rlines().find(|l| !l.is_empty()).unwrap_or_default()
+        self.rfind_line(|l| !l.is_empty()).unwrap_or_default()
     }
-}
-
-#[test]
-fn rlines_rn() {
-    let mut chunks = Chunks::default();
-    chunks.push(b"something \r fooo    \r\n");
-    let mut rlines = chunks.rlines();
-    assert_eq!(rlines.next(), Some(" fooo    "));
-    assert_eq!(rlines.next(), Some("something "));
 }
 
 #[test]
