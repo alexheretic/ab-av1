@@ -1,4 +1,4 @@
-# Unreleased
+# v0.7.16
 * Fix VMAF score parse failure of certain successful ffmpeg outputs.
 
 # v0.7.15
