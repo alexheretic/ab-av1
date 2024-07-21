@@ -43,10 +43,17 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 
 impl Vmaf {
     pub fn is_default(&self) -> bool {
-        self.vmaf_args.is_empty() && self.vmaf_scale == VmafScale::Auto
+        let Self {
+            vmaf_args,
+            vmaf_scale,
+            reference_vfilter,
+        } = self;
+        vmaf_args.is_empty() && *vmaf_scale == VmafScale::Auto && reference_vfilter.is_none()
     }
 
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
+    ///
+    /// Note `ref_vfilter` is ignored if `Self::reference_vfilter` is some.
     pub fn ffmpeg_lavfi(
         &self,
         distorted_res: Option<(u32, u32)>,
@@ -167,20 +174,15 @@ impl Display for VmafScale {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 enum VmafModel {
     /// Default 1080p model.
+    #[default]
     Vmaf1K,
     /// 4k model.
     Vmaf4K,
     /// Some other user specified model.
     Custom,
-}
-
-impl Default for VmafModel {
-    fn default() -> Self {
-        Self::Vmaf1K
-    }
 }
 
 impl VmafModel {
