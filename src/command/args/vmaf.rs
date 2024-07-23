@@ -14,8 +14,8 @@ pub struct Vmaf {
     #[arg(long = "vmaf", value_parser = parse_vmaf_arg)]
     pub vmaf_args: Vec<Arc<str>>,
 
-    /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicupic
-    /// scaled to this width during VMAF analysis. `auto` (default) automatically sets
+    /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicubic
+    /// scaled to this during VMAF analysis. `auto` (default) automatically sets
     /// based on the model and input video resolution. `none` disables any scaling.
     /// `WxH` format may be used to specify custom scaling, e.g. `1920x1080`.
     ///
@@ -24,6 +24,9 @@ pub struct Vmaf {
     ///   are less than 1728 & 972 respectively upscale to 1080p. Otherwise no scaling.
     /// * 4k model (default for resolutions > 2560x1440) if width and height
     ///   are less than 3456 & 1944 respectively upscale to 4k. Otherwise no scaling.
+    ///
+    /// The auto behaviour is based on the distorted video dimensions, equivalent
+    /// to post input/reference vfilter dimensions.
     ///
     /// Scaling happens after any input/reference vfilters.
     #[arg(long, default_value_t = VmafScale::Auto, value_parser = parse_vmaf_scale)]
