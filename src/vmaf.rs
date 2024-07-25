@@ -22,9 +22,9 @@ pub fn run(
 
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
-        .arg2("-r", "24")
+        // .arg2("-r", "24")
         .arg2("-i", distorted)
-        .arg2("-r", "24")
+        // .arg2("-r", "24")
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
