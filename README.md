@@ -90,5 +90,12 @@ cargo install --git https://github.com/alexheretic/ab-av1
 
 `ffmpeg` should be in `$PATH`.
 
+## Debug
+Enable debug logs by setting env var `RUST_LOG=ab_av1=debug`. This includes all ffmpeg calls.
+
+```
+$ RUST_LOG=ab_av1=debug ab-av1 auto-encode -i vid.mkv
+```
+
 ## Minimum supported rust compiler
 Maintained with [latest stable rust](https://gist.github.com/alexheretic/d1e98d8433b602e57f5d0a9637927e0c).
