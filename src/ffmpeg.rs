@@ -12,7 +12,7 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock},
 };
 use tokio::process::Command;
 use tokio_stream::Stream;
@@ -33,18 +33,17 @@ pub struct FfmpegEncodeArgs<'a> {
 
 impl FfmpegEncodeArgs<'_> {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
-        static SVT_AV1_V: OnceLock<Vec<u8>> = OnceLock::new();
+        static SVT_AV1_V: LazyLock<Vec<u8>> = LazyLock::new(|| {
+            std::process::Command::new("SvtAv1EncApp")
+                .arg("--version")
+                .output()
+                .map(|o| o.stdout)
+                .unwrap_or_default()
+        });
 
         // hashing svt-av1 version means new encoder releases will avoid old cache data
         if &*self.vcodec == "libsvtav1" {
-            let svtav1_version = SVT_AV1_V.get_or_init(|| {
-                use std::process::Command;
-                match Command::new("SvtAv1EncApp").arg("--version").output() {
-                    Ok(out) => out.stdout,
-                    _ => <_>::default(),
-                }
-            });
-            svtav1_version.hash(state);
+            SVT_AV1_V.hash(state);
         }
 
         // input not relevant to sample encoding
