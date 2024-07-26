@@ -24,6 +24,7 @@ enum Command {
     Encode(command::encode::Args),
     CrfSearch(command::crf_search::Args),
     AutoEncode(command::auto_encode::Args),
+    Cache(command::cache::Args),
     PrintCompletions(command::print_completions::Args),
 }
 
@@ -50,6 +51,7 @@ async fn main() {
         Command::Encode(args) => command::encode(args).boxed_local(),
         Command::CrfSearch(args) => command::crf_search(args).boxed_local(),
         Command::AutoEncode(args) => command::auto_encode(args).boxed_local(),
+        Command::Cache(args) => command::cache(args).boxed_local(),
         Command::PrintCompletions(args) => return command::print_completions(args),
     });
 

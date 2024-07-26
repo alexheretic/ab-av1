@@ -38,7 +38,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
-    let input_probe = Arc::new(ffprobe::probe(&search.args.input));
+    let input_probe = ffprobe::probe(&search.args.input);
 
     let output = encode.output.unwrap_or_else(|| {
         default_output_name(

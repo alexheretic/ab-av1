@@ -141,7 +141,7 @@ async fn _run(
         cache,
         vmaf,
     }: &Args,
-    input_probe: Arc<Ffprobe>,
+    input_probe: Ffprobe,
     bar: ProgressBar,
 ) -> Result<Sample, Error> {
     let max_crf = max_crf.unwrap_or_else(|| args.encoder.default_max_crf());
