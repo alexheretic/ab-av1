@@ -145,35 +145,65 @@ fn parse_label_size(label: &str, line: &str) -> Option<u64> {
 
 /// Output chunk storage.
 ///
-/// Stores up to ~4k chunk data on the heap.
+/// Stores up to ~32k chunk data on the heap.
 #[derive(Default)]
 pub struct Chunks {
     out: Vec<u8>,
+    /// Truncate to this index before the next Self::push
+    trunc_next_push: Option<usize>,
 }
 
 impl Chunks {
     /// Append a chunk.
+    ///
+    /// If the chunk **ends** in a '\r' carriage returns this will trigger
+    /// appropriate overwriting on the next call to `push`.
+    ///
+    /// Removes oldest lines if storage exceeds maximum.
     pub fn push(&mut self, chunk: &[u8]) {
-        const MAX_LEN: usize = 4000;
+        const MAX_LEN: usize = 32_000;
+
+        if let Some(idx) = self.trunc_next_push.take() {
+            self.out.truncate(idx);
+        }
 
         self.out.extend(chunk);
 
-        // truncate beginning if too long
-        if self.out.len() > MAX_LEN + 100 {
-            // remove lines until small
-            while self.out.len() > MAX_LEN {
-                let mut next_eol = self
-                    .out
-                    .iter()
-                    .position(|b| *b == b'\n')
-                    .unwrap_or(self.out.len() - 1);
-                if self.out.get(next_eol + 1) == Some(&b'\r') {
-                    next_eol += 1;
-                }
-
-                self.out.splice(..next_eol + 1, []);
-            }
+        // if too long remove lines until small
+        while self.out.len() > MAX_LEN {
+            self.rm_oldest_line();
         }
+
+        // Setup `trunc_next_push` driven by '\r'
+        // Typically progress updates, e.g. ffmpeg:
+        // ```text
+        // frame=  495 fps= 25 q=40.0 size=     768KiB time=00:00:16.47 bitrate= 381.8kbits/s speed=0.844x    \r
+        // ```
+        if chunk.ends_with(b"\r") {
+            self.trunc_next_push = Some(self.after_last_line_feed());
+        }
+    }
+
+    /// Returns index after the latest '\n' or 0 if there are none.
+    fn after_last_line_feed(&self) -> usize {
+        self.out
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map(|n| n + 1)
+            .unwrap_or(0)
+    }
+
+    fn rm_oldest_line(&mut self) {
+        let mut next_eol = self
+            .out
+            .iter()
+            .position(|b| *b == b'\n')
+            .unwrap_or(self.out.len() - 1);
+        if self.out.get(next_eol + 1) == Some(&b'\r') {
+            next_eol += 1;
+        }
+
+        self.out.splice(..next_eol + 1, []);
     }
 
     pub fn rfind_line(&self, predicate: impl Fn(&str) -> bool) -> Option<&str> {

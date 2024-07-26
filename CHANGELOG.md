@@ -1,3 +1,11 @@
+# Unreleased
+* Improve failing ffmpeg stderr printing: 
+  - Don't allow many '\r'-ending updates to cause all other stored info to be truncated. 
+  - Increase max heap storage of output ~4k->32k to allow more complete output in some cases.
+* Fix caching unaffected by `--reference-vfilter` usage.
+* Improve `--vfilter` docs. Describe VMAF usage & mention `--reference-vfilter`.
+* Improve `--vmaf-scale` docs.
+
 # v0.7.16
 * Fix VMAF score parse failure of certain successful ffmpeg outputs.
 

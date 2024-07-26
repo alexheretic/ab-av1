@@ -14,8 +14,8 @@ pub struct Vmaf {
     #[arg(long = "vmaf", value_parser = parse_vmaf_arg)]
     pub vmaf_args: Vec<Arc<str>>,
 
-    /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicupic
-    /// scaled to this width during VMAF analysis. `auto` (default) automatically sets
+    /// Video resolution scale to use in VMAF analysis. If set, video streams will be bicubic
+    /// scaled to this during VMAF analysis. `auto` (default) automatically sets
     /// based on the model and input video resolution. `none` disables any scaling.
     /// `WxH` format may be used to specify custom scaling, e.g. `1920x1080`.
     ///
@@ -24,6 +24,9 @@ pub struct Vmaf {
     ///   are less than 1728 & 972 respectively upscale to 1080p. Otherwise no scaling.
     /// * 4k model (default for resolutions > 2560x1440) if width and height
     ///   are less than 3456 & 1944 respectively upscale to 4k. Otherwise no scaling.
+    ///
+    /// The auto behaviour is based on the distorted video dimensions, equivalent
+    /// to post input/reference vfilter dimensions.
     ///
     /// Scaling happens after any input/reference vfilters.
     #[arg(long, default_value_t = VmafScale::Auto, value_parser = parse_vmaf_scale)]
@@ -43,10 +46,17 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 
 impl Vmaf {
     pub fn is_default(&self) -> bool {
-        self.vmaf_args.is_empty() && self.vmaf_scale == VmafScale::Auto
+        let Self {
+            vmaf_args,
+            vmaf_scale,
+            reference_vfilter,
+        } = self;
+        vmaf_args.is_empty() && *vmaf_scale == VmafScale::Auto && reference_vfilter.is_none()
     }
 
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
+    ///
+    /// Note `ref_vfilter` is ignored if `Self::reference_vfilter` is some.
     pub fn ffmpeg_lavfi(
         &self,
         distorted_res: Option<(u32, u32)>,
@@ -167,20 +177,15 @@ impl Display for VmafScale {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 enum VmafModel {
     /// Default 1080p model.
+    #[default]
     Vmaf1K,
     /// 4k model.
     Vmaf4K,
     /// Some other user specified model.
     Custom,
-}
-
-impl Default for VmafModel {
-    fn default() -> Self {
-        Self::Vmaf1K
-    }
 }
 
 impl VmafModel {

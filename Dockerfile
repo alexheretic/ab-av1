@@ -5,7 +5,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-RUN cargo fetch
+RUN rustup default stable
 RUN cargo build --release
 
 FROM debian:bookworm-slim as runtime

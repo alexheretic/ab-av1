@@ -26,10 +26,14 @@ pub struct Encode {
     #[arg(short, long, value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
 
-    /// Ffmpeg video filter applied to the input before av1 encoding.
+    /// Ffmpeg video filter applied to the input before encoding.
     /// E.g. --vfilter "scale=1280:-1,fps=24".
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
+    ///
+    /// For VMAF calculations this is also applied to the reference video meaning VMAF
+    /// scores represent the quality of original+vfilters compared to the encoded result.
+    /// To override this behaviour set --reference-vfilter.
     #[arg(long)]
     pub vfilter: Option<String>,
 
