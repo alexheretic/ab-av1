@@ -5,6 +5,8 @@
 * Fix caching unaffected by `--reference-vfilter` usage.
 * Improve `--vfilter` docs. Describe VMAF usage & mention `--reference-vfilter`.
 * Improve `--vmaf-scale` docs.
+* VMAF: Remove `-r 24` ffmpeg input.
+* VMAF: Add new default options "shortest=true", "ts_sync_mode=nearest" and use vfilter "settb=AVTB".
 
 # v0.7.16
 * Fix VMAF score parse failure of certain successful ffmpeg outputs.
