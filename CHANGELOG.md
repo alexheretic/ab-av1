@@ -1,4 +1,4 @@
-# Unreleased
+# v0.7.17
 * Improve failing ffmpeg stderr printing: 
   - Don't allow many '\r'-ending updates to cause all other stored info to be truncated. 
   - Increase max heap storage of output ~4k->32k to allow more complete output in some cases.
