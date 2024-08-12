@@ -61,7 +61,7 @@ pub async fn run(
                 video_only,
             },
     }: Args,
-    probe: Arc<Ffprobe>,
+    probe: Ffprobe,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();

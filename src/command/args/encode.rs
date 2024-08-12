@@ -70,7 +70,7 @@ pub struct Encode {
     ///
     /// See https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/Docs/svt-av1_encoder_user_guide.md#options
     #[arg(long = "svt", value_parser = parse_svt_arg)]
-    pub svt_args: Vec<Arc<str>>,
+    pub svt_args: Vec<String>,
 
     /// Additional ffmpeg encoder arg(s). E.g. `--enc x265-params=lossless=1`
     /// These are added as ffmpeg output file options.
@@ -88,7 +88,7 @@ pub struct Encode {
     pub enc_input_args: Vec<String>,
 }
 
-fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
+fn parse_svt_arg(arg: &str) -> anyhow::Result<String> {
     let arg = arg.trim_start_matches('-').to_owned();
 
     for deny in ["crf", "preset", "keyint", "scd", "input-depth"] {
@@ -113,12 +113,8 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
 }
 
 impl Encode {
-    pub fn to_encoder_args(
-        &self,
-        crf: f32,
-        probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        self.to_ffmpeg_args(Arc::clone(&self.encoder.0), crf, probe)
+    pub fn to_encoder_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs> {
+        self.to_ffmpeg_args(self.encoder.0, crf, probe)
     }
 
     pub fn encode_hint(&self, crf: f32) -> String {
@@ -177,10 +173,10 @@ impl Encode {
 
     fn to_ffmpeg_args(
         &self,
-        vcodec: Arc<str>,
+        vcodec: String,
         crf: f32,
         probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+    ) -> anyhow::Result<FfmpegEncodeArgs> {
         let svtav1 = &*vcodec == "libsvtav1";
         ensure!(
             svtav1 || self.svt_args.is_empty(),
@@ -207,7 +203,7 @@ impl Encode {
             svtav1_params.extend(self.svt_args.iter().map(|a| a.to_string()));
         }
 
-        let mut args: Vec<Arc<String>> = self
+        let mut args: Vec<String> = self
             .enc_args
             .iter()
             .flat_map(|arg| {
@@ -238,7 +234,7 @@ impl Encode {
         }
 
         for (name, val) in self.encoder.default_ffmpeg_args() {
-            if !args.iter().any(|arg| &**arg == name) {
+            if !args.iter().any(|arg| arg == name) {
                 args.push(name.to_string().into());
                 args.push(val.to_string().into());
             }
@@ -249,7 +245,7 @@ impl Encode {
             _ => PixelFormat::Yuv420p,
         });
 
-        let input_args: Vec<Arc<String>> = self
+        let input_args: Vec<String> = self
             .enc_input_args
             .iter()
             .flat_map(|arg| {
@@ -285,10 +281,10 @@ impl Encode {
         }
 
         Ok(FfmpegEncodeArgs {
-            input: &self.input,
+            input: self.input,
             vcodec,
             pix_fmt,
-            vfilter: self.vfilter.as_deref(),
+            vfilter: self.vfilter,
             crf,
             preset,
             output_args: args,
@@ -321,7 +317,7 @@ impl Encode {
 
 /// Video codec for encoding.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Encoder(Arc<str>);
+pub struct Encoder(String);
 
 impl Encoder {
     /// vcodec name that would work if you used it as the -e argument.
@@ -380,7 +376,7 @@ impl std::str::FromStr for Encoder {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Preset {
     Number(u8),
-    Name(Arc<str>),
+    Name(String),
 }
 
 impl fmt::Display for Preset {
@@ -568,7 +564,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
-    assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
+    assert_eq!(vfilter, Some("scale=320:-1,fps=film".to_owned()));
     assert_eq!(crf, 32.0);
     assert_eq!(preset, Some("8".into()));
     assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
