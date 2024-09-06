@@ -118,7 +118,7 @@ impl Encode {
         crf: f32,
         probe: &Ffprobe,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        self.to_ffmpeg_args(Arc::clone(&self.encoder.0), crf, probe)
+        self.to_ffmpeg_args(crf, probe)
     }
 
     pub fn encode_hint(&self, crf: f32) -> String {
@@ -175,13 +175,9 @@ impl Encode {
         hint
     }
 
-    fn to_ffmpeg_args(
-        &self,
-        vcodec: Arc<str>,
-        crf: f32,
-        probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        let svtav1 = &*vcodec == "libsvtav1";
+    fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        let vcodec = &self.encoder.0;
+        let svtav1 = vcodec.as_ref() == "libsvtav1";
         ensure!(
             svtav1 || self.svt_args.is_empty(),
             "--svt may only be used with svt-av1"
@@ -244,7 +240,7 @@ impl Encode {
             }
         }
 
-        let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
+        let pix_fmt = self.pix_format.unwrap_or(match vcodec {
             vc if vc.contains("av1") => PixelFormat::Yuv420p10le,
             _ => PixelFormat::Yuv420p,
         });
@@ -286,7 +282,7 @@ impl Encode {
 
         Ok(FfmpegEncodeArgs {
             input: &self.input,
-            vcodec,
+            vcodec: Arc::clone(vcodec),
             pix_fmt,
             vfilter: self.vfilter.as_deref(),
             crf,
@@ -562,9 +558,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc
-        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
-        .expect("to_ffmpeg_args");
+    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
@@ -627,9 +621,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc
-        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
-        .expect("to_ffmpeg_args");
+    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
