@@ -47,3 +47,6 @@ tokio-stream = "0.1"
 lto = true
 opt-level = "s"
 strip = true
+
+[lints.rust]
+unused_crate_dependencies = "deny"
