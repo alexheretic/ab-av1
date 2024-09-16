@@ -1,3 +1,6 @@
+# Unreleased (v0.7.18)
+* Improve `--vfilter` docs, clarify VMAF usage.
+
 # v0.7.17
 * Improve failing ffmpeg stderr printing: 
   - Don't allow many '\r'-ending updates to cause all other stored info to be truncated. 

@@ -32,8 +32,15 @@ pub struct Encode {
     /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
     ///
     /// For VMAF calculations this is also applied to the reference video meaning VMAF
-    /// scores represent the quality of original+vfilters compared to the encoded result.
-    /// To override this behaviour set --reference-vfilter.
+    /// scores represent the quality of input stream *after* applying filters compared
+    /// to the encoded result.
+    /// This allows filters like cropping to work with VMAF, as it would be the
+    /// cropped stream that is VMAF compared to a cropped-then-encoded stream. Such filters
+    /// would not otherwise generally be comparable.
+    ///
+    /// A consequence is the VMAF score will not reflect any quality lost
+    /// by the vfilter itself, only the encode.
+    /// To override the VMAF vfilter set --reference-vfilter.
     #[arg(long)]
     pub vfilter: Option<String>,
 
