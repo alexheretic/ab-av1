@@ -35,7 +35,7 @@ pub struct Encode {
     /// scores represent the quality of input stream *after* applying filters compared
     /// to the encoded result.
     /// This allows filters like cropping to work with VMAF, as it would be the
-    /// cropped stream that is VMAF compared to a cropped-then-encoded stream. These
+    /// cropped stream that is VMAF compared to a cropped-then-encoded stream. Such filters
     /// would not otherwise generally be comparable.
     ///
     /// A consequence is the VMAF score will not reflect any quality lost
