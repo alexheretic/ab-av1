@@ -352,6 +352,17 @@ impl Encoder {
         }
     }
 
+    pub fn default_image_ext(&self) -> &'static str {
+        match self.as_str() {
+            // ffmpeg doesn't currently have good heif support,
+            // these raw formats allow crf-search to work
+            "libx264" => "264",
+            "libx265" => "265",
+            // otherwise assume av1
+            _ => "avif",
+        }
+    }
+
     /// Additional encoder specific ffmpeg arg defaults.
     fn default_ffmpeg_args(&self) -> &[(&'static str, &'static str)] {
         match self.as_str() {

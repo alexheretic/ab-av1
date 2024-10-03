@@ -97,7 +97,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let probe = ffprobe::probe(&args.args.input);
     let input_is_image = probe.is_image;
     args.sample
-        .set_extension_from_input(&args.args.input, &probe);
+        .set_extension_from_input(&args.args.input, &args.args.encoder, &probe);
 
     let best = run(&args, probe.into(), bar.clone()).await;
     bar.finish();

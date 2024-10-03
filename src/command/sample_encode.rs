@@ -76,7 +76,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
 
     let probe = ffprobe::probe(&args.args.input);
     args.sample
-        .set_extension_from_input(&args.args.input, &probe);
+        .set_extension_from_input(&args.args.input, &args.args.encoder, &probe);
     run(args, probe.into(), bar, true).await?;
     Ok(())
 }
