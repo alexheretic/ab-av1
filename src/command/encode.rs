@@ -156,9 +156,9 @@ pub async fn run(
 /// * vid.mp4 -> "mp4"
 /// * vid.??? -> "mkv"
 /// * image.??? -> "avif"
-pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
+pub fn default_output_ext(input: &Path, encoder: &Encoder, is_image: bool) -> &'static str {
     if is_image {
-        return "avif";
+        return encoder.default_image_ext();
     }
     match input.extension().and_then(|e| e.to_str()) {
         Some("mp4") => "mp4",
@@ -169,6 +169,6 @@ pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
 /// E.g. vid.mkv -> "vid.av1.mkv"
 pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
-    let ext = default_output_ext(input, is_image);
+    let ext = default_output_ext(input, encoder, is_image);
     input.with_extension(format!("{pre}.{ext}"))
 }
