@@ -2,7 +2,7 @@
 use crate::process::{cmd_err, exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
 use anyhow::Context;
 use log::{debug, info};
-use std::path::Path;
+use std::{path::Path, process::Stdio};
 use tokio::process::Command;
 use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
@@ -26,7 +26,8 @@ pub fn run(
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
-        .arg("-");
+        .arg("-")
+        .stdin(Stdio::null());
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
