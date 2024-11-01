@@ -1,7 +1,9 @@
-# v0.7.19
-* Fix stdin handling sometimes breaking bash shells.
+# Unreleased
 * crf-search: Tweak 2nd iteration logic that would previously pick the ~25%/75% crf point.
   Widen to ~20%/80% and only apply if min-crf,max-crf have not been overridden and min-vmaf >= 94.
+
+# v0.7.19
+* Fix stdin handling sometimes breaking bash shells.
 
 # v0.7.18
 * Use default .265, .264 image output extensions for libx265, libx264.
