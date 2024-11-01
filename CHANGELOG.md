@@ -1,4 +1,4 @@
-# Unreleased (v0.7.19)
+# v0.7.19
 * Fix stdin handling sometimes breaking bash shells.
 
 # v0.7.18
