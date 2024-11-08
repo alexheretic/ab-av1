@@ -21,6 +21,7 @@ use std::{
 };
 
 const BAR_LEN: u64 = 1_000_000_000;
+const DEFAULT_MIN_CRF: f32 = 10.0;
 
 /// Interpolated binary search using sample-encode to find the best crf
 /// value delivering min-vmaf & max-encoded-percent.
@@ -46,12 +47,12 @@ pub struct Args {
     pub max_encoded_percent: f32,
 
     /// Minimum (highest quality) crf value to try.
-    #[arg(long, default_value_t = 10.0)]
+    #[arg(long, default_value_t = DEFAULT_MIN_CRF)]
     pub min_crf: f32,
 
     /// Maximum (lowest quality) crf value to try.
     ///
-    /// [default: 55, 46 for x264,x265, 255 for rav1e]
+    /// [default: 55, 46 for x264,x265, 255 for rav1e,av1_vaapi]
     #[arg(long)]
     pub max_crf: Option<f32>,
 
@@ -144,8 +145,19 @@ async fn _run(
     input_probe: Arc<Ffprobe>,
     bar: ProgressBar,
 ) -> Result<Sample, Error> {
-    let max_crf = max_crf.unwrap_or_else(|| args.encoder.default_max_crf());
+    let default_max_crf = args.encoder.default_max_crf();
+    let max_crf = max_crf.unwrap_or(default_max_crf);
     ensure_other!(*min_crf < max_crf, "Invalid --min-crf & --max-crf");
+
+    // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
+    // improve interpolation by narrowing the crf range a 20% (or 30%) subrange.
+    //
+    // 20/80% is preferred to 25/75% to account for searches in the "middle" benefitting from
+    // having both bounds computed after the 2nd iteration, whereas the two edges must compute
+    // the min/max crf on the 3rd iter.
+    //
+    // If a custom crf range is being used under half the default, this 2nd cut is not needed.
+    let cut_on_iter2 = (max_crf - *min_crf) > (default_max_crf - DEFAULT_MIN_CRF) * 0.5;
 
     let crf_increment = crf_increment
         .unwrap_or_else(|| args.encoder.default_crf_increment())
@@ -230,8 +242,8 @@ async fn _run(
                     ensure_or_no_good_crf!(sample_small_enough, sample);
                     return Ok(sample);
                 }
-                None if run == 1 && sample.q + 1 < max_q => {
-                    q = (sample.q + max_q) / 2;
+                None if cut_on_iter2 && run == 1 && sample.q + 1 < max_q => {
+                    q = (sample.q as f32 * 0.4 + max_q as f32 * 0.6).round() as _;
                 }
                 None => q = max_q,
             };
@@ -257,8 +269,8 @@ async fn _run(
                 Some(lower) => {
                     q = vmaf_lerp_q(*min_vmaf, &sample, lower);
                 }
-                None if run == 1 && sample.q > min_q + 1 => {
-                    q = (min_q + sample.q) / 2;
+                None if cut_on_iter2 && run == 1 && sample.q > min_q + 1 => {
+                    q = (sample.q as f32 * 0.4 + min_q as f32 * 0.6).round() as _;
                 }
                 None => q = min_q,
             };
