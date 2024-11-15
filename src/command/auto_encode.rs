@@ -24,6 +24,9 @@ const BAR_LEN: u64 = 1024 * 1024 * 1024;
 /// Two phases:
 /// * crf-search to determine the best --crf value
 /// * ffmpeg & SvtAv1EncApp to encode using the settings
+///
+/// Use -v to print per-crf results.
+/// Use -vv to print per-sample results.
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
 #[group(skip)]
@@ -41,7 +44,6 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     const SPINNER_FINISHED: &str =
         "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg})";
 
-    search.quiet = true;
     let defaulting_output = encode.output.is_none();
     let input_probe = Arc::new(ffprobe::probe(&search.args.input));
 
@@ -69,6 +71,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let max_encoded_percent = search.max_encoded_percent;
     let enc_args = search.args.clone();
     let thorough = search.thorough;
+    let verbose = search.verbose.clone();
 
     let mut crf_search = pin!(crf_search::run(search, input_probe.clone()));
     let mut best = None;
@@ -121,7 +124,26 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
                 }
             }
-            Ok(crf_search::Update::RunResult(..)) => {}
+            Ok(crf_search::Update::SampleResult {
+                crf,
+                sample,
+                result,
+            }) => {
+                if verbose
+                    .log_level()
+                    .is_some_and(|lvl| lvl > log::Level::Warn)
+                {
+                    result.print_attempt(&bar, sample, Some(crf))
+                }
+            }
+            Ok(crf_search::Update::RunResult(result)) => {
+                if verbose
+                    .log_level()
+                    .is_some_and(|lvl| lvl > log::Level::Error)
+                {
+                    result.print_attempt(&bar, min_vmaf, max_encoded_percent)
+                }
+            }
             Ok(crf_search::Update::Done(result)) => best = Some(result),
         }
     }
