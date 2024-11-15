@@ -3,24 +3,31 @@ mod err;
 pub use err::Error;
 
 use crate::{
-    command::{args, crf_search::err::ensure_or_no_good_crf, sample_encode, PROGRESS_CHARS},
+    command::{
+        args,
+        crf_search::err::ensure_or_no_good_crf,
+        sample_encode::{self, Work},
+        PROGRESS_CHARS,
+    },
     console_ext::style,
-    ffprobe,
-    ffprobe::Ffprobe,
+    ffprobe::{self, Ffprobe},
     float::TerseF32,
 };
+use anyhow::Context;
 use clap::{ArgAction, Parser};
 use console::style;
 use err::ensure_other;
+use futures_util::StreamExt;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use log::info;
 use std::{
     io::{self, IsTerminal},
+    pin::pin,
     sync::Arc,
     time::Duration,
 };
 
-const BAR_LEN: u64 = 1_000_000_000;
+const BAR_LEN: u64 = 1024 * 1024 * 1024;
 const DEFAULT_MIN_CRF: f32 = 10.0;
 
 /// Interpolated binary search using sample-encode to find the best crf
@@ -91,9 +98,10 @@ pub struct Args {
 pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     let probe = ffprobe::probe(&args.args.input);
     let input_is_image = probe.is_image;
@@ -177,7 +185,6 @@ async fn _run(
     };
 
     bar.set_length(BAR_LEN);
-    let sample_bar = ProgressBar::hidden();
     let mut crf_attempts = Vec::new();
 
     for run in 1.. {
@@ -189,32 +196,41 @@ async fn _run(
             _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
         };
         args.crf = q.to_crf(crf_increment);
-        bar.set_message(format!("sampling crf {}, ", TerseF32(args.crf)));
-        let mut sample_task = tokio::task::spawn_local(sample_encode::run(
-            args.clone(),
-            input_probe.clone(),
-            sample_bar.clone(),
-            false,
-        ));
+        let terse_crf = TerseF32(args.crf);
 
-        let sample_task = loop {
-            match tokio::time::timeout(Duration::from_millis(100), &mut sample_task).await {
-                Err(_) => {
-                    let sample_progress = sample_bar.position() as f64
-                        / sample_bar.length().unwrap_or(1).max(1) as f64;
-                    bar.set_position(guess_progress(run, sample_progress, *thorough) as _);
+        let mut sample_enc = pin!(sample_encode::run(args.clone(), input_probe.clone()));
+        let mut sample_enc_output = None;
+        while let Some(update) = sample_enc.next().await {
+            match update? {
+                sample_encode::Update::Status {
+                    work,
+                    fps,
+                    progress,
+                    sample,
+                    samples,
+                    full_pass,
+                } => {
+                    bar.set_position(guess_progress(run, progress, *thorough) as _);
+                    match full_pass {
+                        true => bar.set_prefix(format!("crf {terse_crf} full pass")),
+                        false => bar.set_prefix(format!("crf {terse_crf} {sample}/{samples}")),
+                    }
+                    match work {
+                        Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
+                        Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
+                        Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
+                        Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                    }
                 }
-                Ok(o) => {
-                    sample_bar.set_position(0);
-                    break o;
-                }
+                sample_encode::Update::SampleResult { .. } => {}
+                sample_encode::Update::Done(output) => sample_enc_output = Some(output),
             }
-        };
+        }
 
         let sample = Sample {
             crf_increment,
             q,
-            enc: sample_task??,
+            enc: sample_enc_output.context("no sample output?")?,
         };
         let from_cache = sample.enc.from_cache;
         crf_attempts.push(sample.clone());
@@ -389,7 +405,7 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
 }
 
 /// sample_progress: [0, 1]
-fn guess_progress(run: usize, sample_progress: f64, thorough: bool) -> f64 {
+fn guess_progress(run: usize, sample_progress: f32, thorough: bool) -> f64 {
     let total_runs_guess = match () {
         // Guess 6 iterations for a "thorough" search
         _ if thorough && run < 7 => 6.0,
@@ -398,7 +414,7 @@ fn guess_progress(run: usize, sample_progress: f64, thorough: bool) -> f64 {
         // Otherwise guess next will work
         _ => run as f64,
     };
-    ((run - 1) as f64 + sample_progress) * BAR_LEN as f64 / total_runs_guess
+    ((run - 1) as f64 + sample_progress as f64) * BAR_LEN as f64 / total_runs_guess
 }
 
 /// Calculate "q" as a quality value integer multiple of crf.
