@@ -90,14 +90,14 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
         match update? {
-            Update::Status {
+            Update::Status(Status {
                 work,
                 fps,
                 progress,
                 sample,
                 samples,
                 full_pass,
-            } => {
+            }) => {
                 match full_pass {
                     true => bar.set_prefix("Full pass"),
                     false => bar.set_prefix(format!("Sample {sample}/{samples}")),
@@ -134,14 +134,12 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
             Update::Done(output) => {
                 bar.finish();
                 if io::stderr().is_terminal() {
-                    // encode how-to hint
                     eprintln!(
                         "\n{} {}\n",
                         style("Encode with:").dim(),
                         style(enc_args.encode_hint(crf)).dim().italic(),
                     );
                 }
-                // stdout result
                 stdout_fmt.print_result(
                     output.vmaf,
                     output.predicted_encode_size,
@@ -236,14 +234,14 @@ pub fn run(
             let (sample, sample_size) = sample?;
 
             info!("encoding sample {sample_n}/{samples} crf {crf}");
-            yield Update::Status {
+            yield Update::Status(Status {
                 work: Work::Encode,
                 fps: 0.0,
                 progress: sample_idx as f32 / samples as f32,
                 full_pass,
                 sample: sample_n,
                 samples,
-            };
+            });
 
             // encode sample
             let result = match cache::cached_encode(
@@ -281,7 +279,7 @@ pub fn run(
                     )?;
                     while let Some(enc_progress) = output.next().await {
                         if let FfmpegOut::Progress { time, fps, .. } = enc_progress? {
-                            yield Update::Status {
+                            yield Update::Status(Status {
                                 work: Work::Encode,
                                 fps,
                                 progress: (time.as_micros_u64() + sample_idx * sample_duration_us * 2) as f32
@@ -289,7 +287,7 @@ pub fn run(
                                 full_pass,
                                 sample: sample_n,
                                 samples,
-                            };
+                            });
                             logger.update(sample_duration, time, fps);
                         }
                     }
@@ -298,14 +296,14 @@ pub fn run(
                     let encoded_probe = ffprobe::probe(&encoded_sample);
 
                     // calculate vmaf
-                    yield Update::Status {
+                    yield Update::Status(Status {
                         work: Work::Vmaf,
                         fps: 0.0,
                         progress: (sample_idx as f32 + 0.5) / samples as f32,
                         full_pass,
                         sample: sample_n,
                         samples,
-                    };
+                    });
                     let vmaf = vmaf::run(
                         &sample,
                         &encoded_sample,
@@ -327,7 +325,7 @@ pub fn run(
                                 break;
                             }
                             VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
-                                yield Update::Status {
+                                yield Update::Status(Status {
                                     work: Work::Vmaf,
                                     fps,
                                     progress: (sample_duration_us +
@@ -337,7 +335,7 @@ pub fn run(
                                     full_pass,
                                     sample: sample_n,
                                     samples,
-                                };
+                                });
                                 logger.update(sample_duration, time, fps);
                             }
                             VmafOut::Progress(_) => {}
@@ -618,21 +616,24 @@ pub enum Work {
 }
 
 #[derive(Debug)]
+pub struct Status {
+    /// Kind of work being performed
+    pub work: Work,
+    /// fps, `0.0` may be interpreted as "unknown"
+    pub fps: f32,
+    /// sample progress `[0, 1]`
+    pub progress: f32,
+    /// Sample number `1,....,n`
+    pub sample: u64,
+    /// Total samples
+    pub samples: u64,
+    /// Encoding the entire input video
+    pub full_pass: bool,
+}
+
+#[derive(Debug)]
 pub enum Update {
-    Status {
-        /// Kind of work being performed
-        work: Work,
-        /// fps, `0.0` may be interpreted as "unknown"
-        fps: f32,
-        /// sample progress `[0, 1]`
-        progress: f32,
-        /// Sample number `1,....,n`
-        sample: u64,
-        /// Total samples
-        samples: u64,
-        /// Encoding the entire input video
-        full_pass: bool,
-    },
+    Status(Status),
     SampleResult {
         /// Sample number `1,....,n`
         sample: u64,
