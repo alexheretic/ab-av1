@@ -110,27 +110,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
                 }
                 bar.set_position((progress * BAR_LEN_F).round() as _);
             }
-            Update::SampleResult {
-                sample,
-                result:
-                    EncodeResult {
-                        sample_size,
-                        encoded_size,
-                        vmaf_score,
-                        from_cache,
-                        ..
-                    },
-            } => {
-                bar.println(
-                    style!(
-                        "- Sample {sample} ({:.0}%) vmaf {vmaf_score:.2}{}",
-                        100.0 * encoded_size as f32 / sample_size as f32,
-                        if from_cache { " (cache)" } else { "" },
-                    )
-                    .dim()
-                    .to_string(),
-                );
-            }
+            Update::SampleResult { sample, result } => result.print_attempt(&bar, sample, None),
             Update::Done(output) => {
                 bar.finish();
                 if io::stderr().is_terminal() {
@@ -438,16 +418,38 @@ async fn sample(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EncodeResult {
-    sample_size: u64,
-    encoded_size: u64,
-    vmaf_score: f32,
-    encode_time: Duration,
+    pub sample_size: u64,
+    pub encoded_size: u64,
+    pub vmaf_score: f32,
+    pub encode_time: Duration,
     /// Duration of the sample.
     ///
     /// This should be close to `SAMPLE_SIZE` but may deviate due to how samples are cut.
-    sample_duration: Duration,
+    pub sample_duration: Duration,
     /// Result read from cache.
-    from_cache: bool,
+    pub from_cache: bool,
+}
+
+impl EncodeResult {
+    pub fn print_attempt(&self, bar: &ProgressBar, sample_n: u64, crf: Option<f32>) {
+        let Self {
+            sample_size,
+            encoded_size,
+            vmaf_score,
+            from_cache,
+            ..
+        } = self;
+        bar.println(
+            style!(
+                "- {}Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}{}",
+                crf.map(|crf| format!("crf {crf}: ")).unwrap_or_default(),
+                100.0 * *encoded_size as f32 / *sample_size as f32,
+                if *from_cache { " (cache)" } else { "" },
+            )
+            .dim()
+            .to_string(),
+        );
+    }
 }
 
 trait EncodeResults {

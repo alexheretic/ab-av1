@@ -10,6 +10,7 @@ dependencies = [
  "async-stream",
  "blake3",
  "clap",
+ "clap-verbosity-flag",
  "clap_complete",
  "console",
  "dirs",
@@ -222,6 +223,16 @@ checksum = "fb3b4b9e5a7c7514dfa52869339ee98b3156b0bfb4e8a77c4ff4babb64b1604f"
 dependencies = [
  "clap_builder",
  "clap_derive",
+]
+
+[[package]]
+name = "clap-verbosity-flag"
+version = "2.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e099138e1807662ff75e2cebe4ae2287add879245574489f9b1588eb5e5564ed"
+dependencies = [
+ "clap",
+ "log",
 ]
 
 [[package]]

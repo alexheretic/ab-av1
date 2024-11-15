@@ -36,6 +36,8 @@ const DEFAULT_MIN_CRF: f32 = 10.0;
 /// * Mean sample VMAF score
 /// * Predicted full encode size
 /// * Predicted full encode time
+///
+/// Use -v to print per-sample results.
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
 #[group(skip)]
@@ -89,8 +91,8 @@ pub struct Args {
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
 
-    #[arg(skip)]
-    pub quiet: bool,
+    #[command(flatten)]
+    pub verbose: clap_verbosity_flag::Verbosity,
 }
 
 pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
@@ -110,12 +112,13 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let max_encoded_percent = args.max_encoded_percent;
     let thorough = args.thorough;
     let enc_args = args.args.clone();
+    let verbose = args.verbose.clone();
 
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
             if let Error::NoGoodCrf { last } = e {
-                last.print_attempt(&bar, min_vmaf, max_encoded_percent, false);
+                last.print_attempt(&bar, min_vmaf, max_encoded_percent);
             }
         })?;
         match update {
@@ -145,9 +148,19 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                     Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
                 }
             }
-            Update::RunResult(result) => {
-                result.print_attempt(&bar, min_vmaf, max_encoded_percent, false)
+            Update::SampleResult {
+                crf,
+                sample,
+                result,
+            } => {
+                if verbose
+                    .log_level()
+                    .is_some_and(|lvl| lvl > log::Level::Error)
+                {
+                    result.print_attempt(&bar, sample, Some(crf))
+                }
             }
+            Update::RunResult(result) => result.print_attempt(&bar, min_vmaf, max_encoded_percent),
             Update::Done(best) => {
                 info!("crf {} successful", best.crf());
                 bar.finish_with_message("");
@@ -176,9 +189,9 @@ pub fn run(
         crf_increment,
         thorough,
         sample,
-        quiet: _,
         cache,
         vmaf,
+        verbose: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = Result<Update, Error>> {
@@ -233,7 +246,9 @@ pub fn run(
                     sample_encode::Update::Status(status) => {
                         yield Update::Status { crf_run: run, crf: args.crf, sample: status };
                     }
-                    sample_encode::Update::SampleResult { .. } => {}
+                    sample_encode::Update::SampleResult { sample, result } => {
+                        yield Update::SampleResult { crf: args.crf, sample, result };
+                    }
                     sample_encode::Update::Done(output) => sample_enc_output = Some(output),
                 }
             }
@@ -322,16 +337,7 @@ impl Sample {
         self.q.to_crf(self.crf_increment)
     }
 
-    fn print_attempt(
-        &self,
-        bar: &ProgressBar,
-        min_vmaf: f32,
-        max_encoded_percent: f32,
-        quiet: bool,
-    ) {
-        if quiet {
-            return;
-        }
+    pub fn print_attempt(&self, bar: &ProgressBar, min_vmaf: f32, max_encoded_percent: f32) {
         let crf_label = style("- crf").dim();
         let mut crf = style(TerseF32(self.crf()));
         let vmaf_label = style("VMAF").dim();
@@ -463,6 +469,12 @@ pub enum Update {
         /// crf of this run
         crf: f32,
         sample: sample_encode::Status,
+    },
+    SampleResult {
+        crf: f32,
+        /// Sample number `1,....,n`
+        sample: u64,
+        result: sample_encode::EncodeResult,
     },
     /// Run result (excludes successful final runs)
     RunResult(Sample),

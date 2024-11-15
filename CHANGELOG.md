@@ -4,6 +4,8 @@
   - Disable when using custom min/max crf ranges under half the default.
 * Add sample-encode info to crf-search & auto-encode. Show sample progress and encoding/vmaf fps.
 * Improve sample-encode progress format consistency.
+* Add crf-search `-v` flag to print per-sample results.
+* Add auto-encode `-v` flag to print per-crf results, `-vv` to also print per-sample results.
 
 # v0.7.19
 * Fix stdin handling sometimes breaking bash shells.
