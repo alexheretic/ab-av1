@@ -7,6 +7,22 @@ pub enum Error {
     Other(anyhow::Error),
 }
 
+impl Error {
+    pub fn ensure_other(condition: bool, reason: &'static str) -> Result<(), Self> {
+        if !condition {
+            return Err(Self::Other(anyhow::anyhow!(reason)));
+        }
+        Ok(())
+    }
+
+    pub fn ensure_or_no_good_crf(condition: bool, last: &Sample) -> Result<(), Self> {
+        if !condition {
+            return Err(Self::NoGoodCrf { last: last.clone() });
+        }
+        Ok(())
+    }
+}
+
 impl From<anyhow::Error> for Error {
     fn from(err: anyhow::Error) -> Self {
         Self::Other(err)
@@ -29,24 +45,3 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-macro_rules! ensure_other {
-    ($condition:expr, $reason:expr) => {
-        #[allow(clippy::neg_cmp_op_on_partial_ord)]
-        if !$condition {
-            return Err($crate::command::crf_search::err::Error::Other(
-                anyhow::anyhow!($reason),
-            ));
-        }
-    };
-}
-pub(crate) use ensure_other;
-
-macro_rules! ensure_or_no_good_crf {
-    ($condition:expr, $last_sample:expr) => {
-        if !$condition {
-            return Err($crate::command::crf_search::err::Error::NoGoodCrf { last: $last_sample });
-        }
-    };
-}
-pub(crate) use ensure_or_no_good_crf;

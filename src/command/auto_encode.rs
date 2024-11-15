@@ -2,6 +2,7 @@ use crate::{
     command::{
         args, crf_search,
         encode::{self, default_output_name},
+        sample_encode::{self, Work},
         PROGRESS_CHARS,
     },
     console_ext::style,
@@ -9,10 +10,14 @@ use crate::{
     float::TerseF32,
     temporary,
 };
+use anyhow::Context;
 use clap::Parser;
 use console::style;
+use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{sync::Arc, time::Duration};
+use std::{pin::pin, sync::Arc, time::Duration};
+
+const BAR_LEN: u64 = 1024 * 1024 * 1024;
 
 /// Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
 ///
@@ -32,9 +37,9 @@ pub struct Args {
 
 pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
     const SPINNER_RUNNING: &str =
-        "{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})";
+        "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})";
     const SPINNER_FINISHED: &str =
-        "{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg})";
+        "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg})";
 
     search.quiet = true;
     let defaulting_output = encode.output.is_none();
@@ -49,53 +54,86 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     });
     search.sample.set_extension_from_output(&output);
 
-    let bar = ProgressBar::new(12).with_style(
+    let bar = ProgressBar::new(BAR_LEN).with_style(
         ProgressStyle::default_bar()
             .template(SPINNER_RUNNING)?
             .progress_chars(PROGRESS_CHARS),
     );
 
-    bar.set_prefix("Searching");
     if defaulting_output {
         let out = shell_escape::escape(output.display().to_string().into());
         bar.println(style!("Encoding {out}").dim().to_string());
     }
 
-    let best = match crf_search::run(&search, input_probe.clone(), bar.clone()).await {
-        Ok(best) => best,
-        Err(err) => {
-            if let crf_search::Error::NoGoodCrf { last } = &err {
-                // show last sample attempt in progress bar
-                bar.set_style(
-                    ProgressStyle::default_bar()
-                        .template(SPINNER_FINISHED)?
-                        .progress_chars(PROGRESS_CHARS),
-                );
-                let mut vmaf = style(last.enc.vmaf);
-                if last.enc.vmaf < search.min_vmaf {
-                    vmaf = vmaf.red();
+    let min_vmaf = search.min_vmaf;
+    let max_encoded_percent = search.max_encoded_percent;
+    let enc_args = search.args.clone();
+    let thorough = search.thorough;
+
+    let mut crf_search = pin!(crf_search::run(search, input_probe.clone()));
+    let mut best = None;
+    while let Some(update) = crf_search.next().await {
+        match update {
+            Err(err) => {
+                if let crf_search::Error::NoGoodCrf { last } = &err {
+                    // show last sample attempt in progress bar
+                    bar.set_style(
+                        ProgressStyle::default_bar()
+                            .template(SPINNER_FINISHED)?
+                            .progress_chars(PROGRESS_CHARS),
+                    );
+                    let mut vmaf = style(last.enc.vmaf);
+                    if last.enc.vmaf < min_vmaf {
+                        vmaf = vmaf.red();
+                    }
+                    let mut percent = style!("{:.0}%", last.enc.encode_percent);
+                    if last.enc.encode_percent > max_encoded_percent as _ {
+                        percent = percent.red();
+                    }
+                    bar.finish_with_message(format!("VMAF {vmaf:.2}, size {percent}"));
                 }
-                let mut percent = style!("{:.0}%", last.enc.encode_percent);
-                if last.enc.encode_percent > search.max_encoded_percent as _ {
-                    percent = percent.red();
-                }
-                bar.finish_with_message(format!(
-                    "crf {}, VMAF {vmaf:.2}, size {percent}",
-                    style(TerseF32(last.crf())).red(),
-                ));
+                bar.finish();
+                return Err(err.into());
             }
-            bar.finish();
-            return Err(err.into());
+            Ok(crf_search::Update::Status {
+                crf_run,
+                crf,
+                sample:
+                    sample_encode::Status {
+                        work,
+                        fps,
+                        progress,
+                        sample,
+                        samples,
+                        full_pass,
+                    },
+            }) => {
+                bar.set_position(crf_search::guess_progress(crf_run, progress, thorough) as _);
+                let crf = TerseF32(crf);
+                match full_pass {
+                    true => bar.set_prefix(format!("crf {crf} full pass")),
+                    false => bar.set_prefix(format!("crf {crf} {sample}/{samples}")),
+                }
+                match work {
+                    Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
+                    Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
+                    Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
+                    Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                }
+            }
+            Ok(crf_search::Update::RunResult(..)) => {}
+            Ok(crf_search::Update::Done(result)) => best = Some(result),
         }
-    };
+    }
+    let best = best.context("no crf-search best?")?;
+
     bar.set_style(
         ProgressStyle::default_bar()
             .template(SPINNER_FINISHED)?
             .progress_chars(PROGRESS_CHARS),
     );
     bar.finish_with_message(format!(
-        "crf {}, VMAF {:.2}, size {}",
-        style(TerseF32(best.crf())).green(),
+        "VMAF {:.2}, size {}",
         style(best.enc.vmaf).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
@@ -103,15 +141,15 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {prefix} {elapsed_precise:.bold} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
-            .progress_chars(PROGRESS_CHARS)
+            .template(SPINNER_RUNNING)?
+            .progress_chars(PROGRESS_CHARS),
     );
-    bar.set_prefix("Encoding ");
+    bar.set_prefix("Encoding");
     bar.enable_steady_tick(Duration::from_millis(100));
 
     encode::run(
         encode::Args {
-            args: search.args,
+            args: enc_args,
             crf: best.crf(),
             encode: args::EncodeToOutput {
                 output: Some(output),
