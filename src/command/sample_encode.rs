@@ -69,7 +69,7 @@ pub struct Args {
 pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")?
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(Duration::from_millis(100));
@@ -156,7 +156,7 @@ pub async fn run(
 
     let mut results = Vec::new();
     loop {
-        bar.set_message("sampling,");
+        bar.set_message("sampling, ");
         let (sample_idx, sample) = match sample_tasks.recv().await {
             Some(s) => s,
             None => break,
@@ -205,7 +205,7 @@ pub async fn run(
                 result
             }
             (None, key) => {
-                bar.set_message("encoding,");
+                bar.set_message("encoding, ");
                 let b = Instant::now();
                 let mut logger = ProgressLogger::new(module_path!(), b);
                 let (encoded_sample, mut output) = ffmpeg::encode_sample(
@@ -222,7 +222,7 @@ pub async fn run(
                             time.as_micros_u64() + sample_idx * sample_duration_us * 2,
                         );
                         if fps > 0.0 {
-                            bar.set_message(format!("enc {fps} fps,"));
+                            bar.set_message(format!("enc {fps} fps, "));
                         }
                         logger.update(sample_duration, time, fps);
                     }
@@ -232,7 +232,7 @@ pub async fn run(
                 let encoded_probe = ffprobe::probe(&encoded_sample);
 
                 // calculate vmaf
-                bar.set_message("vmaf running,");
+                bar.set_message("vmaf running, ");
                 let mut vmaf = pin!(vmaf::run(
                     &sample,
                     &encoded_sample,
@@ -260,7 +260,7 @@ pub async fn run(
                                     + sample_idx * sample_duration_us * 2,
                             );
                             if fps > 0.0 {
-                                bar.set_message(format!("vmaf {fps} fps,"));
+                                bar.set_message(format!("vmaf {fps} fps, "));
                             }
                             logger.update(sample_duration, time, fps);
                         }
