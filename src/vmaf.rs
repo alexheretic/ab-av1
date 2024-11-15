@@ -31,10 +31,9 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let vmaf: ProcessChunkStream = cmd.try_into().context("ffmpeg vmaf")?;
+    let mut vmaf: ProcessChunkStream = cmd.try_into().context("ffmpeg vmaf")?;
 
     Ok(async_stream::stream! {
-        let mut vmaf = vmaf;
         let mut chunks = Chunks::default();
         let mut parsed_done = false;
         while let Some(next) = vmaf.next().await {
