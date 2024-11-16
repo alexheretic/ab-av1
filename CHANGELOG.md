@@ -1,4 +1,4 @@
-# Unreleased (v0.8.0)
+# v0.8.0
 * crf-search: Tweak 2nd iteration logic that slices the crf range at the 25% or 75% crf point.
   - Widen to 20%/80% to account for searches of the "middle" two subranges being more optimal.
   - Disable when using custom min/max crf ranges under half the default.
