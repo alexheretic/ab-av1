@@ -61,6 +61,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
             .template(SPINNER_RUNNING)?
             .progress_chars(PROGRESS_CHARS),
     );
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     if defaulting_output {
         let out = shell_escape::escape(output.display().to_string().into());
