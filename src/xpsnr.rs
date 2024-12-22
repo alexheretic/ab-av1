@@ -87,7 +87,7 @@ impl XpsnrOut {
 fn score_from_line(line: &str) -> Option<f32> {
     const MIN_PREFIX: &str = "minimum: ";
 
-    if !line.contains("XPSNR  y: ") {
+    if !line.contains("XPSNR") {
         return None;
     }
 
@@ -104,6 +104,14 @@ fn score_from_line(line: &str) -> Option<f32> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn parse_rgb_line() {
+        let score = score_from_line(
+            "XPSNR average, 1 frames  r: 40.6130  g: 41.0275  b: 40.6961  (minimum: 40.6130)",
+        );
+        assert_eq!(score, Some(40.6130));
+    }
 
     #[test]
     fn parse_xpsnr_score() {
