@@ -3,6 +3,7 @@ mod cache;
 use crate::{
     command::{
         args::{self, PixelFormat},
+        sample_encode::cache::ScoringInfo,
         SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
@@ -12,6 +13,7 @@ use crate::{
     process::FfmpegOut,
     sample, temporary,
     vmaf::{self, VmafOut},
+    xpsnr::{self, XpsnrOut},
 };
 use anyhow::{ensure, Context};
 use clap::{ArgAction, Parser};
@@ -20,6 +22,7 @@ use futures_util::Stream;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use log::info;
 use std::{
+    fmt::Display,
     io::{self, IsTerminal},
     path::{Path, PathBuf},
     pin::pin,
@@ -65,6 +68,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
+
+    #[arg(long)]
+    pub xpsnr: bool,
 }
 
 pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
@@ -107,6 +113,8 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
                     Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
                     Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
                     Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                    Work::Xpsnr if fps <= 0.0 => bar.set_message("xpsnr,      "),
+                    Work::Xpsnr => bar.set_message(format!("xpsnr {fps} fps, ")),
                 }
                 bar.set_position((progress * BAR_LEN_F).round() as _);
             }
@@ -120,13 +128,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(crf)).dim().italic(),
                     );
                 }
-                stdout_fmt.print_result(
-                    output.vmaf,
-                    output.predicted_encode_size,
-                    output.encode_percent,
-                    output.predicted_encode_time,
-                    input_is_image,
-                );
+                stdout_fmt.print_result(&output, input_is_image);
             }
         }
     }
@@ -141,6 +143,7 @@ pub fn run(
         cache,
         stdout_format: _,
         vmaf,
+        xpsnr,
     }: Args,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = anyhow::Result<Update>> {
@@ -155,6 +158,10 @@ pub fn run(
         let samples = sample_args.sample_count(duration).max(1);
         let keep = sample_args.keep;
         let temp_dir = sample_args.temp_dir;
+        let scoring = match xpsnr {
+            true => ScoringInfo::Xpsnr,
+            _ => ScoringInfo::Vmaf(&vmaf)
+        };
 
         let (samples, sample_duration, full_pass) = {
             if input_is_image {
@@ -232,17 +239,13 @@ pub fn run(
                 input_len,
                 full_pass,
                 &enc_args,
-                &vmaf,
+                scoring,
             )
             .await
             {
                 (Some(result), _) => {
                     if samples > 1 {
-                        info!(
-                            "sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
-                            result.vmaf_score,
-                            100.0 * result.encoded_size as f32 / sample_size as f32,
-                        );
+                        result.log_attempt(sample_n, samples, crf);
                     }
                     result
                 }
@@ -275,75 +278,127 @@ pub fn run(
                     let encoded_size = fs::metadata(&encoded_sample).await?.len();
                     let encoded_probe = ffprobe::probe(&encoded_sample);
 
-                    // calculate vmaf
-                    yield Update::Status(Status {
-                        work: Work::Vmaf,
-                        fps: 0.0,
-                        progress: (sample_idx as f32 + 0.5) / samples as f32,
-                        full_pass,
-                        sample: sample_n,
-                        samples,
-                    });
-                    let vmaf = vmaf::run(
-                        &sample,
-                        &encoded_sample,
-                        &vmaf.ffmpeg_lavfi(
-                            encoded_probe.resolution,
-                            enc_args
-                                .pix_fmt
-                                .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
-                            args.vfilter.as_deref(),
-                        ),
-                        vmaf.vmaf_fps,
-                    )?;
-                    let mut vmaf = pin!(vmaf);
-                    let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
-                    let mut vmaf_score = None;
-                    while let Some(vmaf) = vmaf.next().await {
-                        match vmaf {
-                            VmafOut::Done(score) => {
-                                vmaf_score = Some(score);
-                                break;
+                    let result = match scoring {
+                        ScoringInfo::Vmaf(..) => {
+                            yield Update::Status(Status {
+                                work: Work::Vmaf,
+                                fps: 0.0,
+                                progress: (sample_idx as f32 + 0.5) / samples as f32,
+                                full_pass,
+                                sample: sample_n,
+                                samples,
+                            });
+                            let vmaf = vmaf::run(
+                                &sample,
+                                &encoded_sample,
+                                &vmaf.ffmpeg_lavfi(
+                                    encoded_probe.resolution,
+                                    enc_args
+                                        .pix_fmt
+                                        .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                                    args.vfilter.as_deref(),
+                                ),
+                                vmaf.vmaf_fps,
+                            )?;
+                            let mut vmaf = pin!(vmaf);
+                            let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
+                            let mut vmaf_score = None;
+                            while let Some(vmaf) = vmaf.next().await {
+                                match vmaf {
+                                    VmafOut::Done(score) => {
+                                        vmaf_score = Some(score);
+                                        break;
+                                    }
+                                    VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+                                        yield Update::Status(Status {
+                                            work: Work::Vmaf,
+                                            fps,
+                                            progress: (sample_duration_us +
+                                                time.as_micros_u64() +
+                                                sample_idx * sample_duration_us * 2) as f32
+                                                / (sample_duration_us * samples * 2) as f32,
+                                            full_pass,
+                                            sample: sample_n,
+                                            samples,
+                                        });
+                                        logger.update(sample_duration, time, fps);
+                                    }
+                                    VmafOut::Progress(_) => {}
+                                    VmafOut::Err(e) => Err(e)?,
+                                }
                             }
-                            VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
-                                yield Update::Status(Status {
-                                    work: Work::Vmaf,
-                                    fps,
-                                    progress: (sample_duration_us +
-                                        time.as_micros_u64() +
-                                        sample_idx * sample_duration_us * 2) as f32
-                                        / (sample_duration_us * samples * 2) as f32,
-                                    full_pass,
-                                    sample: sample_n,
-                                    samples,
-                                });
-                                logger.update(sample_duration, time, fps);
+
+                            EncodeResult {
+                                score: vmaf_score.context("no vmaf score")?,
+                                score_kind: ScoreKind::Vmaf,
+                                sample_size,
+                                encoded_size,
+                                encode_time,
+                                sample_duration: encoded_probe
+                                    .duration
+                                    .ok()
+                                    .filter(|d| !d.is_zero())
+                                    .unwrap_or(sample_duration),
+                                from_cache: false,
                             }
-                            VmafOut::Progress(_) => {}
-                            VmafOut::Err(e) => Err(e)?,
                         }
-                    }
-                    let vmaf_score = vmaf_score.context("no vmaf score")?;
+                        ScoringInfo::Xpsnr => {
+                            yield Update::Status(Status {
+                                work: Work::Xpsnr,
+                                fps: 0.0,
+                                progress: (sample_idx as f32 + 0.5) / samples as f32,
+                                full_pass,
+                                sample: sample_n,
+                                samples,
+                            });
+                            let xpsnr_out = xpsnr::run(&sample, &encoded_sample)?;
+                            let mut xpsnr_out = pin!(xpsnr_out);
+                            let mut logger = ProgressLogger::new("ab_av1::xpsnr", Instant::now());
+                            let mut score = None;
+                            while let Some(next) = xpsnr_out.next().await {
+                                match next {
+                                    XpsnrOut::Done(s) => {
+                                        score = Some(s);
+                                        break;
+                                    }
+                                    XpsnrOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+                                        yield Update::Status(Status {
+                                            work: Work::Xpsnr,
+                                            fps,
+                                            progress: (sample_duration_us +
+                                                time.as_micros_u64() +
+                                                sample_idx * sample_duration_us * 2) as f32
+                                                / (sample_duration_us * samples * 2) as f32,
+                                            full_pass,
+                                            sample: sample_n,
+                                            samples,
+                                        });
+                                        logger.update(sample_duration, time, fps);
+                                    }
+                                    XpsnrOut::Progress(_) => {}
+                                    XpsnrOut::Err(e) => Err(e)?,
+                                }
+                            }
+
+                            EncodeResult {
+                                score: score.context("no xpsnr score")?,
+                                score_kind: ScoreKind::Xpsnr,
+                                sample_size,
+                                encoded_size,
+                                encode_time,
+                                sample_duration: encoded_probe
+                                    .duration
+                                    .ok()
+                                    .filter(|d| !d.is_zero())
+                                    .unwrap_or(sample_duration),
+                                from_cache: false,
+                            }
+                        }
+                    };
 
                     if samples > 1 {
-                        info!(
-                            "sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
-                            100.0 * encoded_size as f32 / sample_size as f32,
-                        );
+                        result.log_attempt(sample_n, samples, crf);
                     }
-
-                    let result = EncodeResult {
-                        vmaf_score,
-                        sample_size,
-                        encoded_size,
-                        encode_time,
-                        sample_duration: encoded_probe
-                            .duration
-                            .ok()
-                            .filter(|d| !d.is_zero())
-                            .unwrap_or(sample_duration),
-                        from_cache: false,
-                    };
 
                     if let Some(k) = key {
                         cache::cache_result(k, &result).await?;
@@ -363,8 +418,10 @@ pub fn run(
             yield Update::SampleResult { sample: sample_n, result };
         }
 
+        let score_kind = results.score_kind();
         let output = Output {
-            vmaf: results.mean_vmaf(),
+            score: results.mean_score(),
+            score_kind,
             // Using file size * encode_percent can over-estimate. However, if it ends up less
             // than the duration estimation it may turn out to be more accurate.
             predicted_encode_size: results
@@ -375,8 +432,8 @@ pub fn run(
             from_cache: results.iter().all(|r| r.from_cache),
         };
         info!(
-            "crf {crf} VMAF {:.2} predicted video stream size {} ({:.0}%) taking {}{}",
-            output.vmaf,
+            "crf {crf} {score_kind} {:.2} predicted video stream size {} ({:.0}%) taking {}{}",
+            output.score,
             HumanBytes(output.predicted_encode_size),
             output.encode_percent,
             HumanDuration(output.predicted_encode_time),
@@ -421,7 +478,8 @@ async fn sample(
 pub struct EncodeResult {
     pub sample_size: u64,
     pub encoded_size: u64,
-    pub vmaf_score: f32,
+    pub score: f32,
+    pub score_kind: ScoreKind,
     pub encode_time: Duration,
     /// Duration of the sample.
     ///
@@ -436,13 +494,14 @@ impl EncodeResult {
         let Self {
             sample_size,
             encoded_size,
-            vmaf_score,
+            score,
+            score_kind,
             from_cache,
             ..
         } = self;
         bar.println(
             style!(
-                "- {}Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}{}",
+                "- {}Sample {sample_n} ({:.0}%) {score_kind} {score:.2}{}",
                 crf.map(|crf| format!("crf {crf}: ")).unwrap_or_default(),
                 100.0 * *encoded_size as f32 / *sample_size as f32,
                 if *from_cache { " (cache)" } else { "" },
@@ -451,12 +510,45 @@ impl EncodeResult {
             .to_string(),
         );
     }
+
+    pub fn log_attempt(&self, sample_n: u64, samples: u64, crf: f32) {
+        let Self {
+            sample_size,
+            encoded_size,
+            score,
+            score_kind,
+            from_cache,
+            ..
+        } = self;
+        info!(
+            "sample {sample_n}/{samples} crf {crf} {score_kind} {score:.2} ({:.0}%){}",
+            100.0 * *encoded_size as f32 / *sample_size as f32,
+            if *from_cache { " (cache)" } else { "" }
+        );
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ScoreKind {
+    Vmaf,
+    Xpsnr,
+}
+
+impl Display for ScoreKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vmaf => f.write_str("VMAF"),
+            Self::Xpsnr => f.write_str("XPSNR"),
+        }
+    }
 }
 
 trait EncodeResults {
     fn encoded_percent_size(&self) -> f64;
 
-    fn mean_vmaf(&self) -> f32;
+    fn score_kind(&self) -> ScoreKind;
+
+    fn mean_score(&self) -> f32;
 
     /// Return estimated encoded **video stream** size by multiplying sample size by duration.
     fn estimate_encode_size_by_duration(
@@ -477,11 +569,17 @@ impl EncodeResults for Vec<EncodeResult> {
         encoded * 100.0 / sample
     }
 
-    fn mean_vmaf(&self) -> f32 {
+    fn score_kind(&self) -> ScoreKind {
+        self.first()
+            .map(|r| r.score_kind)
+            .unwrap_or(ScoreKind::Vmaf)
+    }
+
+    fn mean_score(&self) -> f32 {
         if self.is_empty() {
             return 0.0;
         }
-        self.iter().map(|r| r.vmaf_score).sum::<f32>() / self.len() as f32
+        self.iter().map(|r| r.score).sum::<f32>() / self.len() as f32
     }
 
     fn estimate_encode_size_by_duration(
@@ -551,16 +649,27 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(self, vmaf: f32, size: u64, percent: f64, time: Duration, image: bool) {
+    fn print_result(
+        self,
+        Output {
+            score,
+            score_kind,
+            predicted_encode_size,
+            encode_percent,
+            predicted_encode_time,
+            from_cache: _,
+        }: &Output,
+        image: bool,
+    ) {
         match self {
             Self::Human => {
-                let vmaf = match vmaf {
-                    v if v >= 95.0 => style(v).bold().green(),
-                    v if v < 80.0 => style(v).bold().red(),
-                    v => style(v).bold(),
+                let score = match (*score, score_kind) {
+                    (v, ScoreKind::Vmaf) if v >= 95.0 => style(v).bold().green(),
+                    (v, ScoreKind::Vmaf) if v < 80.0 => style(v).bold().red(),
+                    (v, _) => style(v).bold(),
                 };
-                let percent = percent.round();
-                let size = match size {
+                let percent = encode_percent.round();
+                let size = match *predicted_encode_size {
                     v if percent < 80.0 => style(HumanBytes(v)).bold().green(),
                     v if percent >= 100.0 => style(HumanBytes(v)).bold().red(),
                     v => style(HumanBytes(v)).bold(),
@@ -570,23 +679,26 @@ impl StdoutFormat {
                     v if v >= 100.0 => style!("{}%", v).bold().red(),
                     v => style!("{}%", v).bold(),
                 };
-                let time = style(HumanDuration(time)).bold();
+                let time = style(HumanDuration(*predicted_encode_time)).bold();
                 let enc_description = match image {
                     true => "image",
                     false => "video stream",
                 };
                 println!(
-                    "VMAF {vmaf:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
+                    "{score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
             Self::Json => {
-                let json = serde_json::json!({
-                    "vmaf": vmaf,
-                    "predicted_encode_size": size,
-                    "predicted_encode_percent": percent,
-                    "predicted_encode_seconds": time.as_secs(),
+                let mut json = serde_json::json!({
+                    "predicted_encode_size": predicted_encode_size,
+                    "predicted_encode_percent": encode_percent,
+                    "predicted_encode_seconds": predicted_encode_time.as_secs(),
                 });
-                println!("{}", serde_json::to_string(&json).unwrap());
+                match score_kind {
+                    ScoreKind::Vmaf => json["vmaf"] = (*score).into(),
+                    ScoreKind::Xpsnr => json["xpsnr"] = (*score).into(),
+                }
+                println!("{json}");
             }
         }
     }
@@ -596,7 +708,8 @@ impl StdoutFormat {
 #[derive(Debug, Clone)]
 pub struct Output {
     /// Sample mean VMAF score.
-    pub vmaf: f32,
+    pub score: f32,
+    pub score_kind: ScoreKind,
     /// Estimated full encoded **video stream** size.
     ///
     /// Encoded sample size multiplied by duration.
@@ -611,11 +724,13 @@ pub struct Output {
     pub from_cache: bool,
 }
 
+/// Kinds of sample-encode work.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Work {
     #[default]
     Encode,
     Vmaf,
+    Xpsnr,
 }
 
 #[derive(Debug)]

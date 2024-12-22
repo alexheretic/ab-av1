@@ -63,16 +63,6 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
-    pub fn is_default(&self) -> bool {
-        let Self {
-            vmaf_args,
-            vmaf_scale,
-            vmaf_fps: _,
-            reference_vfilter,
-        } = self;
-        vmaf_args.is_empty() && *vmaf_scale == VmafScale::Auto && reference_vfilter.is_none()
-    }
-
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
     ///
     /// Note `ref_vfilter` is ignored if `Self::reference_vfilter` is some.

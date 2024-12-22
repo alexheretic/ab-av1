@@ -8,6 +8,7 @@ mod process;
 mod sample;
 mod temporary;
 mod vmaf;
+mod xpsnr;
 
 use ::log::LevelFilter;
 use anyhow::anyhow;
@@ -21,6 +22,7 @@ use tokio::signal;
 enum Command {
     SampleEncode(command::sample_encode::Args),
     Vmaf(command::vmaf::Args),
+    Xpsnr(command::xpsnr::Args),
     Encode(command::encode::Args),
     CrfSearch(command::crf_search::Args),
     AutoEncode(command::auto_encode::Args),
@@ -47,6 +49,7 @@ async fn main() {
     let command = local.run_until(match action {
         Command::SampleEncode(args) => command::sample_encode(args).boxed_local(),
         Command::Vmaf(args) => command::vmaf(args).boxed_local(),
+        Command::Xpsnr(args) => command::xpsnr(args).boxed_local(),
         Command::Encode(args) => command::encode(args).boxed_local(),
         Command::CrfSearch(args) => command::crf_search(args).boxed_local(),
         Command::AutoEncode(args) => command::auto_encode(args).boxed_local(),

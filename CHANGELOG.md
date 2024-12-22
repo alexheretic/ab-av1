@@ -1,4 +1,8 @@
-# Unreleased (0.8.1)
+# Unreleased (0.9.0)
+* Add XPSNR support as a VMAF alternative.
+  - Add sample-encode `--xpsnr` arg which toggles use of XPSNR instead of VMAF.
+  - Add crf-search, auto-encode `--min-xpsnr` arg _(alternative to `--min-vmaf`)_.
+  - Add `xpsnr` command for measuring XPSNR score.
 * Support negative `--preset` args.
 * Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos.
 * Omit data streams when outputting to matroska (.mkv or .webm).

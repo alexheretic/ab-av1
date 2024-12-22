@@ -18,7 +18,7 @@ pub async fn cached_encode(
     input_size: u64,
     full_pass: bool,
     enc_args: &FfmpegEncodeArgs<'_>,
-    vmaf_args: &Vmaf,
+    scoring: ScoringInfo<'_>,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
         return (None, None);
@@ -36,7 +36,7 @@ pub async fn cached_encode(
             full_pass,
         ),
         enc_args,
-        vmaf_args,
+        scoring,
     );
 
     let key = Key(hash);
@@ -63,6 +63,12 @@ pub async fn cached_encode(
             (None, None)
         }
     }
+}
+
+#[derive(Debug, Hash, Clone, Copy)]
+pub enum ScoringInfo<'a> {
+    Vmaf(&'a Vmaf),
+    Xpsnr,
 }
 
 pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Result<()> {
@@ -103,16 +109,13 @@ pub struct Key(blake3::Hash);
 fn hash_encode(
     input_info: impl Hash,
     enc_args: &FfmpegEncodeArgs<'_>,
-    vmaf_args: &Vmaf,
+    scoring_info: impl Hash,
 ) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     let mut std_hasher = BlakeStdHasher(&mut hasher);
     input_info.hash(&mut std_hasher);
     enc_args.sample_encode_hash(&mut std_hasher);
-    if !vmaf_args.is_default() {
-        // avoid hashing if default for back compat
-        vmaf_args.hash(&mut std_hasher);
-    }
+    scoring_info.hash(&mut std_hasher);
     hasher.finalize()
 }
 

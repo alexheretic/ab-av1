@@ -1,12 +1,9 @@
 use crate::{
-    command::{
-        args::{self, PixelFormat},
-        PROGRESS_CHARS,
-    },
+    command::PROGRESS_CHARS,
     ffprobe,
     log::ProgressLogger,
     process::FfmpegOut,
-    vmaf::{self, VmafOut},
+    xpsnr::{self, XpsnrOut},
 };
 use anyhow::Context;
 use clap::Parser;
@@ -14,16 +11,13 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
     pin::pin,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 use tokio_stream::StreamExt;
 
-/// Full VMAF score calculation, distorted file vs reference file.
+/// Full XPSNR score calculation, distorted file vs reference file.
 /// Works with videos and images.
-///
-/// * Auto sets model version (4k or 1k) according to resolution.
-/// * Auto sets `n_threads` to system threads.
-/// * Auto upscales lower resolution videos to the model.
 #[derive(Parser)]
 #[clap(verbatim_doc_comment)]
 #[group(skip)]
@@ -35,16 +29,12 @@ pub struct Args {
     /// Re-encoded/distorted video file.
     #[arg(long)]
     pub distorted: PathBuf,
-
-    #[clap(flatten)]
-    pub vmaf: args::Vmaf,
 }
 
-pub async fn vmaf(
+pub async fn xpsnr(
     Args {
         reference,
         distorted,
-        vmaf,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -53,41 +43,33 @@ pub async fn vmaf(
             .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(Duration::from_millis(100));
-    bar.set_message("vmaf running, ");
+    bar.set_message("xpsnr running, ");
 
     let dprobe = ffprobe::probe(&distorted);
-    let dpix_fmt = dprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
-    let rprobe = ffprobe::probe(&reference);
-    let rpix_fmt = rprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
+    let rprobe = LazyLock::new(|| ffprobe::probe(&reference));
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
-    let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
+    let duration = dprobe
+        .duration
+        .as_ref()
+        .or_else(|_| rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
         bar.set_length(nframes);
     }
 
-    let mut vmaf = pin!(vmaf::run(
-        &reference,
-        &distorted,
-        &vmaf.ffmpeg_lavfi(
-            dprobe.resolution,
-            dpix_fmt.max(rpix_fmt),
-            vmaf.reference_vfilter.as_deref(),
-        ),
-        vmaf.vmaf_fps,
-    )?);
+    let mut xpsnr_out = pin!(xpsnr::run(&reference, &distorted)?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
-    let mut vmaf_score = None;
-    while let Some(vmaf) = vmaf.next().await {
-        match vmaf {
-            VmafOut::Done(score) => {
-                vmaf_score = Some(score);
+    let mut score = None;
+    while let Some(next) = xpsnr_out.next().await {
+        match next {
+            XpsnrOut::Done(s) => {
+                score = Some(s);
                 break;
             }
-            VmafOut::Progress(FfmpegOut::Progress {
+            XpsnrOut::Progress(FfmpegOut::Progress {
                 frame, fps, time, ..
             }) => {
                 if fps > 0.0 {
-                    bar.set_message(format!("vmaf {fps} fps, "));
+                    bar.set_message(format!("xpsnr {fps} fps, "));
                 }
                 if nframes.is_ok() {
                     bar.set_position(frame);
@@ -96,12 +78,12 @@ pub async fn vmaf(
                     logger.update(*total, time, fps);
                 }
             }
-            VmafOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
-            VmafOut::Err(e) => return Err(e),
+            XpsnrOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
+            XpsnrOut::Err(e) => return Err(e),
         }
     }
     bar.finish();
 
-    println!("{}", vmaf_score.context("no vmaf score")?);
+    println!("{}", score.context("no xpsnr score")?);
     Ok(())
 }

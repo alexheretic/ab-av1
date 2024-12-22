@@ -68,7 +68,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         bar.println(style!("Encoding {out}").dim().to_string());
     }
 
-    let min_vmaf = search.min_vmaf;
+    let min_score = search.min_score();
     let max_encoded_percent = search.max_encoded_percent;
     let enc_args = search.args.clone();
     let thorough = search.thorough;
@@ -86,15 +86,16 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                             .template(SPINNER_FINISHED)?
                             .progress_chars(PROGRESS_CHARS),
                     );
-                    let mut vmaf = style(last.enc.vmaf);
-                    if last.enc.vmaf < min_vmaf {
+                    let mut vmaf = style(last.enc.score);
+                    if last.enc.score < min_score {
                         vmaf = vmaf.red();
                     }
                     let mut percent = style!("{:.0}%", last.enc.encode_percent);
                     if last.enc.encode_percent > max_encoded_percent as _ {
                         percent = percent.red();
                     }
-                    bar.finish_with_message(format!("VMAF {vmaf:.2}, size {percent}"));
+                    let score_kind = last.enc.score_kind;
+                    bar.finish_with_message(format!("{score_kind} {vmaf:.2}, size {percent}"));
                 }
                 bar.finish();
                 return Err(err.into());
@@ -123,6 +124,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
                     Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
                     Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                    Work::Xpsnr if fps <= 0.0 => bar.set_message("xpsnr,      "),
+                    Work::Xpsnr => bar.set_message(format!("xpsnr {fps} fps, ")),
                 }
             }
             Ok(crf_search::Update::SampleResult {
@@ -142,7 +145,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     .log_level()
                     .is_some_and(|lvl| lvl > log::Level::Error)
                 {
-                    result.print_attempt(&bar, min_vmaf, max_encoded_percent)
+                    result.print_attempt(&bar, min_score, max_encoded_percent)
                 }
             }
             Ok(crf_search::Update::Done(result)) => best = Some(result),
@@ -157,7 +160,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
     bar.finish_with_message(format!(
         "VMAF {:.2}, size {}",
-        style(best.enc.vmaf).green(),
+        style(best.enc.score).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
     temporary::clean_all().await;
