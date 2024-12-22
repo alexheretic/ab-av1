@@ -1,5 +1,6 @@
 # Unreleased (0.8.1)
 * Support negative `--preset` args.
+* Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos.
 
 # v0.8.0
 * crf-search: Tweak 2nd iteration logic that slices the crf range at the 25% or 75% crf point.
