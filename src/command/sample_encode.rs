@@ -36,7 +36,7 @@ use tokio_stream::StreamExt;
 /// This is much quicker than a full encode/vmaf run.
 ///
 /// Outputs:
-/// * Mean sample VMAF score
+/// * Mean sample score
 /// * Predicted full encode size
 /// * Predicted full encode time
 #[derive(Parser, Clone)]
@@ -707,7 +707,7 @@ impl StdoutFormat {
 /// Sample encode result.
 #[derive(Debug, Clone)]
 pub struct Output {
-    /// Sample mean VMAF score.
+    /// Sample mean score.
     pub score: f32,
     pub score_kind: ScoreKind,
     /// Estimated full encoded **video stream** size.

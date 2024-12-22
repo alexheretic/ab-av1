@@ -46,13 +46,13 @@ pub struct Args {
     pub args: args::Encode,
 
     /// Desired min VMAF score to deliver.
-    /// 
+    ///
     /// [default: 95]
     #[arg(long, group = "min_score")]
     pub min_vmaf: Option<f32>,
 
     /// Desired min XPSNR score to deliver.
-    /// 
+    ///
     /// Enables use of XPSNR for score analysis instead of VMAF.
     #[arg(long, group = "min_score")]
     pub min_xpsnr: Option<f32>,

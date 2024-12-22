@@ -159,7 +159,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
             .progress_chars(PROGRESS_CHARS),
     );
     bar.finish_with_message(format!(
-        "VMAF {:.2}, size {}",
+        "{} {:.2}, size {}",
+        best.enc.score_kind,
         style(best.enc.score).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
