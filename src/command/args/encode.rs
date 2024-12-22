@@ -26,10 +26,21 @@ pub struct Encode {
     #[arg(short, long, value_hint = ValueHint::FilePath)]
     pub input: PathBuf,
 
-    /// Ffmpeg video filter applied to the input before av1 encoding.
+    /// Ffmpeg video filter applied to the input before encoding.
     /// E.g. --vfilter "scale=1280:-1,fps=24".
     ///
     /// See https://ffmpeg.org/ffmpeg-filters.html#Video-Filters
+    ///
+    /// For VMAF calculations this is also applied to the reference video meaning VMAF
+    /// scores represent the quality of input stream *after* applying filters compared
+    /// to the encoded result.
+    /// This allows filters like cropping to work with VMAF, as it would be the
+    /// cropped stream that is VMAF compared to a cropped-then-encoded stream. Such filters
+    /// would not otherwise generally be comparable.
+    ///
+    /// A consequence is the VMAF score will not reflect any quality lost
+    /// by the vfilter itself, only the encode.
+    /// To override the VMAF vfilter set --reference-vfilter.
     #[arg(long)]
     pub vfilter: Option<String>,
 
@@ -44,8 +55,8 @@ pub struct Encode {
     /// libaom-av1 preset is mapped to equivalent -cpu-used argument.
     ///
     /// [svt-av1 default: 8]
-    #[arg(long)]
-    pub preset: Option<Preset>,
+    #[arg(long, allow_hyphen_values = true)]
+    pub preset: Option<Arc<str>>,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
     /// E.g. "300" or "10s". Defaults to 10s if the input duration is over 3m.
@@ -114,7 +125,7 @@ impl Encode {
         crf: f32,
         probe: &Ffprobe,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        self.to_ffmpeg_args(Arc::clone(&self.encoder.0), crf, probe)
+        self.to_ffmpeg_args(crf, probe)
     }
 
     pub fn encode_hint(&self, crf: f32) -> String {
@@ -171,21 +182,16 @@ impl Encode {
         hint
     }
 
-    fn to_ffmpeg_args(
-        &self,
-        vcodec: Arc<str>,
-        crf: f32,
-        probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        let svtav1 = &*vcodec == "libsvtav1";
+    fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        let vcodec = &self.encoder.0;
+        let svtav1 = vcodec.as_ref() == "libsvtav1";
         ensure!(
             svtav1 || self.svt_args.is_empty(),
             "--svt may only be used with svt-av1"
         );
 
         let preset = match &self.preset {
-            Some(Preset::Number(n)) => Some(n.to_string().into()),
-            Some(Preset::Name(n)) => Some(n.clone()),
+            Some(n) => Some(n.clone()),
             None if svtav1 => Some("8".into()),
             None => None,
         };
@@ -240,7 +246,7 @@ impl Encode {
             }
         }
 
-        let pix_fmt = self.pix_format.unwrap_or(match &*vcodec {
+        let pix_fmt = self.pix_format.unwrap_or(match vcodec {
             vc if vc.contains("av1") => PixelFormat::Yuv420p10le,
             _ => PixelFormat::Yuv420p,
         });
@@ -282,7 +288,7 @@ impl Encode {
 
         Ok(FfmpegEncodeArgs {
             input: &self.input,
-            vcodec,
+            vcodec: Arc::clone(vcodec),
             pix_fmt,
             vfilter: self.vfilter.as_deref(),
             crf,
@@ -338,10 +344,21 @@ impl Encoder {
     pub fn default_max_crf(&self) -> f32 {
         match self.as_str() {
             "libx264" | "libx265" => 46.0,
-            // rav1e: use max -qp
             "librav1e" => 255.0,
+            "av1_vaapi" => 255.0,
             // Works well for svt-av1
             _ => 55.0,
+        }
+    }
+
+    pub fn default_image_ext(&self) -> &'static str {
+        match self.as_str() {
+            // ffmpeg doesn't currently have good heif support,
+            // these raw formats allow crf-search to work
+            "libx264" => "264",
+            "libx265" => "265",
+            // otherwise assume av1
+            _ => "avif",
         }
     }
 
@@ -370,32 +387,6 @@ impl std::str::FromStr for Encoder {
             "svt-av1" => Self("libsvtav1".into()),
             vcodec => Self(vcodec.into()),
         })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Preset {
-    Number(u8),
-    Name(Arc<str>),
-}
-
-impl fmt::Display for Preset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Number(n) => n.fmt(f),
-            Self::Name(name) => name.fmt(f),
-        }
-    }
-}
-
-impl std::str::FromStr for Preset {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s.parse::<u8>() {
-            Ok(n) => Ok(Self::Number(n)),
-            _ => Ok(Self::Name(s.into())),
-        }
     }
 }
 
@@ -558,9 +549,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc
-        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
-        .expect("to_ffmpeg_args");
+    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
@@ -594,7 +583,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         encoder: Encoder("libsvtav1".into()),
         input: "vid.mp4".into(),
         vfilter: None,
-        preset: Some(Preset::Number(7)),
+        preset: Some("7".into()),
         pix_format: Some(PixelFormat::Yuv420p),
         keyint: None,
         scd: None,
@@ -623,9 +612,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc
-        .to_ffmpeg_args("libsvtav1".into(), 32.0, &probe)
-        .expect("to_ffmpeg_args");
+    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);

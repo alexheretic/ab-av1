@@ -8,17 +8,21 @@ use crate::{
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe::{self, Ffprobe},
+    log::ProgressLogger,
     process::FfmpegOut,
-    sample, temporary, vmaf,
-    vmaf::VmafOut,
-    SAMPLE_SIZE, SAMPLE_SIZE_S,
+    sample, temporary,
+    vmaf::{self, VmafOut},
 };
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use clap::{ArgAction, Parser};
 use console::style;
+use futures_util::Stream;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
+    io::{self, IsTerminal},
     path::{Path, PathBuf},
+    pin::pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -64,254 +68,323 @@ pub struct Args {
 }
 
 pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
-    let bar = ProgressBar::new(12).with_style(
+    const BAR_LEN: u64 = 1024 * 1024 * 1024;
+    const BAR_LEN_F: f32 = BAR_LEN as _;
+
+    let bar = ProgressBar::new(BAR_LEN).with_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg:13} eta {eta})")?
+            .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
             .progress_chars(PROGRESS_CHARS)
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
     let probe = ffprobe::probe(&args.args.input);
     args.sample
-        .set_extension_from_input(&args.args.input, &probe);
-    run(args, probe.into(), bar).await?;
+        .set_extension_from_input(&args.args.input, &args.args.encoder, &probe);
+
+    let enc_args = args.args.clone();
+    let crf = args.crf;
+    let stdout_fmt = args.stdout_format;
+    let input_is_image = probe.is_image;
+
+    let mut run = pin!(run(args, probe.into()));
+    while let Some(update) = run.next().await {
+        match update? {
+            Update::Status(Status {
+                work,
+                fps,
+                progress,
+                sample,
+                samples,
+                full_pass,
+            }) => {
+                match full_pass {
+                    true => bar.set_prefix("Full pass"),
+                    false => bar.set_prefix(format!("Sample {sample}/{samples}")),
+                }
+                match work {
+                    Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
+                    Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
+                    Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
+                    Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                }
+                bar.set_position((progress * BAR_LEN_F).round() as _);
+            }
+            Update::SampleResult { sample, result } => result.print_attempt(&bar, sample, None),
+            Update::Done(output) => {
+                bar.finish();
+                if io::stderr().is_terminal() {
+                    eprintln!(
+                        "\n{} {}\n",
+                        style("Encode with:").dim(),
+                        style(enc_args.encode_hint(crf)).dim().italic(),
+                    );
+                }
+                stdout_fmt.print_result(
+                    output.vmaf,
+                    output.predicted_encode_size,
+                    output.encode_percent,
+                    output.predicted_encode_time,
+                    input_is_image,
+                );
+            }
+        }
+    }
     Ok(())
 }
 
-pub async fn run(
+pub fn run(
     Args {
         args,
         crf,
         sample: sample_args,
         cache,
-        stdout_format,
+        stdout_format: _,
         vmaf,
     }: Args,
     input_probe: Arc<Ffprobe>,
-    bar: ProgressBar,
-) -> anyhow::Result<Output> {
-    let input = Arc::new(args.input.clone());
-    let input_pixel_format = input_probe.pixel_format();
-    let input_is_image = input_probe.is_image;
-    let input_len = fs::metadata(&*input).await?.len();
-    let enc_args = args.to_encoder_args(crf, &input_probe)?;
-    let duration = input_probe.duration.clone()?;
-    let input_fps = input_probe.fps.clone()?;
-    let samples = sample_args.sample_count(duration).max(1);
-    let keep = sample_args.keep;
-    let temp_dir = sample_args.temp_dir;
+) -> impl Stream<Item = anyhow::Result<Update>> {
+    async_stream::try_stream! {
+        let input = Arc::new(args.input.clone());
+        let input_pixel_format = input_probe.pixel_format();
+        let input_is_image = input_probe.is_image;
+        let input_len = fs::metadata(&*input).await?.len();
+        let enc_args = args.to_encoder_args(crf, &input_probe)?;
+        let duration = input_probe.duration.clone()?;
+        let input_fps = input_probe.fps.clone()?;
+        let samples = sample_args.sample_count(duration).max(1);
+        let keep = sample_args.keep;
+        let temp_dir = sample_args.temp_dir;
 
-    let (samples, sample_duration, full_pass) = {
-        if input_is_image {
-            (1, duration.max(Duration::from_secs(1)), true)
-        } else if SAMPLE_SIZE * samples as _ >= duration.mul_f64(0.85) {
-            // if the sample time is most of the full input time just encode the whole thing
-            (1, duration, true)
-        } else {
-            (samples, SAMPLE_SIZE, false)
-        }
-    };
-    let sample_duration_us = sample_duration.as_micros_u64();
-    bar.set_length(sample_duration_us * samples * 2);
-
-    // Start creating copy samples async, this is IO bound & not cpu intensive
-    let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
-    let sample_temp = temp_dir.clone();
-    let sample_in = input.clone();
-    tokio::task::spawn_local(async move {
-        if full_pass {
-            // Use the entire video as a single sample
-            let _ = tx.send((0, Ok((sample_in.clone(), input_len))));
-        } else {
-            for sample_idx in 0..samples {
-                let sample = sample(
-                    sample_in.clone(),
-                    sample_idx,
-                    samples,
-                    duration,
-                    input_fps,
-                    sample_temp.clone(),
-                )
-                .await;
-                if tx.send((sample_idx, sample)).is_err() {
-                    break;
-                }
-            }
-        }
-    });
-
-    let mut results = Vec::new();
-    loop {
-        bar.set_message("sampling,");
-        let (sample_idx, sample) = match sample_tasks.recv().await {
-            Some(s) => s,
-            None => break,
-        };
-        let sample_n = sample_idx + 1;
-        match full_pass {
-            true => bar.set_prefix("Full pass"),
-            false => bar.set_prefix(format!("Sample {sample_n}/{samples}")),
-        };
-
-        let (sample, sample_size) = sample?;
-
-        // encode sample
-        let result = match cache::cached_encode(
-            cache,
-            &sample,
-            duration,
-            input.extension(),
-            input_len,
-            full_pass,
-            &enc_args,
-            &vmaf,
-        )
-        .await
-        {
-            (Some(result), _) => {
-                bar.set_position(sample_n * sample_duration_us * 2);
-                bar.println(
-                    style!(
-                        "- Sample {sample_n} ({:.0}%) vmaf {:.2} (cache)",
-                        100.0 * result.encoded_size as f32 / sample_size as f32,
-                        result.vmaf_score,
-                    )
-                    .dim()
-                    .to_string(),
-                );
-                result
-            }
-            (None, key) => {
-                bar.set_message("encoding,");
-                let b = Instant::now();
-                let (encoded_sample, mut output) = ffmpeg::encode_sample(
-                    FfmpegEncodeArgs {
-                        input: &sample,
-                        ..enc_args.clone()
-                    },
-                    temp_dir.clone(),
-                    sample_args.extension.as_deref().unwrap_or("mkv"),
-                )?;
-                while let Some(progress) = output.next().await {
-                    if let FfmpegOut::Progress { time, fps, .. } = progress? {
-                        bar.set_position(
-                            time.as_micros_u64() + sample_idx * sample_duration_us * 2,
-                        );
-                        if fps > 0.0 {
-                            bar.set_message(format!("enc {fps} fps,"));
-                        }
-                    }
-                }
-                let encode_time = b.elapsed();
-                let encoded_size = fs::metadata(&encoded_sample).await?.len();
-                let encoded_probe = ffprobe::probe(&encoded_sample);
-
-                // calculate vmaf
-                bar.set_message("vmaf running,");
-                let mut vmaf = vmaf::run(
-                    &sample,
-                    &encoded_sample,
-                    &vmaf.ffmpeg_lavfi(
-                        encoded_probe.resolution,
-                        enc_args
-                            .pix_fmt
-                            .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
-                        args.vfilter.as_deref(),
-                    ),
-                )?;
-                let mut vmaf_score = -1.0;
-                while let Some(vmaf) = vmaf.next().await {
-                    match vmaf {
-                        VmafOut::Done(score) => {
-                            vmaf_score = score;
-                            break;
-                        }
-                        VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
-                            bar.set_position(
-                                sample_duration_us
-                                    // *24/fps adjusts for vmaf `-r 24`
-                                    + (time.as_micros_u64() as f64 * (24.0 / input_fps)).round() as u64
-                                    + sample_idx * sample_duration_us * 2,
-                            );
-                            if fps > 0.0 {
-                                bar.set_message(format!("vmaf {fps} fps,"));
-                            }
-                        }
-                        VmafOut::Progress(_) => {}
-                        VmafOut::Err(e) => return Err(e),
-                    }
-                }
-
-                bar.println(
-                    style!(
-                        "- Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}",
-                        100.0 * encoded_size as f32 / sample_size as f32
-                    )
-                    .dim()
-                    .to_string(),
-                );
-
-                let result = EncodeResult {
-                    vmaf_score,
-                    sample_size,
-                    encoded_size,
-                    encode_time,
-                    sample_duration: encoded_probe
-                        .duration
-                        .ok()
-                        .filter(|d| !d.is_zero())
-                        .unwrap_or(sample_duration),
-                    from_cache: false,
+        let (samples, sample_duration, full_pass) = {
+            if input_is_image {
+                (1, duration.max(Duration::from_secs(1)), true)
+            } else if sample_args.sample_duration.is_zero()
+                || sample_args.sample_duration * samples as _ >= duration.mul_f64(0.85)
+            {
+                // if the sample time is most of the full input time just encode the whole thing
+                (1, duration, true)
+            } else {
+                let sample_duration = if input_fps > 0.0 {
+                    // if sample-length is lower than a single frame use the frame time
+                    let one_frame_duration = Duration::from_secs_f64(1.0 / input_fps);
+                    sample_args.sample_duration.max(one_frame_duration)
+                } else {
+                    sample_args.sample_duration
                 };
-
-                if let Some(k) = key {
-                    cache::cache_result(k, &result).await?;
-                }
-
-                // Early clean. Note: Avoid cleaning copy samples
-                temporary::clean(true).await;
-                if !keep {
-                    let _ = tokio::fs::remove_file(encoded_sample).await;
-                }
-
-                result
+                (samples, sample_duration, false)
             }
         };
+        let sample_duration_us = sample_duration.as_micros_u64();
 
-        results.push(result);
-    }
-    bar.finish();
+        // Start creating copy samples async, this is IO bound & not cpu intensive
+        let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
+        let sample_temp = temp_dir.clone();
+        let sample_in = input.clone();
+        tokio::task::spawn_local(async move {
+            if full_pass {
+                // Use the entire video as a single sample
+                let _ = tx.send((0, Ok((sample_in.clone(), input_len))));
+            } else {
+                for sample_idx in 0..samples {
+                    let sample = sample(
+                        sample_in.clone(),
+                        sample_idx,
+                        samples,
+                        sample_duration,
+                        duration,
+                        input_fps,
+                        sample_temp.clone(),
+                    )
+                    .await;
+                    if tx.send((sample_idx, sample)).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
 
-    let output = Output {
-        vmaf: results.mean_vmaf(),
-        // Using file size * encode_percent can over-estimate. However, if it ends up less
-        // than the duration estimation it may turn out to be more accurate.
-        predicted_encode_size: results
-            .estimate_encode_size_by_duration(duration, full_pass)
-            .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?),
-        encode_percent: results.encoded_percent_size(),
-        predicted_encode_time: results.estimate_encode_time(duration, full_pass),
-        from_cache: results.iter().all(|r| r.from_cache),
-    };
+        let mut results = Vec::new();
+        loop {
+            let (sample_idx, sample) = match sample_tasks.recv().await {
+                Some(s) => s,
+                None => break,
+            };
+            let sample_n = sample_idx + 1;
+            let (sample, sample_size) = sample?;
 
-    if !bar.is_hidden() {
-        // encode how-to hint + predictions
-        eprintln!(
-            "\n{} {}\n",
-            style("Encode with:").dim(),
-            style(args.encode_hint(crf)).dim().italic(),
-        );
-        // stdout result
-        stdout_format.print_result(
+            info!("encoding sample {sample_n}/{samples} crf {crf}");
+            yield Update::Status(Status {
+                work: Work::Encode,
+                fps: 0.0,
+                progress: sample_idx as f32 / samples as f32,
+                full_pass,
+                sample: sample_n,
+                samples,
+            });
+
+            // encode sample
+            let result = match cache::cached_encode(
+                cache,
+                &sample,
+                duration,
+                input.extension(),
+                input_len,
+                full_pass,
+                &enc_args,
+                &vmaf,
+            )
+            .await
+            {
+                (Some(result), _) => {
+                    if samples > 1 {
+                        info!(
+                            "sample {sample_n}/{samples} crf {crf} VMAF {:.2} ({:.0}%) (cache)",
+                            result.vmaf_score,
+                            100.0 * result.encoded_size as f32 / sample_size as f32,
+                        );
+                    }
+                    result
+                }
+                (None, key) => {
+                    let b = Instant::now();
+                    let mut logger = ProgressLogger::new(module_path!(), b);
+                    let (encoded_sample, mut output) = ffmpeg::encode_sample(
+                        FfmpegEncodeArgs {
+                            input: &sample,
+                            ..enc_args.clone()
+                        },
+                        temp_dir.clone(),
+                        sample_args.extension.as_deref().unwrap_or("mkv"),
+                    )?;
+                    while let Some(enc_progress) = output.next().await {
+                        if let FfmpegOut::Progress { time, fps, .. } = enc_progress? {
+                            yield Update::Status(Status {
+                                work: Work::Encode,
+                                fps,
+                                progress: (time.as_micros_u64() + sample_idx * sample_duration_us * 2) as f32
+                                    / (sample_duration_us * samples * 2) as f32,
+                                full_pass,
+                                sample: sample_n,
+                                samples,
+                            });
+                            logger.update(sample_duration, time, fps);
+                        }
+                    }
+                    let encode_time = b.elapsed();
+                    let encoded_size = fs::metadata(&encoded_sample).await?.len();
+                    let encoded_probe = ffprobe::probe(&encoded_sample);
+
+                    // calculate vmaf
+                    yield Update::Status(Status {
+                        work: Work::Vmaf,
+                        fps: 0.0,
+                        progress: (sample_idx as f32 + 0.5) / samples as f32,
+                        full_pass,
+                        sample: sample_n,
+                        samples,
+                    });
+                    let vmaf = vmaf::run(
+                        &sample,
+                        &encoded_sample,
+                        &vmaf.ffmpeg_lavfi(
+                            encoded_probe.resolution,
+                            enc_args
+                                .pix_fmt
+                                .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                            args.vfilter.as_deref(),
+                        ),
+                        vmaf.vmaf_fps,
+                    )?;
+                    let mut vmaf = pin!(vmaf);
+                    let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
+                    let mut vmaf_score = None;
+                    while let Some(vmaf) = vmaf.next().await {
+                        match vmaf {
+                            VmafOut::Done(score) => {
+                                vmaf_score = Some(score);
+                                break;
+                            }
+                            VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+                                yield Update::Status(Status {
+                                    work: Work::Vmaf,
+                                    fps,
+                                    progress: (sample_duration_us +
+                                        time.as_micros_u64() +
+                                        sample_idx * sample_duration_us * 2) as f32
+                                        / (sample_duration_us * samples * 2) as f32,
+                                    full_pass,
+                                    sample: sample_n,
+                                    samples,
+                                });
+                                logger.update(sample_duration, time, fps);
+                            }
+                            VmafOut::Progress(_) => {}
+                            VmafOut::Err(e) => Err(e)?,
+                        }
+                    }
+                    let vmaf_score = vmaf_score.context("no vmaf score")?;
+
+                    if samples > 1 {
+                        info!(
+                            "sample {sample_n}/{samples} crf {crf} VMAF {vmaf_score:.2} ({:.0}%)",
+                            100.0 * encoded_size as f32 / sample_size as f32,
+                        );
+                    }
+
+                    let result = EncodeResult {
+                        vmaf_score,
+                        sample_size,
+                        encoded_size,
+                        encode_time,
+                        sample_duration: encoded_probe
+                            .duration
+                            .ok()
+                            .filter(|d| !d.is_zero())
+                            .unwrap_or(sample_duration),
+                        from_cache: false,
+                    };
+
+                    if let Some(k) = key {
+                        cache::cache_result(k, &result).await?;
+                    }
+
+                    // Early clean. Note: Avoid cleaning copy samples
+                    temporary::clean(true).await;
+                    if !keep {
+                        let _ = tokio::fs::remove_file(encoded_sample).await;
+                    }
+
+                    result
+                }
+            };
+
+            results.push(result.clone());
+            yield Update::SampleResult { sample: sample_n, result };
+        }
+
+        let output = Output {
+            vmaf: results.mean_vmaf(),
+            // Using file size * encode_percent can over-estimate. However, if it ends up less
+            // than the duration estimation it may turn out to be more accurate.
+            predicted_encode_size: results
+                .estimate_encode_size_by_duration(duration, full_pass)
+                .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?),
+            encode_percent: results.encoded_percent_size(),
+            predicted_encode_time: results.estimate_encode_time(duration, full_pass),
+            from_cache: results.iter().all(|r| r.from_cache),
+        };
+        info!(
+            "crf {crf} VMAF {:.2} predicted video stream size {} ({:.0}%) taking {}{}",
             output.vmaf,
-            output.predicted_encode_size,
+            HumanBytes(output.predicted_encode_size),
             output.encode_percent,
-            output.predicted_encode_time,
-            input_is_image,
+            HumanDuration(output.predicted_encode_time),
+            if output.from_cache { " (cache)" } else { "" }
         );
-    }
 
-    Ok(output)
+        yield Update::Done(output);
+    }
 }
 
 /// Copy a sample from the input to the temp_dir (or input dir).
@@ -319,22 +392,25 @@ async fn sample(
     input: Arc<PathBuf>,
     sample_idx: u64,
     samples: u64,
+    sample_duration: Duration,
     duration: Duration,
     fps: f64,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(Arc<PathBuf>, u64)> {
     let sample_n = sample_idx + 1;
 
-    let sample_start =
-        Duration::from_secs((duration.as_secs() - SAMPLE_SIZE_S * samples) / (samples + 1))
-            * sample_n as _
-            + SAMPLE_SIZE * sample_idx as _;
-    let sample_frames = (SAMPLE_SIZE_S as f64 * fps).round() as u32;
+    let sample_start = (duration.saturating_sub(sample_duration * samples as _)
+        / (samples as u32 + 1))
+        * sample_n as _
+        + sample_duration * sample_idx as _;
 
-    let sample = sample::copy(&input, sample_start, sample_frames, temp_dir).await?;
+    let sample_frames = ((sample_duration.as_secs_f64() * fps).round() as u32).max(1);
+    let floor_to_sec = sample_duration >= Duration::from_secs(2);
+
+    let sample = sample::copy(&input, sample_start, floor_to_sec, sample_frames, temp_dir).await?;
     let sample_size = fs::metadata(&sample).await?.len();
     ensure!(
-        // ffmpeg copy may fail sucessfully and give us a small/empty output
+        // ffmpeg copy may fail successfully and give us a small/empty output
         sample_size > 1024,
         "ffmpeg copy failed: encoded sample too small"
     );
@@ -343,16 +419,38 @@ async fn sample(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EncodeResult {
-    sample_size: u64,
-    encoded_size: u64,
-    vmaf_score: f32,
-    encode_time: Duration,
+    pub sample_size: u64,
+    pub encoded_size: u64,
+    pub vmaf_score: f32,
+    pub encode_time: Duration,
     /// Duration of the sample.
     ///
     /// This should be close to `SAMPLE_SIZE` but may deviate due to how samples are cut.
-    sample_duration: Duration,
+    pub sample_duration: Duration,
     /// Result read from cache.
-    from_cache: bool,
+    pub from_cache: bool,
+}
+
+impl EncodeResult {
+    pub fn print_attempt(&self, bar: &ProgressBar, sample_n: u64, crf: Option<f32>) {
+        let Self {
+            sample_size,
+            encoded_size,
+            vmaf_score,
+            from_cache,
+            ..
+        } = self;
+        bar.println(
+            style!(
+                "- {}Sample {sample_n} ({:.0}%) vmaf {vmaf_score:.2}{}",
+                crf.map(|crf| format!("crf {crf}: ")).unwrap_or_default(),
+                100.0 * *encoded_size as f32 / *sample_size as f32,
+                if *from_cache { " (cache)" } else { "" },
+            )
+            .dim()
+            .to_string(),
+        );
+    }
 }
 
 trait EncodeResults {
@@ -511,4 +609,38 @@ pub struct Output {
     pub predicted_encode_time: Duration,
     /// All sample results were read from the cache.
     pub from_cache: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Work {
+    #[default]
+    Encode,
+    Vmaf,
+}
+
+#[derive(Debug)]
+pub struct Status {
+    /// Kind of work being performed
+    pub work: Work,
+    /// fps, `0.0` may be interpreted as "unknown"
+    pub fps: f32,
+    /// sample progress `[0, 1]`
+    pub progress: f32,
+    /// Sample number `1,....,n`
+    pub sample: u64,
+    /// Total samples
+    pub samples: u64,
+    /// Encoding the entire input video
+    pub full_pass: bool,
+}
+
+#[derive(Debug)]
+pub enum Update {
+    Status(Status),
+    SampleResult {
+        /// Sample number `1,....,n`
+        sample: u64,
+        result: EncodeResult,
+    },
+    Done(Output),
 }

@@ -6,16 +6,18 @@ use crate::{
     console_ext::style,
     ffmpeg,
     ffprobe::{self, Ffprobe},
+    log::ProgressLogger,
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use log::info;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::fs;
 use tokio_stream::StreamExt;
@@ -89,8 +91,13 @@ pub async fn run(
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
     }
 
-    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    info!(
+        "encoding {}",
+        output.file_name().and_then(|n| n.to_str()).unwrap_or("")
+    );
 
+    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
         match progress? {
@@ -98,8 +105,9 @@ pub async fn run(
                 if fps > 0.0 {
                     bar.set_message(format!("{fps} fps, "));
                 }
-                if probe.duration.is_ok() {
+                if let Ok(d) = &probe.duration {
                     bar.set_position(time.as_micros_u64());
+                    logger.update(*d, time, fps);
                 }
             }
             FfmpegOut::StreamSizes {
@@ -148,9 +156,9 @@ pub async fn run(
 /// * vid.mp4 -> "mp4"
 /// * vid.??? -> "mkv"
 /// * image.??? -> "avif"
-pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
+pub fn default_output_ext(input: &Path, encoder: &Encoder, is_image: bool) -> &'static str {
     if is_image {
-        return "avif";
+        return encoder.default_image_ext();
     }
     match input.extension().and_then(|e| e.to_str()) {
         Some("mp4") => "mp4",
@@ -161,6 +169,6 @@ pub fn default_output_ext(input: &Path, is_image: bool) -> &'static str {
 /// E.g. vid.mkv -> "vid.av1.mkv"
 pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> PathBuf {
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
-    let ext = default_output_ext(input, is_image);
+    let ext = default_output_ext(input, encoder, is_image);
     input.with_extension(format!("{pre}.{ext}"))
 }

@@ -6,12 +6,13 @@ use crate::{
     temporary::{self, TempKind},
 };
 use anyhow::Context;
+use log::debug;
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock},
 };
 use tokio::process::Command;
 use tokio_stream::Stream;
@@ -32,18 +33,17 @@ pub struct FfmpegEncodeArgs<'a> {
 
 impl FfmpegEncodeArgs<'_> {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
-        static SVT_AV1_V: OnceLock<Vec<u8>> = OnceLock::new();
+        static SVT_AV1_V: LazyLock<Vec<u8>> = LazyLock::new(|| {
+            std::process::Command::new("SvtAv1EncApp")
+                .arg("--version")
+                .output()
+                .map(|o| o.stdout)
+                .unwrap_or_default()
+        });
 
         // hashing svt-av1 version means new encoder releases will avoid old cache data
         if &*self.vcodec == "libsvtav1" {
-            let svtav1_verion = SVT_AV1_V.get_or_init(|| {
-                use std::process::Command;
-                match Command::new("SvtAv1EncApp").arg("--version").output() {
-                    Ok(out) => out.stdout,
-                    _ => <_>::default(),
-                }
-            });
-            svtav1_verion.hash(state);
+            SVT_AV1_V.hash(state);
         }
 
         // input not relevant to sample encoding
@@ -85,8 +85,8 @@ pub fn encode_sample(
 
     temporary::add(&dest, TempKind::Keepable);
 
-    let enc = Command::new("ffmpeg")
-        .kill_on_drop(true)
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
@@ -100,11 +100,13 @@ pub fn encode_sample(
         .arg(&dest)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg encode_sample")?;
+        .stderr(Stdio::piped());
+    let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
 
-    let stream = FfmpegOut::stream(enc, "ffmpeg encode_sample");
+    let enc = cmd.spawn().context("ffmpeg encode_sample")?;
+
+    let stream = FfmpegOut::stream(enc, "ffmpeg encode_sample", cmd_str);
     Ok((dest, stream))
 }
 
@@ -146,8 +148,8 @@ pub fn encode(
         false => "0",
     };
 
-    let enc = Command::new("ffmpeg")
-        .kill_on_drop(true)
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
@@ -168,11 +170,13 @@ pub fn encode(
         .arg(output)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ffmpeg encode")?;
+        .stderr(Stdio::piped());
+    let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
 
-    Ok(FfmpegOut::stream(enc, "ffmpeg encode"))
+    let enc = cmd.spawn().context("ffmpeg encode")?;
+
+    Ok(FfmpegOut::stream(enc, "ffmpeg encode", cmd_str))
 }
 
 pub fn pre_extension_name(vcodec: &str) -> &str {
@@ -200,15 +204,16 @@ impl VCodecSpecific for Arc<str> {
     }
 
     fn crf_arg(&self) -> &str {
-        // use crf-like args to support encoders that don't have crf
-        if &**self == "librav1e" || self.ends_with("_vaapi") {
-            "-qp"
-        } else if self.ends_with("_nvenc") {
-            "-cq"
-        } else if self.ends_with("_qsv") {
-            "-global_quality"
-        } else {
-            "-crf"
+        // // use crf-like args to support encoders that don't have crf
+        match &**self {
+            // https://ffmpeg.org//ffmpeg-codecs.html#librav1e
+            "librav1e" => "-qp",
+            // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
+            e if e.ends_with("_vaapi") => "-q",
+            e if e.ends_with("_nvenc") => "-cq",
+            // https://ffmpeg.org//ffmpeg-codecs.html#QSV-Encoders
+            e if e.ends_with("_qsv") => "-global_quality",
+            _ => "-crf",
         }
     }
 }

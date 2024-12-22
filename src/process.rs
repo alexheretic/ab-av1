@@ -2,6 +2,7 @@ use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
     ffi::OsStr,
+    fmt::Display,
     io,
     process::{ExitStatus, Output},
     sync::Arc,
@@ -42,10 +43,17 @@ pub fn exit_ok(name: &'static str, done: io::Result<ExitStatus>) -> anyhow::Resu
 pub fn exit_ok_stderr(
     name: &'static str,
     done: io::Result<ExitStatus>,
+    cmd_str: &str,
     stderr: &Chunks,
 ) -> anyhow::Result<()> {
-    exit_ok(name, done)
-        .map_err(|e| anyhow!("{e}\n---stderr---\n{}\n------------", stderr.out.trim()))
+    exit_ok(name, done).map_err(|e| cmd_err(e, cmd_str, stderr))
+}
+
+pub fn cmd_err(err: impl Display, cmd_str: &str, stderr: &Chunks) -> anyhow::Error {
+    anyhow!(
+        "{err}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
+        String::from_utf8_lossy(&stderr.out).trim()
+    )
 }
 
 #[derive(Debug, PartialEq)]
@@ -98,6 +106,7 @@ impl FfmpegOut {
     pub fn stream(
         child: Child,
         name: &'static str,
+        cmd_str: String,
     ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
         let mut chunks = Chunks::default();
         ProcessChunkStream::from(child).filter_map(move |item| match item {
@@ -106,7 +115,7 @@ impl FfmpegOut {
                 FfmpegOut::try_parse(chunks.last_line()).map(Ok)
             }
             Item::Stdout(_) => None,
-            Item::Done(code) => match exit_ok_stderr(name, code, &chunks) {
+            Item::Done(code) => match exit_ok_stderr(name, code, &cmd_str, &chunks) {
                 Ok(_) => None,
                 Err(err) => Some(Err(err)),
             },
@@ -136,45 +145,86 @@ fn parse_label_size(label: &str, line: &str) -> Option<u64> {
 
 /// Output chunk storage.
 ///
-/// Stores up to ~4k chunk data on the heap.
+/// Stores up to ~32k chunk data on the heap.
 #[derive(Default)]
 pub struct Chunks {
-    out: String,
+    out: Vec<u8>,
+    /// Truncate to this index before the next Self::push
+    trunc_next_push: Option<usize>,
 }
 
 impl Chunks {
     /// Append a chunk.
+    ///
+    /// If the chunk **ends** in a '\r' carriage returns this will trigger
+    /// appropriate overwriting on the next call to `push`.
+    ///
+    /// Removes oldest lines if storage exceeds maximum.
     pub fn push(&mut self, chunk: &[u8]) {
-        const MAX_LEN: usize = 4000;
+        const MAX_LEN: usize = 32_000;
 
-        self.out.push_str(&String::from_utf8_lossy(chunk));
+        if let Some(idx) = self.trunc_next_push.take() {
+            self.out.truncate(idx);
+        }
 
-        // truncate beginning if too long
-        let len = self.out.len();
-        if len > MAX_LEN + 100 {
-            self.out = String::from_utf8_lossy(&self.out.as_bytes()[len - MAX_LEN..]).into();
+        self.out.extend(chunk);
+
+        // if too long remove lines until small
+        while self.out.len() > MAX_LEN {
+            self.rm_oldest_line();
+        }
+
+        // Setup `trunc_next_push` driven by '\r'
+        // Typically progress updates, e.g. ffmpeg:
+        // ```text
+        // frame=  495 fps= 25 q=40.0 size=     768KiB time=00:00:16.47 bitrate= 381.8kbits/s speed=0.844x    \r
+        // ```
+        if chunk.ends_with(b"\r") {
+            self.trunc_next_push = Some(self.after_last_line_feed());
         }
     }
 
-    fn rlines(&self) -> impl Iterator<Item = &'_ str> {
+    /// Returns index after the latest '\n' or 0 if there are none.
+    fn after_last_line_feed(&self) -> usize {
         self.out
-            .rsplit_terminator('\n')
-            .flat_map(|l| l.rsplit_terminator('\r'))
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map(|n| n + 1)
+            .unwrap_or(0)
+    }
+
+    fn rm_oldest_line(&mut self) {
+        let mut next_eol = self
+            .out
+            .iter()
+            .position(|b| *b == b'\n')
+            .unwrap_or(self.out.len() - 1);
+        if self.out.get(next_eol + 1) == Some(&b'\r') {
+            next_eol += 1;
+        }
+
+        self.out.splice(..next_eol + 1, []);
+    }
+
+    pub fn rfind_line(&self, predicate: impl Fn(&str) -> bool) -> Option<&str> {
+        let lines = self
+            .out
+            .rsplit(|b| *b == b'\n')
+            .flat_map(|l| l.rsplit(|b| *b == b'\r'));
+        for line in lines {
+            if let Ok(line) = std::str::from_utf8(line) {
+                if predicate(line) {
+                    return Some(line);
+                }
+            }
+        }
+        None
     }
 
     /// Returns last non-empty line, if any.
     pub fn last_line(&self) -> &str {
-        self.rlines().find(|l| !l.is_empty()).unwrap_or_default()
+        self.rfind_line(|l| !l.is_empty()).unwrap_or_default()
     }
-}
-
-#[test]
-fn rlines_rn() {
-    let mut chunks = Chunks::default();
-    chunks.push(b"something \r fooo    \r\n");
-    let mut rlines = chunks.rlines();
-    assert_eq!(rlines.next(), Some(" fooo    "));
-    assert_eq!(rlines.next(), Some("something "));
 }
 
 #[test]
@@ -224,9 +274,6 @@ fn parse_ffmpeg_stream_sizes() {
 }
 
 pub trait CommandExt {
-    /// Adds an argument if `condition` otherwise noop.
-    fn arg_if(&mut self, condition: bool, a: impl ArgString) -> &mut Self;
-
     /// Adds two arguments.
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self;
 
@@ -235,15 +282,11 @@ pub trait CommandExt {
 
     /// Adds two arguments if `condition` otherwise noop.
     fn arg2_if(&mut self, condition: bool, a: impl ArgString, b: impl ArgString) -> &mut Self;
+
+    /// Convert to readable shell-like string.
+    fn to_cmd_str(&self) -> String;
 }
 impl CommandExt for tokio::process::Command {
-    fn arg_if(&mut self, c: bool, arg: impl ArgString) -> &mut Self {
-        match c {
-            true => self.arg(arg.arg_string()),
-            false => self,
-        }
-    }
-
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self {
         self.arg(a.arg_string()).arg(b.arg_string())
     }
@@ -260,6 +303,18 @@ impl CommandExt for tokio::process::Command {
             true => self.arg2(a, b),
             false => self,
         }
+    }
+
+    fn to_cmd_str(&self) -> String {
+        let cmd = self.as_std();
+        cmd.get_args().map(|a| a.to_string_lossy()).fold(
+            cmd.get_program().to_string_lossy().to_string(),
+            |mut all, next| {
+                all.push(' ');
+                all += &next;
+                all
+            },
+        )
     }
 }
 

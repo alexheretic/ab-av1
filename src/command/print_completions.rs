@@ -10,12 +10,11 @@ pub struct Args {
     shell: Shell,
 }
 
-pub fn print_completions(Args { shell }: Args) -> anyhow::Result<()> {
+pub fn print_completions(Args { shell }: Args) {
     clap_complete::generate(
         shell,
         &mut crate::Command::command(),
         "ab-av1",
         &mut std::io::stdout(),
     );
-    Ok(())
 }

@@ -4,13 +4,18 @@ use crate::{
         PROGRESS_CHARS,
     },
     ffprobe,
+    log::ProgressLogger,
     process::FfmpegOut,
-    vmaf,
-    vmaf::VmafOut,
+    vmaf::{self, VmafOut},
 };
+use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    pin::pin,
+    time::{Duration, Instant},
+};
 use tokio_stream::StreamExt;
 
 /// Full VMAF score calculation, distorted file vs reference file.
@@ -28,11 +33,6 @@ pub struct Args {
     #[arg(long)]
     pub reference: PathBuf,
 
-    /// Ffmpeg video filter applied to the reference before analysis.
-    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
-    #[arg(long)]
-    pub reference_vfilter: Option<String>,
-
     /// Re-encoded/distorted video file.
     #[arg(long)]
     pub distorted: PathBuf,
@@ -44,7 +44,6 @@ pub struct Args {
 pub async fn vmaf(
     Args {
         reference,
-        reference_vfilter,
         distorted,
         vmaf,
     }: Args,
@@ -62,32 +61,40 @@ pub async fn vmaf(
     let rprobe = ffprobe::probe(&reference);
     let rpix_fmt = rprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
+    let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
         bar.set_length(nframes);
     }
 
-    let mut vmaf = vmaf::run(
+    let mut vmaf = pin!(vmaf::run(
         &reference,
         &distorted,
         &vmaf.ffmpeg_lavfi(
             dprobe.resolution,
             dpix_fmt.max(rpix_fmt),
-            reference_vfilter.as_deref(),
+            vmaf.reference_vfilter.as_deref(),
         ),
-    )?;
-    let mut vmaf_score = -1.0;
+        vmaf.vmaf_fps,
+    )?);
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
+    let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {
             VmafOut::Done(score) => {
-                vmaf_score = score;
+                vmaf_score = Some(score);
                 break;
             }
-            VmafOut::Progress(FfmpegOut::Progress { frame, fps, .. }) => {
+            VmafOut::Progress(FfmpegOut::Progress {
+                frame, fps, time, ..
+            }) => {
                 if fps > 0.0 {
                     bar.set_message(format!("vmaf {fps} fps, "));
                 }
                 if nframes.is_ok() {
                     bar.set_position(frame);
+                }
+                if let Ok(total) = duration {
+                    logger.update(*total, time, fps);
                 }
             }
             VmafOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
@@ -96,6 +103,6 @@ pub async fn vmaf(
     }
     bar.finish();
 
-    println!("{vmaf_score}");
+    println!("{}", vmaf_score.context("no vmaf score")?);
     Ok(())
 }

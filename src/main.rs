@@ -3,19 +3,18 @@ mod console_ext;
 mod ffmpeg;
 mod ffprobe;
 mod float;
+mod log;
 mod process;
 mod sample;
 mod temporary;
 mod vmaf;
 
+use ::log::LevelFilter;
 use anyhow::anyhow;
 use clap::Parser;
-use futures::FutureExt;
-use std::time::Duration;
+use futures_util::FutureExt;
+use std::{env, io::IsTerminal};
 use tokio::signal;
-
-const SAMPLE_SIZE_S: u64 = 20;
-const SAMPLE_SIZE: Duration = Duration::from_secs(SAMPLE_SIZE_S);
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -29,7 +28,16 @@ enum Command {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    let stderr_term = std::io::stderr().is_terminal();
+    if !stderr_term && env::var_os("RUST_LOG").is_none() {
+        env::set_var("RUST_LOG", "ab_av1=info");
+    }
+    env_logger::builder()
+        .filter_level(LevelFilter::Off)
+        .parse_default_env()
+        .init();
+
     let action = Command::parse();
 
     let keep = action.keep_temp_files();
@@ -53,7 +61,10 @@ async fn main() -> anyhow::Result<()> {
     // Final cleanup. Samples are already deleted (if wished by the user) during `command::sample_encode::run`.
     temporary::clean(keep).await;
 
-    out
+    if let Err(err) = out {
+        eprintln!("Error: {err}");
+        std::process::exit(1);
+    }
 }
 
 impl Command {
