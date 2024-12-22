@@ -38,6 +38,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
+
+    #[clap(flatten)]
+    pub score: args::ScoreArgs,
 }
 
 pub async fn vmaf(
@@ -45,6 +48,7 @@ pub async fn vmaf(
         reference,
         distorted,
         vmaf,
+        score,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -71,7 +75,7 @@ pub async fn vmaf(
         &vmaf.ffmpeg_lavfi(
             dprobe.resolution,
             dpix_fmt.max(rpix_fmt),
-            vmaf.reference_vfilter.as_deref(),
+            score.reference_vfilter.as_deref(),
         ),
         vmaf.vmaf_fps,
     )?);

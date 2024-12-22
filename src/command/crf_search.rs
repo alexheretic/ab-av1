@@ -101,6 +101,9 @@ pub struct Args {
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
 
+    #[clap(flatten)]
+    pub score: args::ScoreArgs,
+
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
 }
@@ -210,6 +213,7 @@ pub fn run(
         sample,
         cache,
         vmaf,
+        score,
         verbose: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
@@ -248,6 +252,7 @@ pub fn run(
             cache,
             stdout_format: sample_encode::StdoutFormat::Json,
             vmaf: vmaf.clone(),
+            score: score.clone(),
             xpsnr: min_xpsnr.is_some(),
         };
 

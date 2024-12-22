@@ -8,8 +8,11 @@ use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
 /// Calculate XPSNR score using ffmpeg.
-// TODO support vfilter
-pub fn run(reference: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Item = XpsnrOut>> {
+pub fn run(
+    reference: &Path,
+    distorted: &Path,
+    filter_complex: &str,
+) -> anyhow::Result<impl Stream<Item = XpsnrOut>> {
     info!(
         "xpsnr {} vs reference {}",
         distorted.file_name().and_then(|n| n.to_str()).unwrap_or(""),
@@ -19,7 +22,7 @@ pub fn run(reference: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Ite
     let mut cmd = Command::new("ffmpeg");
     cmd.arg2("-i", distorted)
         .arg2("-i", reference)
-        .arg2("-filter_complex", r#"xpsnr="stats_file=-""#)
+        .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
         .arg("-")
         .stdin(Stdio::null());

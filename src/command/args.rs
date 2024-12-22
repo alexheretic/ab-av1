@@ -103,3 +103,14 @@ impl Sample {
         self.extension = output.extension().and_then(|e| e.to_str().map(Into::into));
     }
 }
+
+/// Args for when VMAF/XPSNR are used to score ref vs distorted.
+#[derive(Debug, Parser, Clone, Hash)]
+pub struct ScoreArgs {
+    /// Ffmpeg video filter applied to the VMAF/XPSNR reference before analysis.
+    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
+    ///
+    /// Overrides --vfilter which would otherwise be used.
+    #[arg(long)]
+    pub reference_vfilter: Option<Arc<str>>,
+}

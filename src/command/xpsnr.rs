@@ -1,5 +1,5 @@
 use crate::{
-    command::PROGRESS_CHARS,
+    command::{args, PROGRESS_CHARS},
     ffprobe,
     log::ProgressLogger,
     process::FfmpegOut,
@@ -9,6 +9,7 @@ use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
+    borrow::Cow,
     path::PathBuf,
     pin::pin,
     sync::LazyLock,
@@ -29,12 +30,16 @@ pub struct Args {
     /// Re-encoded/distorted video file.
     #[arg(long)]
     pub distorted: PathBuf,
+
+    #[clap(flatten)]
+    pub score: args::ScoreArgs,
 }
 
 pub async fn xpsnr(
     Args {
         reference,
         distorted,
+        score,
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -56,7 +61,11 @@ pub async fn xpsnr(
         bar.set_length(nframes);
     }
 
-    let mut xpsnr_out = pin!(xpsnr::run(&reference, &distorted)?);
+    let mut xpsnr_out = pin!(xpsnr::run(
+        &reference,
+        &distorted,
+        &lavfi(score.reference_vfilter.as_deref()),
+    )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut score = None;
     while let Some(next) = xpsnr_out.next().await {
@@ -86,4 +95,25 @@ pub async fn xpsnr(
 
     println!("{}", score.context("no xpsnr score")?);
     Ok(())
+}
+
+pub fn lavfi(ref_vfilter: Option<&str>) -> Cow<'static, str> {
+    match ref_vfilter {
+        None => "xpsnr=\"stats_file=-\"".into(),
+        Some(vf) => format!("[1:v]{vf}[ref];[0:v][ref]xpsnr=\"stats_file=-\"").into(),
+    }
+}
+
+#[test]
+fn test_lavfi_default() {
+    assert_eq!(lavfi(None), r#"xpsnr="stats_file=-""#);
+}
+
+#[test]
+fn test_lavfi_ref_vfilter() {
+    assert_eq!(
+        lavfi(Some("scale=1280:-1")),
+        "[1:v]scale=1280:-1[ref];\
+         [0:v][ref]xpsnr=\"stats_file=-\""
+    );
 }

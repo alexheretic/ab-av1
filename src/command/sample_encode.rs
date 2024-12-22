@@ -69,6 +69,9 @@ pub struct Args {
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
 
+    #[clap(flatten)]
+    pub score: args::ScoreArgs,
+
     #[arg(long)]
     pub xpsnr: bool,
 }
@@ -143,6 +146,7 @@ pub fn run(
         cache,
         stdout_format: _,
         vmaf,
+        score,
         xpsnr,
     }: Args,
     input_probe: Arc<Ffprobe>,
@@ -159,8 +163,8 @@ pub fn run(
         let keep = sample_args.keep;
         let temp_dir = sample_args.temp_dir;
         let scoring = match xpsnr {
-            true => ScoringInfo::Xpsnr,
-            _ => ScoringInfo::Vmaf(&vmaf)
+            true => ScoringInfo::Xpsnr(&score),
+            _ => ScoringInfo::Vmaf(&vmaf, &score),
         };
 
         let (samples, sample_duration, full_pass) = {
@@ -296,7 +300,7 @@ pub fn run(
                                     enc_args
                                         .pix_fmt
                                         .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
-                                    args.vfilter.as_deref(),
+                                    score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
                                 ),
                                 vmaf.vmaf_fps,
                             )?;
@@ -342,7 +346,7 @@ pub fn run(
                                 from_cache: false,
                             }
                         }
-                        ScoringInfo::Xpsnr => {
+                        ScoringInfo::Xpsnr(..) => {
                             yield Update::Status(Status {
                                 work: Work::Xpsnr,
                                 fps: 0.0,
@@ -351,7 +355,11 @@ pub fn run(
                                 sample: sample_n,
                                 samples,
                             });
-                            let xpsnr_out = xpsnr::run(&sample, &encoded_sample)?;
+
+                            let lavfi = super::xpsnr::lavfi(
+                                score.reference_vfilter.as_deref().or(args.vfilter.as_deref())
+                            );
+                            let xpsnr_out = xpsnr::run(&sample, &encoded_sample, &lavfi)?;
                             let mut xpsnr_out = pin!(xpsnr_out);
                             let mut logger = ProgressLogger::new("ab_av1::xpsnr", Instant::now());
                             let mut score = None;

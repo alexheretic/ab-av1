@@ -40,13 +40,6 @@ pub struct Vmaf {
     /// By default no override is set.
     #[arg(long)]
     pub vmaf_fps: Option<f32>,
-
-    /// Ffmpeg video filter applied to the VMAF reference before analysis.
-    /// E.g. --reference-vfilter "scale=1280:-1,fps=24".
-    ///
-    /// Overrides --vfilter which would otherwise be used.
-    #[arg(long)]
-    pub reference_vfilter: Option<String>,
 }
 
 impl std::hash::Hash for Vmaf {
@@ -54,7 +47,6 @@ impl std::hash::Hash for Vmaf {
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
         self.vmaf_fps.map(|f| f.to_ne_bytes()).hash(state);
-        self.reference_vfilter.hash(state);
     }
 }
 
@@ -64,8 +56,6 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 
 impl Vmaf {
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
-    ///
-    /// Note `ref_vfilter` is ignored if `Self::reference_vfilter` is some.
     pub fn ffmpeg_lavfi(
         &self,
         distorted_res: Option<(u32, u32)>,
@@ -95,7 +85,7 @@ impl Vmaf {
             }
         }
 
-        let ref_vf: Cow<_> = match self.reference_vfilter.as_deref().or(ref_vfilter) {
+        let ref_vf: Cow<_> = match ref_vfilter {
             None => "".into(),
             Some(vf) if vf.ends_with(',') => vf.into(),
             Some(vf) => format!("{vf},").into(),
@@ -227,26 +217,6 @@ fn vmaf_lavfi() {
         vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, Some("scale=1280:-1,fps=24")),
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
-    );
-}
-
-#[test]
-fn vmaf_lavfi_override_reference_vfilter() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-        vmaf_scale: VmafScale::Auto,
-        vmaf_fps: None,
-        reference_vfilter: Some("scale=2560:-1".into()),
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(
-            None,
-            PixelFormat::Yuv420p,
-            Some("scale_vaapi=w=2560:h=1280")
-        ),
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,scale=2560:-1,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
     );
 }
