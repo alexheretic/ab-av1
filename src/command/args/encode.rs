@@ -341,11 +341,19 @@ impl Encoder {
         }
     }
 
+    pub fn default_min_crf(&self) -> f32 {
+        match self.as_str() {
+            "mpeg2video" => 2.0,
+            _ => 10.0,
+        }
+    }
+
     pub fn default_max_crf(&self) -> f32 {
         match self.as_str() {
             "libx264" | "libx265" => 46.0,
             "librav1e" => 255.0,
             "av1_vaapi" => 255.0,
+            "mpeg2video" => 30.0,
             // Works well for svt-av1
             _ => 55.0,
         }

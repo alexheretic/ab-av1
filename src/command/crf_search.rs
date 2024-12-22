@@ -26,7 +26,6 @@ use std::{
 };
 
 const BAR_LEN: u64 = 1024 * 1024 * 1024;
-const DEFAULT_MIN_CRF: f32 = 10.0;
 
 /// Interpolated binary search using sample-encode to find the best crf
 /// value delivering min-vmaf & max-encoded-percent.
@@ -54,12 +53,14 @@ pub struct Args {
     pub max_encoded_percent: f32,
 
     /// Minimum (highest quality) crf value to try.
-    #[arg(long, default_value_t = DEFAULT_MIN_CRF)]
-    pub min_crf: f32,
+    ///
+    /// [default: 10, 2 for mpeg2video]
+    #[arg(long)]
+    pub min_crf: Option<f32>,
 
     /// Maximum (lowest quality) crf value to try.
     ///
-    /// [default: 55, 46 for x264,x265, 255 for rav1e,av1_vaapi]
+    /// [default: 55, 46 for x264,x265, 255 for rav1e,av1_vaapi, 30 for mpeg2video]
     #[arg(long)]
     pub max_crf: Option<f32>,
 
@@ -198,6 +199,8 @@ pub fn run(
     async_stream::try_stream! {
         let default_max_crf = args.encoder.default_max_crf();
         let max_crf = max_crf.unwrap_or(default_max_crf);
+        let default_min_crf = args.encoder.default_min_crf();
+        let min_crf = min_crf.unwrap_or(default_min_crf);
         Error::ensure_other(min_crf < max_crf, "Invalid --min-crf & --max-crf")?;
 
         // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
@@ -208,7 +211,7 @@ pub fn run(
         // the min/max crf on the 3rd iter.
         //
         // If a custom crf range is being used under half the default, this 2nd cut is not needed.
-        let cut_on_iter2 = (max_crf - min_crf) > (default_max_crf - DEFAULT_MIN_CRF) * 0.5;
+        let cut_on_iter2 = (max_crf - min_crf) > (default_max_crf - default_min_crf) * 0.5;
 
         let crf_increment = crf_increment
             .unwrap_or_else(|| args.encoder.default_crf_increment())
