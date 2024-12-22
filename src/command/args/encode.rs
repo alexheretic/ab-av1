@@ -393,7 +393,7 @@ impl std::str::FromStr for Encoder {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Preset {
-    Number(u8),
+    Number(i32),
     Name(Arc<str>),
 }
 
@@ -410,7 +410,7 @@ impl std::str::FromStr for Preset {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s.parse::<u8>() {
+        match s.parse::<i32>() {
             Ok(n) => Ok(Self::Number(n)),
             _ => Ok(Self::Name(s.into())),
         }
