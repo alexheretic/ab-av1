@@ -56,7 +56,7 @@ pub struct Encode {
     ///
     /// [svt-av1 default: 8]
     #[arg(long, allow_hyphen_values = true)]
-    pub preset: Option<Preset>,
+    pub preset: Option<Arc<str>>,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
     /// E.g. "300" or "10s". Defaults to 10s if the input duration is over 3m.
@@ -191,8 +191,7 @@ impl Encode {
         );
 
         let preset = match &self.preset {
-            Some(Preset::Number(n)) => Some(n.to_string().into()),
-            Some(Preset::Name(n)) => Some(n.clone()),
+            Some(n) => Some(n.clone()),
             None if svtav1 => Some("8".into()),
             None => None,
         };
@@ -391,32 +390,6 @@ impl std::str::FromStr for Encoder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Preset {
-    Number(i32),
-    Name(Arc<str>),
-}
-
-impl fmt::Display for Preset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Number(n) => n.fmt(f),
-            Self::Name(name) => name.fmt(f),
-        }
-    }
-}
-
-impl std::str::FromStr for Preset {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s.parse::<i32>() {
-            Ok(n) => Ok(Self::Number(n)),
-            _ => Ok(Self::Name(s.into())),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyInterval {
     Frames(i32),
@@ -610,7 +583,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         encoder: Encoder("libsvtav1".into()),
         input: "vid.mp4".into(),
         vfilter: None,
-        preset: Some(Preset::Number(7)),
+        preset: Some("7".into()),
         pix_format: Some(PixelFormat::Yuv420p),
         keyint: None,
         scd: None,
