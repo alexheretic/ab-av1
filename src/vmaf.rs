@@ -22,8 +22,7 @@ pub fn run(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.kill_on_drop(true)
-        .arg2_opt("-r", fps)
+    cmd.arg2_opt("-r", fps)
         .arg2("-i", distorted)
         .arg2_opt("-r", fps)
         .arg2("-i", reference)
