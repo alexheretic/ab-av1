@@ -8,6 +8,7 @@ use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
 /// Calculate XPSNR score using ffmpeg.
+// TODO support vfilter
 pub fn run(reference: &Path, distorted: &Path) -> anyhow::Result<impl Stream<Item = XpsnrOut>> {
     info!(
         "xpsnr {} vs reference {}",
@@ -65,9 +66,6 @@ pub enum XpsnrOut {
     Err(anyhow::Error),
 }
 
-// E.g. "[Parsed_xpsnr_0 @ 0x711494004cc0] XPSNR  y: 33.6547  u: 41.8741  v: 42.2571  (minimum: 33.6547)"
-const SCORE_PREFIX: &str = "XPSNR  y: ";
-
 impl XpsnrOut {
     fn try_from_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<Self> {
         chunks.push(chunk);
@@ -82,9 +80,16 @@ impl XpsnrOut {
     }
 }
 
+// E.g. "[Parsed_xpsnr_0 @ 0x711494004cc0] XPSNR  y: 33.6547  u: 41.8741  v: 42.2571  (minimum: 33.6547)"
 fn score_from_line(line: &str) -> Option<f32> {
-    let yidx = line.find(SCORE_PREFIX)?;
-    let tail = &line[yidx + SCORE_PREFIX.len()..];
+    const MIN_PREFIX: &str = "minimum: ";
+
+    if !line.contains("XPSNR  y: ") {
+        return None;
+    }
+
+    let yidx = line.find(MIN_PREFIX)?;
+    let tail = &line[yidx + MIN_PREFIX.len()..];
     let end_idx = tail
         .char_indices()
         .take_while(|(_, c)| *c == '.' || c.is_numeric())
@@ -209,6 +214,6 @@ XPSNR average, 1344 frames  y: 40.7139
             start_idx += CHUNK_SIZE;
         }
 
-        assert_eq!(xpsnr_score, Some(40.7139), "failed to parse xpsnr score");
+        assert_eq!(xpsnr_score, Some(39.1440), "failed to parse xpsnr score");
     }
 }
