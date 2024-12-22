@@ -55,7 +55,7 @@ pub struct Encode {
     /// libaom-av1 preset is mapped to equivalent -cpu-used argument.
     ///
     /// [svt-av1 default: 8]
-    #[arg(long)]
+    #[arg(long, allow_hyphen_values = true)]
     pub preset: Option<Preset>,
 
     /// Interval between keyframes. Can be specified as a number of frames, or a duration.
