@@ -72,7 +72,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let max_encoded_percent = search.max_encoded_percent;
     let enc_args = search.args.clone();
     let thorough = search.thorough;
-    let verbose = search.verbose.clone();
+    let verbose = search.verbose;
 
     let mut crf_search = pin!(crf_search::run(search, input_probe.clone()));
     let mut best = None;

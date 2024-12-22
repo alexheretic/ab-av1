@@ -112,7 +112,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let max_encoded_percent = args.max_encoded_percent;
     let thorough = args.thorough;
     let enc_args = args.args.clone();
-    let verbose = args.verbose.clone();
+    let verbose = args.verbose;
 
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
