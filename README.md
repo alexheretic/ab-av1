@@ -58,10 +58,17 @@ Works with videos and images.
 * Auto sets model version (4k or 1k) according to resolution.
 * Auto sets _n_threads_ to system threads.
 * Auto upscales lower resolution videos to the model.
-* Converts distorted & reference to appropriate format yuv streams before passing to vmaf.
 
 ```
 ab-av1 vmaf --reference <REFERENCE> --distorted <DISTORTED>
+```
+
+### Command: xpsnr
+Full XPSNR score calculation, distorted file vs reference file.
+Works with videos and images.
+
+```
+ab-av1 xpsnr --reference <REFERENCE> --distorted <DISTORTED>
 ```
 
 ## Install
