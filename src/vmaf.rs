@@ -26,6 +26,11 @@ pub fn run(
         .arg2_opt("-r", fps)
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)
+        // Workaround unused streams causing ffmpeg memory leaks
+        // See https://github.com/alexheretic/ab-av1/issues/189
+        .arg("-an")
+        .arg("-sn")
+        .arg("-dn")
         .arg2("-f", "null")
         .arg("-")
         .stdin(Stdio::null());
