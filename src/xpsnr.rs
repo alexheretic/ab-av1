@@ -20,8 +20,8 @@ pub fn run(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg2("-i", distorted)
-        .arg2("-i", reference)
+    cmd.arg2("-i", reference)
+        .arg2("-i", distorted)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
         .arg("-")
