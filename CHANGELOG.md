@@ -4,7 +4,7 @@
   - Add crf-search, auto-encode `--min-xpsnr` arg _(alternative to `--min-vmaf`)_.
   - Add `xpsnr` command for measuring XPSNR score.
 * Support negative `--preset` args.
-* Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos.
+* Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos. Default 25.
 * Omit data streams when outputting to matroska (.mkv or .webm).
 * mpeg2video: map `--crf` to ffmpeg `-q` and set default crf range to 2-30.
 
