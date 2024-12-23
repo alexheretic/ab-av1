@@ -7,19 +7,19 @@ Uses _ffmpeg_, _svt-av1_ & _vmaf_.
 Also supports other ffmpeg compatible encoders like libx265 & libx264.
 
 ### Command: auto-encode
-Automatically determine the best crf to deliver the min-vmaf and use it to encode a video or image.
+Automatically determine the best crf to deliver the `--min-vmaf` and use it to encode a video or image.
 
 Two phases:
 * [crf-search](#command-crf-search) to determine the best --crf value
 * ffmpeg to encode using the settings
 
 ```
-ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET>
+ab-av1 auto-encode [OPTIONS] -i <INPUT> --preset <PRESET> --min-vmaf <MIN_VMAF>
 ```
 
 ### Command: crf-search
 Interpolated binary search using [sample-encode](#command-sample-encode) to find the best 
-crf value delivering **min-vmaf** & **max-encoded-percent**.
+crf value delivering `--min-vmaf` & `--max-encoded-percent`.
 
 Outputs:
 * Best crf value
@@ -28,8 +28,11 @@ Outputs:
 * Predicted full encode time
 
 ```
-ab-av1 crf-search [OPTIONS] -i <INPUT> --preset <PRESET>
+ab-av1 crf-search [OPTIONS] -i <INPUT> --preset <PRESET> --min-vmaf <MIN_VMAF>
 ```
+
+#### Notable options
+* `--min-xpsnr <MIN_XPSNR>` may be used as an alternative to VMAF.
 
 ### Command: sample-encode
 Encode short video samples of an input using provided **crf** & **preset**. 
@@ -43,6 +46,9 @@ Outputs:
 ```
 ab-av1 sample-encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
+
+#### Notable options
+* `--xpsnr` specifies calculation of XPSNR score instead of VMAF.
 
 ### Command: encode
 Invoke ffmpeg to encode a video or image.

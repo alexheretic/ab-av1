@@ -72,6 +72,7 @@ pub struct Args {
     #[clap(flatten)]
     pub score: args::ScoreArgs,
 
+    /// Calculate a XPSNR score instead of VMAF.
     #[arg(long)]
     pub xpsnr: bool,
 }
