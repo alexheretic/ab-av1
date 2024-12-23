@@ -111,13 +111,11 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
                     true => bar.set_prefix("Full pass"),
                     false => bar.set_prefix(format!("Sample {sample}/{samples}")),
                 }
+                let label = work.fps_label();
                 match work {
                     Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
-                    Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
-                    Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
-                    Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
-                    Work::Xpsnr if fps <= 0.0 => bar.set_message("xpsnr,      "),
-                    Work::Xpsnr => bar.set_message(format!("xpsnr {fps} fps, ")),
+                    _ if fps <= 0.0 => bar.set_message(format!("{label},       ")),
+                    _ => bar.set_message(format!("{label} {fps} fps, ")),
                 }
                 bar.set_position((progress * BAR_LEN_F).round() as _);
             }
@@ -285,7 +283,7 @@ pub fn run(
                     let result = match scoring {
                         ScoringInfo::Vmaf(..) => {
                             yield Update::Status(Status {
-                                work: Work::Vmaf,
+                                work: Work::Score(ScoreKind::Vmaf),
                                 fps: 0.0,
                                 progress: (sample_idx as f32 + 0.5) / samples as f32,
                                 full_pass,
@@ -315,7 +313,7 @@ pub fn run(
                                     }
                                     VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                                         yield Update::Status(Status {
-                                            work: Work::Vmaf,
+                                            work: Work::Score(ScoreKind::Vmaf),
                                             fps,
                                             progress: (sample_duration_us +
                                                 time.as_micros_u64() +
@@ -348,7 +346,7 @@ pub fn run(
                         }
                         ScoringInfo::Xpsnr(..) => {
                             yield Update::Status(Status {
-                                work: Work::Xpsnr,
+                                work: Work::Score(ScoreKind::Xpsnr),
                                 fps: 0.0,
                                 progress: (sample_idx as f32 + 0.5) / samples as f32,
                                 full_pass,
@@ -371,7 +369,7 @@ pub fn run(
                                     }
                                     XpsnrOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                                         yield Update::Status(Status {
-                                            work: Work::Xpsnr,
+                                            work: Work::Score(ScoreKind::Xpsnr),
                                             fps,
                                             progress: (sample_duration_us +
                                                 time.as_micros_u64() +
@@ -542,12 +540,27 @@ pub enum ScoreKind {
     Xpsnr,
 }
 
+impl ScoreKind {
+    /// Display label for fps in progress bar.
+    pub fn fps_label(&self) -> &'static str {
+        match self {
+            Self::Vmaf => "vmaf",
+            Self::Xpsnr => "xpsnr",
+        }
+    }
+
+    /// General display name.
+    pub fn display_str(&self) -> &'static str {
+        match self {
+            Self::Vmaf => "VMAF",
+            Self::Xpsnr => "XPSNR",
+        }
+    }
+}
+
 impl Display for ScoreKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Vmaf => f.write_str("VMAF"),
-            Self::Xpsnr => f.write_str("XPSNR"),
-        }
+        f.write_str(self.display_str())
     }
 }
 
@@ -737,8 +750,17 @@ pub struct Output {
 pub enum Work {
     #[default]
     Encode,
-    Vmaf,
-    Xpsnr,
+    Score(ScoreKind),
+}
+
+impl Work {
+    /// Display label for fps in progress bar.
+    pub fn fps_label(&self) -> &'static str {
+        match self {
+            Self::Encode => "enc",
+            Self::Score(kind) => kind.fps_label(),
+        }
+    }
 }
 
 #[derive(Debug)]

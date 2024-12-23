@@ -160,13 +160,11 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                     true => bar.set_prefix(format!("crf {crf} full pass")),
                     false => bar.set_prefix(format!("crf {crf} {sample}/{samples}")),
                 }
+                let label = work.fps_label();
                 match work {
                     Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
-                    Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
-                    Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
-                    Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
-                    Work::Xpsnr if fps <= 0.0 => bar.set_message("xpsnr,      "),
-                    Work::Xpsnr => bar.set_message(format!("xpsnr {fps} fps, ")),
+                    _ if fps <= 0.0 => bar.set_message(format!("{label},       ")),
+                    _ => bar.set_message(format!("{label} {fps} fps, ")),
                 }
             }
             Update::SampleResult {
