@@ -6,6 +6,7 @@
 * Support negative `--preset` args.
 * Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos. Default 25.
 * Omit data streams when outputting to matroska (.mkv or .webm).
+* Omit audio, subtitle & data streams in VMAF calls to work around possible ffmpeg memory leaks.
 * mpeg2video: map `--crf` to ffmpeg `-q` and set default crf range to 2-30.
 
 # v0.8.0
