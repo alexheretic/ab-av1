@@ -26,6 +26,7 @@ use std::{
 };
 
 const BAR_LEN: u64 = 1024 * 1024 * 1024;
+const DEFAULT_MIN_VMAF: f32 = 95.0;
 
 /// Interpolated binary search using sample-encode to find the best crf
 /// value delivering min-vmaf & max-encoded-percent.
@@ -45,8 +46,16 @@ pub struct Args {
     pub args: args::Encode,
 
     /// Desired min VMAF score to deliver.
-    #[arg(long, default_value_t = 95.0)]
-    pub min_vmaf: f32,
+    ///
+    /// [default: 95]
+    #[arg(long, group = "min_score")]
+    pub min_vmaf: Option<f32>,
+
+    /// Desired min XPSNR score to deliver.
+    ///
+    /// Enables use of XPSNR for score analysis instead of VMAF.
+    #[arg(long, group = "min_score")]
+    pub min_xpsnr: Option<f32>,
 
     /// Maximum desired encoded size percentage of the input size.
     #[arg(long, default_value_t = 80.0)]
@@ -92,8 +101,17 @@ pub struct Args {
     #[clap(flatten)]
     pub vmaf: args::Vmaf,
 
+    #[clap(flatten)]
+    pub score: args::ScoreArgs,
+
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
+}
+
+impl Args {
+    pub fn min_score(&self) -> f32 {
+        self.min_vmaf.or(self.min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF)
+    }
 }
 
 pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
@@ -109,7 +127,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     args.sample
         .set_extension_from_input(&args.args.input, &args.args.encoder, &probe);
 
-    let min_vmaf = args.min_vmaf;
+    let min_score = args.min_score();
     let max_encoded_percent = args.max_encoded_percent;
     let thorough = args.thorough;
     let enc_args = args.args.clone();
@@ -119,7 +137,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
             if let Error::NoGoodCrf { last } = e {
-                last.print_attempt(&bar, min_vmaf, max_encoded_percent);
+                last.print_attempt(&bar, min_score, max_encoded_percent);
             }
         })?;
         match update {
@@ -142,11 +160,11 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                     true => bar.set_prefix(format!("crf {crf} full pass")),
                     false => bar.set_prefix(format!("crf {crf} {sample}/{samples}")),
                 }
+                let label = work.fps_label();
                 match work {
                     Work::Encode if fps <= 0.0 => bar.set_message("encoding,  "),
-                    Work::Encode => bar.set_message(format!("enc {fps} fps, ")),
-                    Work::Vmaf if fps <= 0.0 => bar.set_message("vmaf,       "),
-                    Work::Vmaf => bar.set_message(format!("vmaf {fps} fps, ")),
+                    _ if fps <= 0.0 => bar.set_message(format!("{label},       ")),
+                    _ => bar.set_message(format!("{label} {fps} fps, ")),
                 }
             }
             Update::SampleResult {
@@ -161,7 +179,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
-            Update::RunResult(result) => result.print_attempt(&bar, min_vmaf, max_encoded_percent),
+            Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
             Update::Done(best) => {
                 info!("crf {} successful", best.crf());
                 bar.finish_with_message("");
@@ -184,6 +202,7 @@ pub fn run(
     Args {
         args,
         min_vmaf,
+        min_xpsnr,
         max_encoded_percent,
         min_crf,
         max_crf,
@@ -192,6 +211,7 @@ pub fn run(
         sample,
         cache,
         vmaf,
+        score,
         verbose: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
@@ -202,6 +222,8 @@ pub fn run(
         let default_min_crf = args.encoder.default_min_crf();
         let min_crf = min_crf.unwrap_or(default_min_crf);
         Error::ensure_other(min_crf < max_crf, "Invalid --min-crf & --max-crf")?;
+        // by default use vmaf 95, otherwise use whatever is specified
+        let min_score = min_vmaf.or(min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF);
 
         // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
         // improve interpolation by narrowing the crf range a 20% (or 30%) subrange.
@@ -228,6 +250,8 @@ pub fn run(
             cache,
             stdout_format: sample_encode::StdoutFormat::Json,
             vmaf: vmaf.clone(),
+            score: score.clone(),
+            xpsnr: min_xpsnr.is_some(),
         };
 
         let mut crf_attempts = Vec::new();
@@ -265,9 +289,9 @@ pub fn run(
             crf_attempts.push(sample.clone());
             let sample_small_enough = sample.enc.encode_percent <= max_encoded_percent as _;
 
-            if sample.enc.vmaf > min_vmaf {
+            if sample.enc.score > min_score {
                 // good
-                if sample_small_enough && sample.enc.vmaf < min_vmaf + higher_tolerance {
+                if sample_small_enough && sample.enc.score < min_score + higher_tolerance {
                     yield Update::Done(sample);
                     return;
                 }
@@ -283,7 +307,7 @@ pub fn run(
                         return;
                     }
                     Some(upper) => {
-                        q = vmaf_lerp_q(min_vmaf, upper, &sample);
+                        q = vmaf_lerp_q(min_score, upper, &sample);
                     }
                     None if sample.q == max_q => {
                         Error::ensure_or_no_good_crf(sample_small_enough, &sample)?;
@@ -314,7 +338,7 @@ pub fn run(
                         return;
                     }
                     Some(lower) => {
-                        q = vmaf_lerp_q(min_vmaf, &sample, lower);
+                        q = vmaf_lerp_q(min_score, &sample, lower);
                     }
                     None if cut_on_iter2 && run == 1 && sample.q > min_q + 1 => {
                         q = (sample.q as f32 * 0.4 + min_q as f32 * 0.6).round() as _;
@@ -340,11 +364,11 @@ impl Sample {
         self.q.to_crf(self.crf_increment)
     }
 
-    pub fn print_attempt(&self, bar: &ProgressBar, min_vmaf: f32, max_encoded_percent: f32) {
+    pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
         let crf_label = style("- crf").dim();
         let mut crf = style(TerseF32(self.crf()));
-        let vmaf_label = style("VMAF").dim();
-        let mut vmaf = style(self.enc.vmaf);
+        let vmaf_label = style(self.enc.score_kind).dim();
+        let mut vmaf = style(self.enc.score);
         let mut percent = style!("{:.0}%", self.enc.encode_percent);
         let open = style("(").dim();
         let close = style(")").dim();
@@ -353,7 +377,7 @@ impl Sample {
             false => style(""),
         };
 
-        if self.enc.vmaf < min_vmaf {
+        if self.enc.score < min_score {
             crf = crf.red().bright();
             vmaf = vmaf.red().bright();
         }
@@ -383,7 +407,8 @@ impl StdoutFormat {
             Self::Human => {
                 let crf = style(TerseF32(sample.crf())).bold().green();
                 let enc = &sample.enc;
-                let vmaf = style(enc.vmaf).bold().green();
+                let score = style(enc.score).bold().green();
+                let score_kind = enc.score_kind;
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
                 let percent = style!("{}%", enc.encode_percent.round()).bold().green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
@@ -392,7 +417,7 @@ impl StdoutFormat {
                     false => "video stream",
                 };
                 println!(
-                    "crf {crf} VMAF {vmaf:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
+                    "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
         }
@@ -412,14 +437,14 @@ impl StdoutFormat {
 /// This would be helpful particularly for small crf-increments.
 fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
     assert!(
-        worse_q.enc.vmaf <= min_vmaf
-            && worse_q.enc.vmaf < better_q.enc.vmaf
+        worse_q.enc.score <= min_vmaf
+            && worse_q.enc.score < better_q.enc.score
             && worse_q.q > better_q.q,
         "invalid vmaf_lerp_crf usage: ({min_vmaf}, {worse_q:?}, {better_q:?})"
     );
 
-    let vmaf_diff = better_q.enc.vmaf - worse_q.enc.vmaf;
-    let vmaf_factor = (min_vmaf - worse_q.enc.vmaf) / vmaf_diff;
+    let vmaf_diff = better_q.enc.score - worse_q.enc.score;
+    let vmaf_factor = (min_vmaf - worse_q.enc.score) / vmaf_diff;
 
     let q_diff = worse_q.q - better_q.q;
     let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as u64;
