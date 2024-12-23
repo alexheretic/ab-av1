@@ -283,6 +283,9 @@ pub trait CommandExt {
     /// Adds two arguments if `condition` otherwise noop.
     fn arg2_if(&mut self, condition: bool, a: impl ArgString, b: impl ArgString) -> &mut Self;
 
+    /// Adds an argument if `condition` otherwise noop.
+    fn arg_if(&mut self, condition: bool, a: impl ArgString) -> &mut Self;
+
     /// Convert to readable shell-like string.
     fn to_cmd_str(&self) -> String;
 }
@@ -301,6 +304,13 @@ impl CommandExt for tokio::process::Command {
     fn arg2_if(&mut self, c: bool, a: impl ArgString, b: impl ArgString) -> &mut Self {
         match c {
             true => self.arg2(a, b),
+            false => self,
+        }
+    }
+
+    fn arg_if(&mut self, condition: bool, a: impl ArgString) -> &mut Self {
+        match condition {
+            true => self.arg(a.arg_string()),
             false => self,
         }
     }
