@@ -3,8 +3,10 @@ use anyhow::Context;
 use clap::Parser;
 use std::{borrow::Cow, fmt::Display, sync::Arc, thread};
 
+const DEFAULT_VMAF_FPS: f32 = 25.0;
+
 /// Common vmaf options.
-#[derive(Debug, Default, Parser, Clone)]
+#[derive(Debug, Parser, Clone)]
 pub struct Vmaf {
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
@@ -35,18 +37,26 @@ pub struct Vmaf {
     /// Frame rate override used to analyse both reference & distorted videos.
     /// Maps to ffmpeg `-r` input arg.
     ///
-    /// Setting to a value, e.g. 25, can workaround issues with some videos.
-    ///
-    /// By default no override is set.
-    #[arg(long)]
-    pub vmaf_fps: Option<f32>,
+    /// Setting to 0 disables use.
+    #[arg(long, default_value_t = DEFAULT_VMAF_FPS)]
+    pub vmaf_fps: f32,
+}
+
+impl Default for Vmaf {
+    fn default() -> Self {
+        Self {
+            vmaf_args: <_>::default(),
+            vmaf_scale: <_>::default(),
+            vmaf_fps: DEFAULT_VMAF_FPS,
+        }
+    }
 }
 
 impl std::hash::Hash for Vmaf {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
-        self.vmaf_fps.map(|f| f.to_ne_bytes()).hash(state);
+        self.vmaf_fps.to_ne_bytes().hash(state);
     }
 }
 
@@ -55,6 +65,10 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
+    pub fn fps(&self) -> Option<f32> {
+        Some(self.vmaf_fps).filter(|r| *r > 0.0)
+    }
+
     /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
     pub fn ffmpeg_lavfi(
         &self,
@@ -224,25 +238,6 @@ fn vmaf_lavfi() {
 #[test]
 fn vmaf_lavfi_default() {
     let vmaf = Vmaf::default();
-    let expected = format!(
-        "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
-        thread::available_parallelism().map_or(1, |p| p.get())
-    );
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p10le, None),
-        expected
-    );
-}
-
-/// `vmaf_fps` shouldn't affect lavfi
-#[test]
-fn vmaf_fps_lavfi() {
-    let vmaf = Vmaf {
-        vmaf_fps: Some(25.0),
-        ..<_>::default()
-    };
     let expected = format!(
         "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\

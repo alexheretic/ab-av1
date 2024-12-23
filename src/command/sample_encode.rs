@@ -301,7 +301,7 @@ pub fn run(
                                         .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
                                     score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
                                 ),
-                                vmaf.vmaf_fps,
+                                vmaf.fps(),
                             )?;
                             let mut vmaf = pin!(vmaf);
                             let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
