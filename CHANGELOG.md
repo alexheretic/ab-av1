@@ -1,6 +1,7 @@
 # Unreleased (0.8.1)
 * Support negative `--preset` args.
 * Add `--vmaf-fps`: Frame rate override used to analyse both reference & distorted videos.
+* Omit data streams when outputting to matroska (.mkv or .webm).
 * mpeg2video: map `--crf` to ffmpeg `-q` and set default crf range to 2-30.
 
 # v0.8.0
