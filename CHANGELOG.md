@@ -1,4 +1,4 @@
-# Unreleased (0.9.0)
+# 0.9.0
 * Add XPSNR support as a VMAF alternative.
   - Add sample-encode `--xpsnr` arg which toggles use of XPSNR instead of VMAF.
   - Add crf-search, auto-encode `--min-xpsnr` arg _(alternative to `--min-vmaf`)_.
