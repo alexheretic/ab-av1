@@ -12,6 +12,7 @@ pub fn run(
     reference: &Path,
     distorted: &Path,
     filter_complex: &str,
+    fps: Option<f32>,
 ) -> anyhow::Result<impl Stream<Item = XpsnrOut>> {
     info!(
         "xpsnr {} vs reference {}",
@@ -20,7 +21,9 @@ pub fn run(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg2("-i", reference)
+    cmd.arg2_opt("-r", fps)
+        .arg2("-i", reference)
+        .arg2_opt("-r", fps)
         .arg2("-i", distorted)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")

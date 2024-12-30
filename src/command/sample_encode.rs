@@ -72,6 +72,9 @@ pub struct Args {
     #[clap(flatten)]
     pub score: args::ScoreArgs,
 
+    #[clap(flatten)]
+    pub xpsnr_opts: args::Xpsnr,
+
     /// Calculate a XPSNR score instead of VMAF.
     #[arg(long)]
     pub xpsnr: bool,
@@ -147,6 +150,7 @@ pub fn run(
         vmaf,
         score,
         xpsnr,
+        xpsnr_opts,
     }: Args,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = anyhow::Result<Update>> {
@@ -162,7 +166,7 @@ pub fn run(
         let keep = sample_args.keep;
         let temp_dir = sample_args.temp_dir;
         let scoring = match xpsnr {
-            true => ScoringInfo::Xpsnr(&score),
+            true => ScoringInfo::Xpsnr(&xpsnr_opts, &score),
             _ => ScoringInfo::Vmaf(&vmaf, &score),
         };
 
@@ -358,7 +362,7 @@ pub fn run(
                             let lavfi = super::xpsnr::lavfi(
                                 score.reference_vfilter.as_deref().or(args.vfilter.as_deref())
                             );
-                            let xpsnr_out = xpsnr::run(&sample, &encoded_sample, &lavfi)?;
+                            let xpsnr_out = xpsnr::run(&sample, &encoded_sample, &lavfi, xpsnr_opts.fps())?;
                             let mut xpsnr_out = pin!(xpsnr_out);
                             let mut logger = ProgressLogger::new("ab_av1::xpsnr", Instant::now());
                             let mut score = None;
