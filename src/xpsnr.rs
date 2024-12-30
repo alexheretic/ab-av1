@@ -93,6 +93,10 @@ fn score_from_line(line: &str) -> Option<f32> {
 
     let yidx = line.find(MIN_PREFIX)?;
     let tail = &line[yidx + MIN_PREFIX.len()..];
+    if tail.starts_with("inf") {
+        return Some(f32::INFINITY);
+    }
+
     let end_idx = tail
         .char_indices()
         .take_while(|(_, c)| *c == '.' || c.is_numeric())
