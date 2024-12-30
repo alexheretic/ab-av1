@@ -122,7 +122,7 @@ pub struct Xpsnr {
     /// Maps to ffmpeg `-r` input arg.
     ///
     /// Setting to 0 disables use.
-    #[arg(long, default_value_t = 25.0)]
+    #[arg(long, default_value_t = 60.0)]
     pub xpsnr_fps: f32,
 }
 
