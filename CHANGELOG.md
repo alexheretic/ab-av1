@@ -1,5 +1,6 @@
 # Unreleased (v0.9.1)
 * Fix xpsnr inf score parsing.
+* Add `--xpsnr-fps`: Frame rate override used to analyse both reference & distorted videos. Default 60.
 
 # v0.9.0
 * Add XPSNR support as a VMAF alternative.

@@ -104,6 +104,9 @@ pub struct Args {
     #[clap(flatten)]
     pub score: args::ScoreArgs,
 
+    #[clap(flatten)]
+    pub xpsnr: args::Xpsnr,
+
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
 }
@@ -212,6 +215,7 @@ pub fn run(
         cache,
         vmaf,
         score,
+        xpsnr,
         verbose: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
@@ -252,6 +256,7 @@ pub fn run(
             vmaf: vmaf.clone(),
             score: score.clone(),
             xpsnr: min_xpsnr.is_some(),
+            xpsnr_opts: xpsnr,
         };
 
         let mut crf_attempts = Vec::new();

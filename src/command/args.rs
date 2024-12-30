@@ -114,3 +114,26 @@ pub struct ScoreArgs {
     #[arg(long)]
     pub reference_vfilter: Option<Arc<str>>,
 }
+
+/// Common xpsnr options.
+#[derive(Debug, Parser, Clone, Copy)]
+pub struct Xpsnr {
+    /// Frame rate override used to analyse both reference & distorted videos.
+    /// Maps to ffmpeg `-r` input arg.
+    ///
+    /// Setting to 0 disables use.
+    #[arg(long, default_value_t = 60.0)]
+    pub xpsnr_fps: f32,
+}
+
+impl Xpsnr {
+    pub fn fps(&self) -> Option<f32> {
+        Some(self.xpsnr_fps).filter(|r| *r > 0.0)
+    }
+}
+
+impl std::hash::Hash for Xpsnr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.xpsnr_fps.to_ne_bytes().hash(state);
+    }
+}
