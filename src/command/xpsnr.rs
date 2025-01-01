@@ -105,7 +105,7 @@ pub async fn xpsnr(
 pub fn lavfi(ref_vfilter: Option<&str>) -> Cow<'static, str> {
     match ref_vfilter {
         None => "xpsnr=stats_file=-".into(),
-        Some(vf) => format!("[1:v]{vf}[ref];[0:v][ref]xpsnr=stats_file=-").into(),
+        Some(vf) => format!("[0:v]{vf}[ref];[ref][1:v]xpsnr=stats_file=-").into(),
     }
 }
 
@@ -118,7 +118,7 @@ fn test_lavfi_default() {
 fn test_lavfi_ref_vfilter() {
     assert_eq!(
         lavfi(Some("scale=1280:-1")),
-        "[1:v]scale=1280:-1[ref];\
-         [0:v][ref]xpsnr=stats_file=-"
+        "[0:v]scale=1280:-1[ref];\
+         [ref][1:v]xpsnr=stats_file=-"
     );
 }
