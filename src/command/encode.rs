@@ -85,7 +85,7 @@ pub async fn run(
     }
 
     // only downmix if achannels > 3
-    let stereo_downmix = downmix_to_stereo && probe.max_audio_channels.map_or(false, |c| c > 3);
+    let stereo_downmix = downmix_to_stereo && probe.max_audio_channels.is_some_and(|c| c > 3);
     let audio_codec = audio_codec.as_deref();
     if stereo_downmix && audio_codec == Some("copy") {
         anyhow::bail!("--stereo-downmix cannot be used with --acodec copy");
