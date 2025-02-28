@@ -2,7 +2,7 @@
 name = "ab-av1"
 version = "0.9.1"
 authors = ["Alex Butler <alexheretic@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "AV1 encoding with fast VMAF sampling"
 repository = "https://github.com/alexheretic/ab-av1"
 keywords = ["av1", "vmaf"]

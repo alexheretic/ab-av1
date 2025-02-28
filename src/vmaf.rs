@@ -1,5 +1,5 @@
 //! vmaf logic
-use crate::process::{cmd_err, exit_ok_stderr, Chunks, CommandExt, FfmpegOut};
+use crate::process::{Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr};
 use anyhow::Context;
 use log::{debug, info};
 use std::{path::Path, process::Stdio};
@@ -13,7 +13,7 @@ pub fn run(
     distorted: &Path,
     filter_complex: &str,
     fps: Option<f32>,
-) -> anyhow::Result<impl Stream<Item = VmafOut>> {
+) -> anyhow::Result<impl Stream<Item = VmafOut> + use<>> {
     info!(
         "vmaf {} vs reference {}",
         distorted.file_name().and_then(|n| n.to_str()).unwrap_or(""),

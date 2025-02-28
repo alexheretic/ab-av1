@@ -1,5 +1,5 @@
 use indicatif::HumanDuration;
-use log::{info, log_enabled, Level};
+use log::{Level, info, log_enabled};
 use std::time::{Duration, Instant};
 
 /// Struct that info logs progress messages on a stream action like encoding.

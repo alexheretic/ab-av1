@@ -1,7 +1,7 @@
 use crate::{
     command::{
+        PROGRESS_CHARS, SmallDuration,
         args::{self, Encoder},
-        SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg,

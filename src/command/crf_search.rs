@@ -4,9 +4,8 @@ pub use err::Error;
 
 use crate::{
     command::{
-        args,
+        PROGRESS_CHARS, args,
         sample_encode::{self, Work},
-        PROGRESS_CHARS,
     },
     console_ext::style,
     ffprobe::{self, Ffprobe},
@@ -18,12 +17,7 @@ use console::style;
 use futures_util::{Stream, StreamExt};
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
 use log::info;
-use std::{
-    io::{self, IsTerminal},
-    pin::pin,
-    sync::Arc,
-    time::Duration,
-};
+use std::{io::IsTerminal, pin::pin, sync::Arc, time::Duration};
 
 const BAR_LEN: u64 = 1024 * 1024 * 1024;
 const DEFAULT_MIN_VMAF: f32 = 95.0;
@@ -370,6 +364,18 @@ impl Sample {
     }
 
     pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
+        if bar.is_hidden() {
+            info!(
+                "crf {} {} {:.2} ({:.0}%){}",
+                TerseF32(self.crf()),
+                self.enc.score_kind,
+                self.enc.score,
+                self.enc.encode_percent,
+                if self.enc.from_cache { " (cache)" } else { "" }
+            );
+            return;
+        }
+
         let crf_label = style("- crf").dim();
         let mut crf = style(TerseF32(self.crf()));
         let vmaf_label = style(self.enc.score_kind).dim();
@@ -391,13 +397,9 @@ impl Sample {
             percent = percent.red().bright();
         }
 
-        let msg =
-            format!("{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}");
-        if io::stderr().is_terminal() {
-            bar.println(msg);
-        } else {
-            eprintln!("{msg}");
-        }
+        bar.println(format!(
+            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
+        ));
     }
 }
 
