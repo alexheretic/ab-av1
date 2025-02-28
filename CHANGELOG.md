@@ -1,3 +1,6 @@
+# Unreleased (0.9.2)
+* Log crf results, instead of printing, if stderr is not a terminal.
+
 # v0.9.1
 * Fix xpsnr inf score parsing.
 * Fix xpsnr reference vfilter usage.

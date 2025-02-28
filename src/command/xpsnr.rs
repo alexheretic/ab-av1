@@ -1,5 +1,5 @@
 use crate::{
-    command::{args, PROGRESS_CHARS},
+    command::{PROGRESS_CHARS, args},
     ffprobe,
     log::ProgressLogger,
     process::FfmpegOut,

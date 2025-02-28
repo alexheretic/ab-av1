@@ -2,9 +2,9 @@ mod cache;
 
 use crate::{
     command::{
+        PROGRESS_CHARS, SmallDuration,
         args::{self, PixelFormat},
         sample_encode::cache::ScoringInfo,
-        SmallDuration, PROGRESS_CHARS,
     },
     console_ext::style,
     ffmpeg::{self, FfmpegEncodeArgs},
@@ -15,7 +15,7 @@ use crate::{
     vmaf::{self, VmafOut},
     xpsnr::{self, XpsnrOut},
 };
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use clap::{ArgAction, Parser};
 use console::style;
 use futures_util::Stream;

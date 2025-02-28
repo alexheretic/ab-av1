@@ -1,6 +1,6 @@
 //! ffmpeg logic
 use crate::{
-    process::{ensure_success, CommandExt},
+    process::{CommandExt, ensure_success},
     temporary::{self, TempKind},
 };
 use anyhow::Context;

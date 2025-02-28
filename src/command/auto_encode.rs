@@ -1,9 +1,8 @@
 use crate::{
     command::{
-        args, crf_search,
+        PROGRESS_CHARS, args, crf_search,
         encode::{self, default_output_name},
         sample_encode::{self, Work},
-        PROGRESS_CHARS,
     },
     console_ext::style,
     ffprobe,
@@ -39,8 +38,7 @@ pub struct Args {
 }
 
 pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
-    const SPINNER_RUNNING: &str =
-        "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})";
+    const SPINNER_RUNNING: &str = "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})";
     const SPINNER_FINISHED: &str =
         "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg})";
 

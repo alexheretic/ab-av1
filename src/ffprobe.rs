@@ -1,6 +1,6 @@
 //! ffprobe logic
 use crate::command::args::PixelFormat;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use std::{fmt, fs::File, io::Read, path::Path, time::Duration};
 
 pub struct Ffprobe {
@@ -53,7 +53,7 @@ pub fn probe(input: &Path) -> Ffprobe {
                 resolution: None,
                 is_image: false,
                 pix_fmt: None,
-            }
+            };
         }
     };
 

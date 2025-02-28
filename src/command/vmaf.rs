@@ -1,7 +1,7 @@
 use crate::{
     command::{
-        args::{self, PixelFormat},
         PROGRESS_CHARS,
+        args::{self, PixelFormat},
     },
     ffprobe,
     log::ProgressLogger,

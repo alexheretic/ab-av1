@@ -14,7 +14,7 @@ use ::log::LevelFilter;
 use anyhow::anyhow;
 use clap::Parser;
 use futures_util::FutureExt;
-use std::{env, io::IsTerminal};
+use std::io::IsTerminal;
 use tokio::signal;
 
 #[derive(Parser)]
@@ -31,21 +31,21 @@ enum Command {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let stderr_term = std::io::stderr().is_terminal();
-    if !stderr_term && env::var_os("RUST_LOG").is_none() {
-        env::set_var("RUST_LOG", "ab_av1=info");
-    }
     env_logger::builder()
-        .filter_level(LevelFilter::Off)
+        .filter_module(
+            "ab_av1",
+            match std::io::stderr().is_terminal() {
+                true => LevelFilter::Off,
+                false => LevelFilter::Info,
+            },
+        )
         .parse_default_env()
         .init();
 
     let action = Command::parse();
-
     let keep = action.keep_temp_files();
 
     let local = tokio::task::LocalSet::new();
-
     let command = local.run_until(match action {
         Command::SampleEncode(args) => command::sample_encode(args).boxed_local(),
         Command::Vmaf(args) => command::vmaf(args).boxed_local(),
