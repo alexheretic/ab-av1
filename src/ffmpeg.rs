@@ -2,7 +2,7 @@
 use crate::{
     command::args::PixelFormat,
     float::TerseF32,
-    process::{CommandExt, FfmpegOut},
+    process::{CommandExt, FfmpegOut, FfmpegOutStream},
     temporary::{self, TempKind},
 };
 use anyhow::Context;
@@ -15,7 +15,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 use tokio::process::Command;
-use tokio_stream::Stream;
 
 /// Exposed ffmpeg encoding args.
 #[derive(Debug, Clone)]
@@ -72,7 +71,7 @@ pub fn encode_sample(
     }: FfmpegEncodeArgs,
     temp_dir: Option<PathBuf>,
     dest_ext: &str,
-) -> anyhow::Result<(PathBuf, impl Stream<Item = anyhow::Result<FfmpegOut>>)> {
+) -> anyhow::Result<(PathBuf, FfmpegOutStream)> {
     let pre = pre_extension_name(&vcodec);
     let crf_str = format!("{}", TerseF32(crf)).replace('.', "_");
     let dest_file_name = match &preset {
@@ -127,7 +126,7 @@ pub fn encode(
     has_audio: bool,
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<FfmpegOut>>> {
+) -> anyhow::Result<FfmpegOutStream> {
     let oargs: HashSet<_> = output_args.iter().map(|a| a.as_str()).collect();
     let output_ext = output.extension().and_then(|e| e.to_str());
 

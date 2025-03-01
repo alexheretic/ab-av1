@@ -1,5 +1,6 @@
 # Unreleased (0.9.2)
 * Log crf results, instead of printing, if stderr is not a terminal.
+* Wait for all child processes (ffmpeg etc) to finish before temp file cleanup and exit.
 
 # v0.9.1
 * Fix xpsnr inf score parsing.

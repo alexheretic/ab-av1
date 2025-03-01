@@ -118,6 +118,7 @@ pub async fn run(
             } => stream_sizes = Some((video, audio, subtitle, other)),
         }
     }
+    crate::process::child::add(enc.into());
     bar.finish();
 
     // successful encode, so don't delete it!

@@ -21,7 +21,8 @@ pub fn run(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg2_opt("-r", fps)
+    cmd.kill_on_drop(true)
+        .arg2_opt("-r", fps)
         .arg2("-i", distorted)
         .arg2_opt("-r", fps)
         .arg2("-i", reference)
@@ -37,7 +38,9 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let mut vmaf = ProcessChunkStream::try_from(cmd).context("ffmpeg vmaf")?;
+    let mut vmaf = crate::process::child::AddOnDropChunkStream::from(
+        ProcessChunkStream::try_from(cmd).context("ffmpeg vmaf")?,
+    );
 
     Ok(async_stream::stream! {
         let mut chunks = Chunks::default();
