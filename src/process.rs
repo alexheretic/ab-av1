@@ -1,17 +1,21 @@
+pub mod child;
+
 use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
     ffi::OsStr,
     fmt::Display,
     io,
+    pin::Pin,
     process::{ExitStatus, Output},
     sync::Arc,
+    task::{Context, Poll, ready},
     time::Duration,
 };
 use time::macros::format_description;
 use tokio::process::Child;
 use tokio_process_stream::{Item, ProcessChunkStream};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 
 pub fn ensure_success(name: &'static str, out: &Output) -> anyhow::Result<()> {
     ensure!(
@@ -103,23 +107,13 @@ impl FfmpegOut {
         None
     }
 
-    pub fn stream(
-        child: Child,
-        name: &'static str,
-        cmd_str: String,
-    ) -> impl Stream<Item = anyhow::Result<FfmpegOut>> {
-        let mut chunks = Chunks::default();
-        ProcessChunkStream::from(child).filter_map(move |item| match item {
-            Item::Stderr(chunk) => {
-                chunks.push(&chunk);
-                FfmpegOut::try_parse(chunks.last_line()).map(Ok)
-            }
-            Item::Stdout(_) => None,
-            Item::Done(code) => match exit_ok_stderr(name, code, &cmd_str, &chunks) {
-                Ok(_) => None,
-                Err(err) => Some(Err(err)),
-            },
-        })
+    pub fn stream(child: Child, name: &'static str, cmd_str: String) -> FfmpegOutStream {
+        FfmpegOutStream {
+            chunk_stream: ProcessChunkStream::from(child),
+            chunks: <_>::default(),
+            name,
+            cmd_str,
+        }
     }
 }
 
@@ -228,6 +222,55 @@ impl Chunks {
     /// Returns last non-empty line, if any.
     pub fn last_line(&self) -> &str {
         self.rfind_line(|l| !l.is_empty()).unwrap_or_default()
+    }
+}
+
+pin_project_lite::pin_project! {
+    #[must_use = "streams do nothing unless polled"]
+    pub struct FfmpegOutStream {
+        #[pin]
+        chunk_stream: ProcessChunkStream,
+        name: &'static str,
+        cmd_str: String,
+        chunks: Chunks,
+    }
+}
+
+impl From<FfmpegOutStream> for ProcessChunkStream {
+    fn from(stream: FfmpegOutStream) -> Self {
+        stream.chunk_stream
+    }
+}
+
+impl Stream for FfmpegOutStream {
+    type Item = anyhow::Result<FfmpegOut>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        loop {
+            match ready!(self.as_mut().project().chunk_stream.poll_next(cx)) {
+                Some(item) => match item {
+                    Item::Stderr(chunk) => {
+                        self.chunks.push(&chunk);
+                        if let Some(out) = FfmpegOut::try_parse(self.chunks.last_line()) {
+                            return Poll::Ready(Some(Ok(out)));
+                        }
+                    }
+                    Item::Stdout(_) => {}
+                    Item::Done(code) => {
+                        if let Err(err) =
+                            exit_ok_stderr(self.name, code, &self.cmd_str, &self.chunks)
+                        {
+                            return Poll::Ready(Some(Err(err)));
+                        }
+                    }
+                },
+                None => return Poll::Ready(None),
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.chunk_stream.size_hint().1)
     }
 }
 

@@ -60,6 +60,9 @@ async fn main() {
         r = command => r,
         _ = signal::ctrl_c() => Err(anyhow!("ctrl_c")),
     };
+    drop(local);
+
+    crate::process::child::wait().await;
 
     // Final cleanup. Samples are already deleted (if wished by the user) during `command::sample_encode::run`.
     temporary::clean(keep).await;

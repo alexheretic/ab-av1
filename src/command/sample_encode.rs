@@ -281,6 +281,7 @@ pub fn run(
                             logger.update(sample_duration, time, fps);
                         }
                     }
+                    crate::process::child::add(output.into());
                     let encode_time = b.elapsed();
                     let encoded_size = fs::metadata(&encoded_sample).await?.len();
                     let encoded_probe = ffprobe::probe(&encoded_sample);
