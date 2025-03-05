@@ -236,9 +236,12 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl From<FfmpegOutStream> for ProcessChunkStream {
-    fn from(stream: FfmpegOutStream) -> Self {
-        stream.chunk_stream
+impl FfmpegOutStream {
+    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
+        match self.chunk_stream.child_mut() {
+            Some(c) => c.wait().await,
+            None => Ok(<_>::default()),
+        }
     }
 }
 
