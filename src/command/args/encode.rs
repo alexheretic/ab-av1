@@ -446,6 +446,7 @@ impl std::str::FromStr for KeyInterval {
 pub enum PixelFormat {
     Yuv420p,
     Yuv420p10le,
+    Yuv422p10le,
     Yuv444p10le,
 }
 
@@ -453,13 +454,15 @@ pub enum PixelFormat {
 fn pixel_format_order() {
     use PixelFormat::*;
     assert!(Yuv420p < Yuv420p10le);
-    assert!(Yuv420p10le < Yuv444p10le);
+    assert!(Yuv420p10le < Yuv422p10le);
+    assert!(Yuv422p10le < Yuv444p10le);
 }
 
 impl PixelFormat {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Yuv420p10le => "yuv420p10le",
+            Self::Yuv422p10le => "yuv422p10le",
             Self::Yuv444p10le => "yuv444p10le",
             Self::Yuv420p => "yuv420p",
         }
@@ -468,7 +471,7 @@ impl PixelFormat {
 
 impl fmt::Display for PixelFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.as_str().fmt(f)
+        f.write_str(self.as_str())
     }
 }
 
@@ -478,6 +481,7 @@ impl TryFrom<&str> for PixelFormat {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "yuv420p10le" => Ok(Self::Yuv420p10le),
+            "yuv422p10le" => Ok(Self::Yuv422p10le),
             "yuv444p10le" => Ok(Self::Yuv444p10le),
             "yuv420p" => Ok(Self::Yuv420p),
             _ => Err(()),
