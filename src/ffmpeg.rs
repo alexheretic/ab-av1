@@ -9,6 +9,7 @@ use anyhow::Context;
 use log::debug;
 use std::{
     collections::HashSet,
+    fmt::Write,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
@@ -146,6 +147,13 @@ pub fn encode(
         true => "0:v:0",
         false => "0",
     };
+    let mut metadata = format!(
+        "AB_AV1_FFMPEG_ARGS=-c:v {vcodec} {} {crf}",
+        vcodec.crf_arg()
+    );
+    if let Some(preset) = &preset {
+        write!(&mut metadata, " {} {preset}", vcodec.preset_arg()).unwrap();
+    }
 
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
@@ -155,6 +163,7 @@ pub fn encode(
         .arg2("-map", map)
         .arg2("-c:v", "copy")
         .arg2("-c:v:0", &*vcodec)
+        .arg2("-metadata:s:v:0", metadata)
         .arg2("-c:a", audio_codec)
         .arg2("-c:s", "copy")
         .args(output_args.iter().map(|a| &**a))
