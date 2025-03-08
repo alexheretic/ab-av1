@@ -1,5 +1,6 @@
 # Unreleased (0.9.3)
 * Support setting per-stream audio codec, e.g. `--enc c:a:1=libopus`.
+* Support `--pix-format yuv422p10le`.
 
 # v0.9.2
 * Log crf results, instead of printing, if stderr is not a terminal.
