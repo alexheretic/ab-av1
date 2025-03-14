@@ -1,4 +1,4 @@
-# Unreleased (0.9.3)
+# v0.9.3
 * Support setting per-stream audio codec, e.g. `--enc c:a:1=libopus`.
 * Support `--pix-format yuv422p10le`.
 * Write video stream metadata "AB_AV1_FFMPEG_ARGS" to encoded output, include a subset of relevant 
