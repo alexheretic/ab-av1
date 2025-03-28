@@ -216,7 +216,8 @@ impl VCodecSpecific for Arc<str> {
         // use crf-like args to support encoders that don't have crf
         match &**self {
             // https://ffmpeg.org//ffmpeg-codecs.html#librav1e
-            "librav1e" => "-qp",
+            // https://github.com/fraunhoferhhi/vvenc/wiki/FFmpeg-Integration#fix-qp-mode-constant-quality-mode
+            "librav1e" | "libvvenc" => "-qp",
             "mpeg2video" => "-q",
             // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
             e if e.ends_with("_vaapi") => "-q",
