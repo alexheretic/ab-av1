@@ -1,3 +1,6 @@
+# Unreleased
+* Encoder libvvenc: Map `--crf` to ffmpeg `-qp`.
+
 # v0.9.3
 * Support setting per-stream audio codec, e.g. `--enc c:a:1=libopus`.
 * Support `--pix-format yuv422p10le`.
