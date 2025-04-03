@@ -1,4 +1,4 @@
-# Unreleased
+# v0.9.4
 * Encoder *_vaapi: Default args `--enc-input hwaccel=vaapi --enc-input hwaccel_output_format=vaapi`.
 * Encoder *_vulkan: Map `--crf` to ffmpeg `-qp`.
 * Encoder *_vulkan: Default args `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
