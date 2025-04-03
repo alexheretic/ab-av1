@@ -92,11 +92,10 @@ pub struct Encode {
     ///
     /// See --enc docs.
     ///
-    /// For *_vaapi (e.g. h264_vaapi) encoders if none are provided defaults to:
+    /// *_vaapi (e.g. h264_vaapi) encoder default:
     /// `--enc-input hwaccel=vaapi --enc-input hwaccel_output_format=vaapi`.
     ///
-    /// For *_vulkan encoders if none are provided defaults to:
-    /// `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
+    /// *_vulkan encoder default: `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
     #[arg(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_input_args: Vec<String>,
 }
