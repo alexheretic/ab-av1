@@ -91,6 +91,11 @@ pub struct Encode {
     /// These are added as ffmpeg input file options.
     ///
     /// See --enc docs.
+    ///
+    /// *_vaapi (e.g. h264_vaapi) encoder default:
+    /// `--enc-input hwaccel=vaapi --enc-input hwaccel_output_format=vaapi`.
+    ///
+    /// *_vulkan encoder default: `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
     #[arg(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_input_args: Vec<String>,
 }
@@ -251,7 +256,7 @@ impl Encode {
             _ => PixelFormat::Yuv420p,
         });
 
-        let input_args: Vec<Arc<String>> = self
+        let mut input_args: Vec<Arc<String>> = self
             .enc_input_args
             .iter()
             .flat_map(|arg| {
@@ -262,6 +267,13 @@ impl Encode {
                 }
             })
             .collect();
+
+        for (name, val) in self.encoder.default_ffmpeg_input_args() {
+            if !input_args.iter().any(|arg| &**arg == name) {
+                input_args.push(name.to_string().into());
+                input_args.push(val.to_string().into());
+            }
+        }
 
         // ban usage of the bits we already set via other args & logic
         let reserved = HashMap::from([
@@ -352,9 +364,8 @@ impl Encoder {
 
     pub fn default_max_crf(&self) -> f32 {
         match self.as_str() {
+            "librav1e" | "av1_vaapi" => 255.0,
             "libx264" | "libx265" => 46.0,
-            "librav1e" => 255.0,
-            "av1_vaapi" => 255.0,
             "mpeg2video" => 30.0,
             // Works well for svt-av1
             _ => 55.0,
@@ -384,6 +395,19 @@ impl Encoder {
                 ("-look_ahead_depth", "40"),
             ],
             _ => &[],
+        }
+    }
+
+    /// Additional encoder specific ffmpeg input arg defaults.
+    fn default_ffmpeg_input_args(&self) -> &[(&'static str, &'static str)] {
+        match self.as_str() {
+            e if e.ends_with("_vaapi") => {
+                &[("-hwaccel", "vaapi"), ("-hwaccel_output_format", "vaapi")]
+            }
+            e if e.ends_with("_vulkan") => {
+                &[("-hwaccel", "vulkan"), ("-hwaccel_output_format", "vulkan")]
+            }
+            _ => <_>::default(),
         }
     }
 }

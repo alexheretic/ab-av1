@@ -221,6 +221,7 @@ impl VCodecSpecific for Arc<str> {
             "mpeg2video" => "-q",
             // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
             e if e.ends_with("_vaapi") => "-q",
+            e if e.ends_with("_vulkan") => "-qp",
             e if e.ends_with("_nvenc") => "-cq",
             // https://ffmpeg.org//ffmpeg-codecs.html#QSV-Encoders
             e if e.ends_with("_qsv") => "-global_quality",
