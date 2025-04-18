@@ -13,7 +13,8 @@
 * Support setting per-stream audio codec, e.g. `--enc c:a:1=libopus`.
 * Support `--pix-format yuv422p10le`.
 * Write video stream metadata "AB_AV1_FFMPEG_ARGS" to encoded output, include a subset of relevant 
-  ffmpeg args used. E.g. `AB_AV1_FFMPEG_ARGS: -c:v libsvtav1 -crf 25 -preset 8`.
+  ffmpeg args used. E.g. `AB_AV1_FFMPEG_ARGS: -c:v libsvtav1 -crf 25 -preset 8`. 
+  (Not supported by mp4 files).
 
 # v0.9.2
 * Log crf results, instead of printing, if stderr is not a terminal.
