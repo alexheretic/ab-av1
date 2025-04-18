@@ -44,7 +44,7 @@ pub struct Encode {
     #[arg(long)]
     pub vfilter: Option<String>,
 
-    /// Pixel format. svt-av1 default yuv420p10le.
+    /// Pixel format. libsvtav1, libaom-av1 & librav1e default to yuv420p10le.
     #[arg(value_enum, long)]
     pub pix_format: Option<PixelFormat>,
 
@@ -251,9 +251,9 @@ impl Encode {
             }
         }
 
-        let pix_fmt = self.pix_format.unwrap_or(match vcodec {
-            vc if vc.contains("av1") => PixelFormat::Yuv420p10le,
-            _ => PixelFormat::Yuv420p,
+        let pix_fmt = self.pix_format.or_else(|| match &**vcodec {
+            "libsvtav1" | "libaom-av1" | "librav1e" => Some(PixelFormat::Yuv420p10le),
+            _ => None,
         });
 
         let mut input_args: Vec<Arc<String>> = self
@@ -474,6 +474,16 @@ pub enum PixelFormat {
     Yuv444p10le,
 }
 
+impl PixelFormat {
+    /// Returns the max quality pixel format, or None if both are None.
+    pub fn opt_max(a: Option<Self>, b: Option<Self>) -> Option<Self> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        }
+    }
+}
+
 #[test]
 fn pixel_format_order() {
     use PixelFormat::*;
@@ -594,7 +604,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
     assert_eq!(vfilter, Some("scale=320:-1,fps=film"));
     assert_eq!(crf, 32.0);
     assert_eq!(preset, Some("8".into()));
-    assert_eq!(pix_fmt, PixelFormat::Yuv420p10le);
+    assert_eq!(pix_fmt, Some(PixelFormat::Yuv420p10le));
     assert!(!video_only);
 
     assert!(
@@ -657,7 +667,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
     assert_eq!(vfilter, None);
     assert_eq!(crf, 32.0);
     assert_eq!(preset, Some("7".into()));
-    assert_eq!(pix_fmt, PixelFormat::Yuv420p);
+    assert_eq!(pix_fmt, Some(PixelFormat::Yuv420p));
     assert!(!video_only);
 
     assert!(

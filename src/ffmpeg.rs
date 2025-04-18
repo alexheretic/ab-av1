@@ -23,7 +23,7 @@ pub struct FfmpegEncodeArgs<'a> {
     pub input: &'a Path,
     pub vcodec: Arc<str>,
     pub vfilter: Option<&'a str>,
-    pub pix_fmt: PixelFormat,
+    pub pix_fmt: Option<PixelFormat>,
     pub crf: f32,
     pub preset: Option<Arc<str>>,
     pub output_args: Vec<Arc<String>>,
@@ -93,7 +93,7 @@ pub fn encode_sample(
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
         .arg2(vcodec.crf_arg(), crf)
-        .arg2("-pix_fmt", pix_fmt.as_str())
+        .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
         .arg("-an")
@@ -168,7 +168,7 @@ pub fn encode(
         .arg2("-c:s", "copy")
         .args(output_args.iter().map(|a| &**a))
         .arg2(vcodec.crf_arg(), crf)
-        .arg2("-pix_fmt", pix_fmt.as_str())
+        .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
         .arg_if(matroska, "-dn") // "Only audio, video, and subtitles are supported for Matroska"
