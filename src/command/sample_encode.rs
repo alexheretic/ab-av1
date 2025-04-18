@@ -156,7 +156,7 @@ pub fn run(
 ) -> impl Stream<Item = anyhow::Result<Update>> {
     async_stream::try_stream! {
         let input = Arc::new(args.input.clone());
-        let input_pixel_format = input_probe.pixel_format();
+        let input_pix_fmt = input_probe.pixel_format();
         let input_is_image = input_probe.is_image;
         let input_len = fs::metadata(&*input).await?.len();
         let enc_args = args.to_encoder_args(crf, &input_probe)?;
@@ -302,9 +302,7 @@ pub fn run(
                                 &encoded_sample,
                                 &vmaf.ffmpeg_lavfi(
                                     encoded_probe.resolution,
-                                    enc_args
-                                        .pix_fmt
-                                        .max(input_pixel_format.unwrap_or(PixelFormat::Yuv444p10le)),
+                                    PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
                                     score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
                                 ),
                                 vmaf.fps(),

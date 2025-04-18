@@ -60,9 +60,7 @@ pub async fn vmaf(
     bar.set_message("vmaf running, ");
 
     let dprobe = ffprobe::probe(&distorted);
-    let dpix_fmt = dprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
     let rprobe = ffprobe::probe(&reference);
-    let rpix_fmt = rprobe.pixel_format().unwrap_or(PixelFormat::Yuv444p10le);
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
     let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
@@ -74,7 +72,7 @@ pub async fn vmaf(
         &distorted,
         &vmaf.ffmpeg_lavfi(
             dprobe.resolution,
-            dpix_fmt.max(rpix_fmt),
+            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
             score.reference_vfilter.as_deref(),
         ),
         vmaf.fps(),

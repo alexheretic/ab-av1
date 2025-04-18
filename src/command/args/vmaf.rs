@@ -73,7 +73,7 @@ impl Vmaf {
     pub fn ffmpeg_lavfi(
         &self,
         distorted_res: Option<(u32, u32)>,
-        pix_fmt: PixelFormat,
+        pix_fmt: Option<PixelFormat>,
         ref_vfilter: Option<&str>,
     ) -> String {
         let mut args = self.vmaf_args.clone();
@@ -104,23 +104,22 @@ impl Vmaf {
             Some(vf) if vf.ends_with(',') => vf.into(),
             Some(vf) => format!("{vf},").into(),
         };
+        let format = pix_fmt.map(|v| format!("format={v},")).unwrap_or_default();
+        let scale = self
+            .vf_scale(model.unwrap_or_default(), distorted_res)
+            .map(|(w, h)| format!("scale={w}:{h}:flags=bicubic,"))
+            .unwrap_or_default();
 
         // prefix:
         // * Add reference-vfilter if any
         // * convert both streams to common pixel format
         // * scale to vmaf width if necessary
         // * sync presentation timestamp
-        let prefix = if let Some((w, h)) = self.vf_scale(model.unwrap_or_default(), distorted_res) {
-            format!(
-                "[0:v]format={pix_fmt},scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-                 [1:v]format={pix_fmt},{ref_vf}scale={w}:{h}:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];[dis][ref]"
-            )
-        } else {
-            format!(
-                "[0:v]format={pix_fmt},setpts=PTS-STARTPTS,settb=AVTB[dis];\
-                 [1:v]format={pix_fmt},{ref_vf}setpts=PTS-STARTPTS,settb=AVTB[ref];[dis][ref]"
-            )
-        };
+        let prefix = format!(
+            "[0:v]{format}{scale}setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]{format}{ref_vf}{scale}setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]"
+        );
 
         lavfi.insert_str(0, &prefix);
         lavfi
@@ -228,7 +227,11 @@ fn vmaf_lavfi() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, Some("scale=1280:-1,fps=24")),
+        vmaf.ffmpeg_lavfi(
+            None,
+            Some(PixelFormat::Yuv420p),
+            Some("scale=1280:-1,fps=24")
+        ),
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
@@ -239,13 +242,25 @@ fn vmaf_lavfi() {
 fn vmaf_lavfi_default() {
     let vmaf = Vmaf::default();
     let expected = format!(
+        "[0:v]setpts=PTS-STARTPTS,settb=AVTB[dis];\
+         [1:v]setpts=PTS-STARTPTS,settb=AVTB[ref];\
+         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
+        thread::available_parallelism().map_or(1, |p| p.get())
+    );
+    assert_eq!(vmaf.ffmpeg_lavfi(None, None, None), expected);
+}
+
+#[test]
+fn vmaf_lavfi_default_pix_fmt() {
+    let vmaf = Vmaf::default();
+    let expected = format!(
         "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
         thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(
-        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p10le, None),
+        vmaf.ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p10le), None),
         expected
     );
 }
@@ -263,7 +278,7 @@ fn vmaf_lavfi_include_n_threads() {
         thread::available_parallelism().map_or(1, |p| p.get())
     );
     assert_eq!(
-        vmaf.ffmpeg_lavfi(None, PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p), None),
         expected
     );
 }
@@ -276,7 +291,7 @@ fn vmaf_lavfi_small_width() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
@@ -291,7 +306,7 @@ fn vmaf_lavfi_4k() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3840, 2160)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((3840, 2160)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
@@ -306,7 +321,7 @@ fn vmaf_lavfi_3k_upscale_to_4k() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3008, 1692)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((3008, 1692)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version=vmaf_4k_v0.6.1"
@@ -325,7 +340,7 @@ fn vmaf_lavfi_small_width_custom_model() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
@@ -348,7 +363,7 @@ fn vmaf_lavfi_custom_model_and_width() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
@@ -362,7 +377,7 @@ fn vmaf_lavfi_1080p() {
         ..<_>::default()
     };
     assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1920, 1080)), PixelFormat::Yuv420p, None),
+        vmaf.ffmpeg_lavfi(Some((1920, 1080)), Some(PixelFormat::Yuv420p), None),
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
