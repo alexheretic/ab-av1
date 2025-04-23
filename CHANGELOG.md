@@ -2,6 +2,7 @@
 * `--pix-format` no longer generally defaults to "yuv420p", instead if not specified no -pix_fmt 
   will be passed to ffmpeg allowing use of upstream defaults.
   However, libsvtav1, libaom-av1 & librav1e will continue to default to "yuv420p10le".
+* Allow specifying ffmpeg decoder using `--enc-input c:v=CODEC`.
 
 # v0.9.4
 * Encoder *_vaapi: Default args `--enc-input hwaccel=vaapi --enc-input hwaccel_output_format=vaapi`.
