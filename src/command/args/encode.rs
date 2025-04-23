@@ -276,26 +276,37 @@ impl Encode {
         }
 
         // ban usage of the bits we already set via other args & logic
-        let reserved = HashMap::from([
-            ("-c:a", " use --acodec"),
-            ("-codec:a", " use --acodec"),
-            ("-acodec", " use --acodec"),
+        let input_reserved = HashMap::from([
             ("-i", ""),
             ("-y", ""),
             ("-n", ""),
-            ("-c:v", " use --encoder"),
-            ("-c:v:0", " use --encoder"),
-            ("-codec:v", " use --encoder"),
-            ("-codec:v:0", " use --encoder"),
-            ("-vcodec", " use --encoder"),
             ("-pix_fmt", " use --pix-format"),
             ("-crf", ""),
             ("-preset", " use --preset"),
             ("-vf", " use --vfilter"),
             ("-filter:v", " use --vfilter"),
         ]);
-        for arg in args.iter().chain(input_args.iter()) {
-            if let Some(hint) = reserved.get(arg.as_str()) {
+        for arg in &input_args {
+            if let Some(hint) = input_reserved.get(arg.as_str()) {
+                anyhow::bail!("Encoder argument `{arg}` not allowed{hint}");
+            }
+        }
+        let output_reserved = {
+            let mut r = input_reserved;
+            r.extend([
+                ("-c:a", " use --acodec"),
+                ("-codec:a", " use --acodec"),
+                ("-acodec", " use --acodec"),
+                ("-c:v", " use --encoder"),
+                ("-c:v:0", " use --encoder"),
+                ("-codec:v", " use --encoder"),
+                ("-codec:v:0", " use --encoder"),
+                ("-vcodec", " use --encoder"),
+            ]);
+            r
+        };
+        for arg in &args {
+            if let Some(hint) = output_reserved.get(arg.as_str()) {
                 anyhow::bail!("Encoder argument `{arg}` not allowed{hint}");
             }
         }
