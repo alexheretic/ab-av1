@@ -1,3 +1,5 @@
+use anyhow::Context;
+use std::process::Command;
 use crate::{
     ffmpeg::FfmpegEncodeArgs,
     ffprobe::{Ffprobe, ProbeError},
@@ -98,6 +100,17 @@ pub struct Encode {
     /// *_vulkan encoder default: `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
     #[arg(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_input_args: Vec<String>,
+     /// CUDA decoder to use (e.g. h264_cuvid, hevc_cuvid)
+     #[arg(long)]
+     pub cuda_decoder: Option<String>,
+ 
+     /// CUDA-accelerated video filters (e.g. crop_cuda=1920:1080:0:0)
+     #[arg(long)]
+     pub cuda_filters: Vec<String>,
+ 
+     /// Number of CUDA surfaces (default: 16 for 4GB GPUs)
+     #[arg(long, default_value_t = 16)]
+     pub cuda_surfaces: usize,
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -195,6 +208,23 @@ impl Encode {
             "--svt may only be used with svt-av1"
         );
 
+        // Validate CUDA configuration
+        if self.cuda_decoder.is_some() {
+            let available_decoders = get_cuvid_decoders()?;
+            if !available_decoders.contains(&self.cuda_decoder.as_ref().unwrap().as_str()) {
+                anyhow::bail!(
+                    "CUDA decoder {} not available. Supported: {}",
+                    self.cuda_decoder.as_ref().unwrap(),
+                    available_decoders.join(", ")
+                );
+            }
+            ensure!(
+                self.cuda_surfaces >= 8 && self.cuda_surfaces <= 32,
+                "CUDA surfaces must be between 8-32 for Pascal GPUs (got {})", 
+                self.cuda_surfaces
+            );
+        }
+
         let preset = match &self.preset {
             Some(n) => Some(n.clone()),
             None if svtav1 => Some("8".into()),
@@ -213,6 +243,30 @@ impl Encode {
             // add all --svt args
             svtav1_params.extend(self.svt_args.iter().map(|a| a.to_string()));
         }
+
+            // Build CUDA-specific arguments
+            let mut cuda_input_args = vec![];
+            let mut cuda_filters = String::new();
+            if let Some(decoder) = &self.cuda_decoder {
+                cuda_input_args.extend([
+                    "-hwaccel".into(),
+                    "cuda".into(),
+                    "-hwaccel_output_format".into(),
+                    "cuda".into(),
+                    "-extra_hw_frames".into(),
+                    self.cuda_surfaces.to_string().into(),
+                    "-c:v".into(),
+                    decoder.clone().into(),
+                ]);
+    
+                // Convert standard filters to CUDA variants
+                if !self.cuda_filters.is_empty() {
+                    cuda_filters = self.cuda_filters.join(",")
+                        .replace("crop=", "crop_cuda=")
+                        .replace("scale=", "scale_cuda=");
+                    cuda_filters = format!("hwdownload,format=nv12,{},hwupload_cuda", cuda_filters);
+                }
+            }
 
         let mut args: Vec<Arc<String>> = self
             .enc_args
@@ -253,8 +307,19 @@ impl Encode {
 
         let pix_fmt = self.pix_format.or_else(|| match &**vcodec {
             "libsvtav1" | "libaom-av1" | "librav1e" => Some(PixelFormat::Yuv420p10le),
+            _ if self.cuda_decoder.is_some() => Some(PixelFormat::Nv12),
             _ => None,
         });
+
+        // Merge CUDA filters with existing filters
+        let mut vfilter = self.vfilter.clone().unwrap_or_default();
+        if !cuda_filters.is_empty() {
+            if !vfilter.is_empty() {
+                vfilter = format!("{},{}", cuda_filters, vfilter);
+            } else {
+                vfilter = cuda_filters;
+            }
+        }
 
         let mut input_args: Vec<Arc<String>> = self
             .enc_input_args
@@ -266,6 +331,7 @@ impl Encode {
                     vec![arg.clone().into()].into_iter()
                 }
             })
+             .chain(cuda_input_args)
             .collect();
 
         for (name, val) in self.encoder.default_ffmpeg_input_args() {
@@ -418,7 +484,11 @@ impl Encoder {
             e if e.ends_with("_vulkan") => {
                 &[("-hwaccel", "vulkan"), ("-hwaccel_output_format", "vulkan")]
             }
-            _ => <_>::default(),
+            e if e.ends_with("_cuvid") => &[
+            ("-hwaccel", "cuda"),
+            ("-hwaccel_output_format", "cuda")
+        ],
+        _ => &[]
         }
     }
 }
@@ -695,4 +765,18 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         .as_str();
     assert_eq!(svtargs, "scd=0");
     assert!(input_args.is_empty());
+}
+
+fn get_cuvid_decoders() -> anyhow::Result<Vec<String>> {
+    let output = Command::new("ffmpeg")
+        .args(["-hide_banner", "-decoders"])
+        .output()
+        .context("Failed to execute ffmpeg")?;
+    
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| l.contains("_cuvid"))
+        .filter_map(|l| l.split_whitespace().nth(1))
+        .map(String::from)
+        .collect())
 }
