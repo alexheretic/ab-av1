@@ -152,6 +152,20 @@ pub async fn run(
     eprintln!("{}", style(")").dim());
 
     Ok(())
+
+    // Run VMAF analysis
+    let vmaf_result = vmaf::run_vmaf(
+        &args.input,
+        &output,
+        &args.vmaf_model,
+        args.vmaf_cuda,
+        args.vmaf_surfaces
+    )?;
+
+    bar.println(format!(
+        "VMAF Score: {:.2}, PSNR: {:.2}dB, SSIM: {:.4}",
+        vmaf_result.vmaf_score, vmaf_result.psnr, vmaf_result.ssim
+    ))    
 }
 
 /// * vid.mp4 -> "mp4"

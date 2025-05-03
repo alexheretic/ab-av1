@@ -103,14 +103,30 @@ pub struct Encode {
      /// CUDA decoder to use (e.g. h264_cuvid, hevc_cuvid)
      #[arg(long)]
      pub cuda_decoder: Option<String>,
- 
+
      /// CUDA-accelerated video filters (e.g. crop_cuda=1920:1080:0:0)
      #[arg(long)]
      pub cuda_filters: Vec<String>,
- 
+
      /// Number of CUDA surfaces (default: 16 for 4GB GPUs)
      #[arg(long, default_value_t = 16)]
      pub cuda_surfaces: usize,
+
+    /// Path to VMAF executable
+    #[arg(long, default_value = "vmaf")]
+    pub vmaf_path: PathBuf,
+
+    /// Use CUDA-accelerated VMAF calculation
+    #[arg(long)]
+    pub vmaf_cuda: bool,
+
+    /// VMAF model path
+    #[arg(long, default_value = "vmaf_v0.6.1.json")]
+    pub vmaf_model: PathBuf,
+
+    /// VMAF CUDA surfaces (default: 16)
+    #[arg(long, default_value_t = 16)]
+    pub vmaf_surfaces: usize,
 }
 
 fn parse_svt_arg(arg: &str) -> anyhow::Result<Arc<str>> {
