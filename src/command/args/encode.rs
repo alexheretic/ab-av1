@@ -107,6 +107,9 @@ pub struct Encode {
      /// CUDA-accelerated video filters (e.g. crop_cuda=1920:1080:0:0)
      #[arg(long)]
      pub cuda_filters: Vec<String>,
+     /// CUDA scaling method [bilinear/lanczos/bicubic] (default: lanczos)
+     #[arg(long, default_value = "lanczos")]
+     pub cuda_scaling_method: String,
 
      /// Number of CUDA surfaces (default: 16 for 4GB GPUs)
      #[arg(long, default_value_t = 16)]
@@ -216,7 +219,35 @@ impl Encode {
         hint
     }
 
+    // Add this method to handle auto-crop detection
+    fn detect_cuda_crop(&self) -> anyhow::Result<String> {
+        let output = Command::new("ffmpeg")
+            .args([
+                "-hwaccel", "cuda",
+                "-i", self.input.to_str().unwrap(),
+                "-vf", "cropdetect=24:16:0",
+                "-f", "null", "-"
+            ])
+            .output()
+            .context("CUDA crop detection failed")?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        stderr.lines()
+            .rev()
+            .find(|l| l.contains("crop="))
+            .and_then(|l| l.split_whitespace().find(|s| s.starts_with("crop=")))
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("No crop detected"))
+    }
+
+
     fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        // Add auto-crop detection
+        let mut filters = self.cuda_filters.clone();
+        if filters.iter().any(|f| f == "autocrop") {
+            let crop = self.detect_cuda_crop()?;
+            filters.push(crop);
+
         let vcodec = &self.encoder.0;
         let svtav1 = vcodec.as_ref() == "libsvtav1";
         ensure!(
@@ -274,7 +305,7 @@ impl Encode {
                     "-c:v".into(),
                     decoder.clone().into(),
                 ]);
-    
+
                 // Convert standard filters to CUDA variants
                 if !self.cuda_filters.is_empty() {
                     cuda_filters = self.cuda_filters.join(",")
@@ -788,7 +819,7 @@ fn get_cuvid_decoders() -> anyhow::Result<Vec<String>> {
         .args(["-hide_banner", "-decoders"])
         .output()
         .context("Failed to execute ffmpeg")?;
-    
+
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|l| l.contains("_cuvid"))
