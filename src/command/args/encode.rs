@@ -242,6 +242,18 @@ impl Encode {
 
 
     fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+        // Add this block
+        if let Some(decoder) = &self.cuda_decoder {
+            let available = get_cuvid_decoders()?;
+            if !available.contains(decoder) {
+                anyhow::bail!(
+                    "CUDA decoder {} not available. Supported: {}",
+                    decoder,
+                    available.join(", ")
+                );
+            }
+        }
+        
         // Add auto-crop detection
         let mut filters = self.cuda_filters.clone();
         if filters.iter().any(|f| f == "autocrop") {
