@@ -52,3 +52,9 @@ strip = true
 
 [lints.rust]
 unused_crate_dependencies = "deny"
+
+[target.'cfg(windows)'.dependencies]
+winres = "0.1.12"
+
+[package.metadata.wix]
+main_icon = "icons/ab-av1-cuda.ico"

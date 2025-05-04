@@ -1,3 +1,4 @@
+use crate::cudavmaf;
 use crate::{
     command::{
         PROGRESS_CHARS,
@@ -67,7 +68,19 @@ pub async fn vmaf(
         bar.set_length(nframes);
     }
 
-    let mut vmaf = pin!(vmaf::run(
+    let mut vmaf = if Path::new("vmaf_cuda").exists() {
+        pin!(cudavmaf::run_cuda(
+            &reference,
+            &distorted,
+            &vmaf.ffmpeg_lavfi(
+            dprobe.resolution,
+            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+            score.reference_vfilter.as_deref(),
+        ),
+            vmaf.fps()
+        )?)
+    } else {
+        pin!(vmaf::run(
         &reference,
         &distorted,
         &vmaf.ffmpeg_lavfi(
@@ -75,8 +88,10 @@ pub async fn vmaf(
             PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
             score.reference_vfilter.as_deref(),
         ),
-        vmaf.fps(),
-    )?);
+            vmaf.fps(),
+        )?);
+    };
+
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {

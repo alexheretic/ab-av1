@@ -156,6 +156,20 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
     Ok(arg)
 }
 
+fn detect_crop(&self) -> anyhow::Result<String> {
+    Command::new("ffmpeg")
+        .args(["-hwaccel", "cuda", "-i", &self.input, ...])
+        .output()?;
+    // Parse crop from output
+}
+
+#[test]
+fn test_cuda_pipeline() {
+    let enc = Encode { cuda_decoder: Some("h264_cuvid".into()), ... };
+    let args = enc.to_ffmpeg_args(...).unwrap();
+    assert!(args.vfilter.contains("hwupload_cuda"));
+}
+
 impl Encode {
     pub fn to_encoder_args(
         &self,
@@ -253,7 +267,7 @@ impl Encode {
                 );
             }
         }
-        
+
         // Add auto-crop detection
         let mut filters = self.cuda_filters.clone();
         if filters.iter().any(|f| f == "autocrop") {
@@ -321,9 +335,17 @@ impl Encode {
                 // Convert standard filters to CUDA variants
                 if !self.cuda_filters.is_empty() {
                     cuda_filters = self.cuda_filters.join(",")
-                        .replace("crop=", "crop_cuda=")
+                        .replace("crop=", "hwupload_cuda,crop=")
                         .replace("scale=", "scale_cuda=format=nv12:");
                     cuda_filters = format!("hwdownload,format=nv12,{},hwupload_cuda", cuda_filters);
+                }
+
+                // Add format conversion and memory transfer
+                if !cuda_filters.is_empty() {
+                    cuda_filters = format!(
+                        "hwdownload,format=nv12,{},hwupload_cuda",
+                        cuda_filters
+                    );
                 }
             }
 
