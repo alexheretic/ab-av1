@@ -310,7 +310,7 @@ impl Encode {
                 if !self.cuda_filters.is_empty() {
                     cuda_filters = self.cuda_filters.join(",")
                         .replace("crop=", "crop_cuda=")
-                        .replace("scale=", "scale_cuda=");
+                        .replace("scale=", "scale_cuda=format=nv12:");
                     cuda_filters = format!("hwdownload,format=nv12,{},hwupload_cuda", cuda_filters);
                 }
             }
@@ -818,12 +818,12 @@ fn get_cuvid_decoders() -> anyhow::Result<Vec<String>> {
     let output = Command::new("ffmpeg")
         .args(["-hide_banner", "-decoders"])
         .output()
-        .context("Failed to execute ffmpeg")?;
+        .context("FFailed to execute ffmpeg for decoder list")?;
 
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|l| l.contains("_cuvid"))
-        .filter_map(|l| l.split_whitespace().nth(1))
+        .filter_map(|l| l.split_whitespace().nth(1)) // More robust than split(' ')
         .map(String::from)
         .collect())
 }
