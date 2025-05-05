@@ -1,5 +1,3 @@
-// PATCHED: VMAF integration with find_vmaf_cuda and parse_vmaf_output
-
 use std::process::Command;
 use std::path::Path;
 use crate::vmaf_cuda_path_detection::find_vmaf_cuda;
