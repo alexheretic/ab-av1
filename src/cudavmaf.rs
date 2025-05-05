@@ -1,43 +1,20 @@
-// src/vmaf.rs
-use anyhow::{Context, Result};
-use std::{
-    path::Path,
-    process::{Command, Stdio},
-};
+// PATCH: Integrated find_vmaf_cuda and parse_vmaf_output
 
-pub struct VmafResult {
-    pub vmaf_score: f32,
-    pub psnr: f32,
-    pub ssim: f32,
-}
+use std::process::Command;
+use crate::vmaf_cuda_path_detection::find_vmaf_cuda;
+use crate::vmaf_json_parsing::parse_vmaf_output;
 
-pub fn run_vmaf(
-    reference: &Path,
-    distorted: &Path,
-    model: &Path,
-    cuda: bool,
-    surfaces: usize,
-) -> Result<VmafResult> {
-    let mut cmd = Command::new("vmaf");
-    
-    if cuda {
-        cmd.arg("--cuda")
-           .arg("--surfaces").arg(surfaces.to_string());
+pub fn run_vmaf(reference: &str, distorted: &str) -> Option<f64> {
+    let vmaf_path = find_vmaf_cuda();
+    let output = Command::new(vmaf_path)
+        .args(["--cuda", "--reference", reference, "--distorted", distorted, "--json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
     }
 
-    let output = cmd
-        .arg("--reference").arg(reference)
-        .arg("--distorted").arg(distorted)
-        .arg("--model").arg(model)
-        .arg("--json")
-        .stdout(Stdio::piped())
-        .output()
-        .context("Failed to execute VMAF")?;
-
-    parse_vmaf_output(&output.stdout)
-}
-
-fn parse_vmaf_output(output: &[u8]) -> Result<VmafResult> {
-    // Implement JSON parsing logic here
-    unimplemented!()
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    parse_vmaf_output(&json_str)
 }
