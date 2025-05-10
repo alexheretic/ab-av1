@@ -1,4 +1,4 @@
-# Unreleased (v0.10.0)
+# v0.10.0
 * `--pix-format` no longer generally defaults to "yuv420p", instead if not specified no -pix_fmt 
   will be passed to ffmpeg allowing use of upstream defaults.
   However, libsvtav1, libaom-av1 & librav1e will continue to default to "yuv420p10le".
