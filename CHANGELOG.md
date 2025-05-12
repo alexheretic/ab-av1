@@ -1,3 +1,7 @@
+# Unreleased (0.10.1)
+* Support setting `--enc-input hwaccel=none --enc-input hwaccel_output_format=none` to omit defaults
+  for *_vaapi, *_vulkan vcodecs introduced in v0.9.4.
+
 # v0.10.0
 * `--pix-format` no longer generally defaults to "yuv420p", instead if not specified no -pix_fmt 
   will be passed to ffmpeg allowing use of upstream defaults.

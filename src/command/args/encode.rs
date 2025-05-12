@@ -96,6 +96,9 @@ pub struct Encode {
     /// `--enc-input hwaccel=vaapi --enc-input hwaccel_output_format=vaapi`.
     ///
     /// *_vulkan encoder default: `--enc-input hwaccel=vulkan --enc-input hwaccel_output_format=vulkan`.
+    ///
+    /// Disable defaults by setting them to "none"
+    /// e.g. `-enc-input hwaccel=none --enc-input hwaccel_output_format=none`
     #[arg(long = "enc-input", allow_hyphen_values = true, value_parser = parse_enc_arg)]
     pub enc_input_args: Vec<String>,
 }
@@ -272,6 +275,16 @@ impl Encode {
             if !input_args.iter().any(|arg| &**arg == name) {
                 input_args.push(name.to_string().into());
                 input_args.push(val.to_string().into());
+            }
+        }
+
+        // support setting possibly default args as "none" to omit them
+        for (name, _) in self.encoder.default_ffmpeg_input_args() {
+            if let Some(idx) = input_args
+                .windows(2)
+                .position(|w| *w[0] == *name && *w[1] == "none")
+            {
+                input_args.splice(idx..idx + 2, []);
             }
         }
 
