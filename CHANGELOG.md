@@ -1,4 +1,4 @@
-# Unreleased (0.10.1)
+# v0.10.1
 * Support setting `--enc-input hwaccel=none --enc-input hwaccel_output_format=none` to omit defaults
   for *_vaapi, *_vulkan vcodecs introduced in v0.9.4.
 
