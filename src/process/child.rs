@@ -36,11 +36,11 @@ pub async fn wait() {
 
     for mut proc in procs {
         if let Some(child) = proc.child_mut() {
-            if let Some(deadline) = log_deadline {
-                if timeout_at(deadline, child.wait()).await.is_err() {
-                    log_waiting();
-                    log_deadline = None;
-                }
+            if let Some(deadline) = log_deadline
+                && timeout_at(deadline, child.wait()).await.is_err()
+            {
+                log_waiting();
+                log_deadline = None;
             }
             tokio::select! {
                 _ = &mut ctrl_c => {

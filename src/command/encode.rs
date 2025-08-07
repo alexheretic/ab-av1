@@ -134,18 +134,18 @@ pub async fn run(
         style("Encoded").dim(),
         style("(").dim(),
     );
-    if let Some((video, audio, subtitle, other)) = stream_sizes {
-        if audio > 0 || subtitle > 0 || other > 0 {
-            for (label, size) in [
-                ("video:", video),
-                ("audio:", audio),
-                ("subs:", subtitle),
-                ("other:", other),
-            ] {
-                if size > 0 {
-                    let size = style(HumanBytes(size)).dim();
-                    eprint!("{} {}{size}", style(",").dim(), style(label).dim(),);
-                }
+    if let Some((video, audio, subtitle, other)) = stream_sizes
+        && (audio > 0 || subtitle > 0 || other > 0)
+    {
+        for (label, size) in [
+            ("video:", video),
+            ("audio:", audio),
+            ("subs:", subtitle),
+            ("other:", other),
+        ] {
+            if size > 0 {
+                let size = style(HumanBytes(size)).dim();
+                eprint!("{} {}{size}", style(",").dim(), style(label).dim(),);
             }
         }
     }

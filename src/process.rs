@@ -210,10 +210,10 @@ impl Chunks {
             .rsplit(|b| *b == b'\n')
             .flat_map(|l| l.rsplit(|b| *b == b'\r'));
         for line in lines {
-            if let Ok(line) = std::str::from_utf8(line) {
-                if let Some(out) = f(line) {
-                    return Some(out);
-                }
+            if let Ok(line) = std::str::from_utf8(line)
+                && let Some(out) = f(line)
+            {
+                return Some(out);
             }
         }
         None

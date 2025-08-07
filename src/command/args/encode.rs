@@ -240,11 +240,11 @@ impl Encode {
         }
 
         // Set keyint/-g for all vcodecs
-        if let Some(keyint) = keyint {
-            if !args.iter().any(|a| &**a == "-g") {
-                args.push("-g".to_owned().into());
-                args.push(keyint.to_string().into());
-            }
+        if let Some(keyint) = keyint
+            && !args.iter().any(|a| &**a == "-g")
+        {
+            args.push("-g".to_owned().into());
+            args.push(keyint.to_string().into());
         }
 
         for (name, val) in self.encoder.default_ffmpeg_args() {

@@ -91,12 +91,13 @@ impl Vmaf {
         lavfi.insert_str(0, "libvmaf=shortest=true:ts_sync_mode=nearest:");
 
         let mut model = VmafModel::from_args(&args);
-        if let (None, Some((w, h))) = (model, distorted_res) {
-            if w > 2560 && h > 1440 {
-                // for >2k resolutions use 4k model
-                lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
-                model = Some(VmafModel::Vmaf4K);
-            }
+        if let (None, Some((w, h))) = (model, distorted_res)
+            && w > 2560
+            && h > 1440
+        {
+            // for >2k resolutions use 4k model
+            lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
+            model = Some(VmafModel::Vmaf4K);
         }
 
         let ref_vf: Cow<_> = match ref_vfilter {
