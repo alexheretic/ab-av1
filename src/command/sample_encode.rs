@@ -25,7 +25,7 @@ use std::{
     fmt::Display,
     io::{self, IsTerminal},
     path::{Path, PathBuf},
-    pin::pin,
+    pin::{pin, Pin},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -297,16 +297,29 @@ pub fn run(
                                 sample: sample_n,
                                 samples,
                             });
-                            let vmaf = vmaf::run(
-                                &sample,
-                                &encoded_sample,
-                                &vmaf.ffmpeg_lavfi(
-                                    encoded_probe.resolution,
-                                    PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
-                                    score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
-                                ),
-                                vmaf.fps(),
-                            )?;
+                            let vmaf: Pin<Box<dyn Stream<Item = VmafOut>>> = if vmaf.cuda {
+                                Box::pin(vmaf::run_cuda(
+                                    &sample,
+                                    &encoded_sample,
+                                    &vmaf.ffmpeg_lavfi_cuda(
+                                        encoded_probe.resolution,
+                                        PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
+                                        score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
+                                    ),
+                                    vmaf.fps(),
+                                )?)
+                            } else {
+                                Box::pin(vmaf::run(
+                                    &sample,
+                                    &encoded_sample,
+                                    &vmaf.ffmpeg_lavfi(
+                                        encoded_probe.resolution,
+                                        PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
+                                        score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
+                                    ),
+                                    vmaf.fps(),
+                                )?)
+                            };
                             let mut vmaf = pin!(vmaf);
                             let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
                             let mut vmaf_score = None;
