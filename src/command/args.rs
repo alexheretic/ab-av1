@@ -41,6 +41,11 @@ pub struct EncodeToOutput {
     /// The output will be a single video stream.
     #[arg(long)]
     pub video_only: bool,
+
+    /// By default, ab-av1 will not overwrite the input file (to prevent accidental data loss). If
+    /// you pass in this flag, ab-av1 will allow you to overwrite the input file.
+    #[arg(long, default_value_t = false)]
+    pub allow_overwrite: bool,
 }
 
 /// Sampling arguments.
