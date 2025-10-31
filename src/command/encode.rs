@@ -18,7 +18,7 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant}
+    time::{Duration, Instant},
 };
 use tokio::fs;
 use tokio_stream::StreamExt;
@@ -99,7 +99,13 @@ pub async fn run(
 
     let tmp_output = tmp_output_name(&output);
 
-    let mut enc = ffmpeg::encode(enc_args, &tmp_output, has_audio, audio_codec, stereo_downmix)?;
+    let mut enc = ffmpeg::encode(
+        enc_args,
+        &tmp_output,
+        has_audio,
+        audio_codec,
+        stereo_downmix,
+    )?;
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
