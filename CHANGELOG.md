@@ -1,3 +1,7 @@
+# Unreleased (v0.11.0)
+* Disallow having `--input` the same as `--output` as this can lead to unintended data loss.
+  This may be explicitly overridden by passing `--overwrite-input`.
+
 # v0.10.1
 * Support setting `--enc-input hwaccel=none --enc-input hwaccel_output_format=none` to omit defaults
   for *_vaapi, *_vulkan vcodecs introduced in v0.9.4.

@@ -59,15 +59,22 @@ pub async fn run(
                 audio_codec,
                 downmix_to_stereo,
                 video_only,
+                overwrite_input,
             },
     }: Args,
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    // let probe = ffprobe::probe(&args.input);
     let output =
         output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
+
+    anyhow::ensure!(
+        overwrite_input || output != args.input,
+        "Input and Output are specified as the same file. Not proceeding. \
+         Pass in `--overwrite-input` to allow this."
+    );
+
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 

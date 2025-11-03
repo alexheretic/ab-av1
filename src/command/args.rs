@@ -41,6 +41,11 @@ pub struct EncodeToOutput {
     /// The output will be a single video stream.
     #[arg(long)]
     pub video_only: bool,
+
+    /// By default input files will not be overwritten to prevent accidental data loss.
+    /// Setting this option overrides that allowing input overwrites.
+    #[arg(long)]
+    pub overwrite_input: bool,
 }
 
 /// Sampling arguments.
