@@ -14,6 +14,7 @@ use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use log::info;
+use same_file::is_same_file;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -70,7 +71,7 @@ pub async fn run(
         output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
 
     anyhow::ensure!(
-        overwrite_input || output != args.input,
+        overwrite_input || !is_same_file(&output, &args.input).unwrap_or(false),
         "Input and Output are specified as the same file. Not proceeding. \
          Pass in `--overwrite-input` to allow this."
     );

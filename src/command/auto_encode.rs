@@ -14,6 +14,7 @@ use clap::Parser;
 use console::style;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use same_file::is_same_file;
 use std::{pin::pin, sync::Arc, time::Duration};
 
 const BAR_LEN: u64 = 1024 * 1024 * 1024;
@@ -54,7 +55,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     });
 
     anyhow::ensure!(
-        encode.overwrite_input || output != search.args.input,
+        encode.overwrite_input || !is_same_file(&output, &search.args.input).unwrap_or(false),
         "Input and Output are specified as the same file. Not proceeding. \
          Pass in `--overwrite-input` to allow this."
     );
