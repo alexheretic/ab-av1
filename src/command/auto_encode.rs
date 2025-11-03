@@ -52,6 +52,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
             input_probe.is_image,
         )
     });
+
+    anyhow::ensure!(
+        encode.overwrite_input || output != search.args.input,
+        "Input and Output are specified as the same file. Not proceeding. \
+         Pass in `--overwrite-input` to allow this."
+    );
+
     search.sample.set_extension_from_output(&output);
 
     let bar = ProgressBar::new(BAR_LEN).with_style(

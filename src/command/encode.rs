@@ -10,7 +10,6 @@ use crate::{
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
-use anyhow::bail;
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -60,25 +59,22 @@ pub async fn run(
                 audio_codec,
                 downmix_to_stereo,
                 video_only,
-                allow_overwrite,
+                overwrite_input,
             },
     }: Args,
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
-    if !allow_overwrite && output.as_ref().is_some_and(|o| o == &args.input) {
-        bail!(
-            "
-Input and Output are specified as the same file, but `allow_overwrite` was false. Not proceeding.
-Pass in `--allow-overwrite` to allow this.
-        "
-        )
-    }
-
     let defaulting_output = output.is_none();
-    // let probe = ffprobe::probe(&args.input);
     let output =
         output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
+
+    anyhow::ensure!(
+        overwrite_input || output != args.input,
+        "Input and Output are specified as the same file. Not proceeding. \
+         Pass in `--overwrite-input` to allow this."
+    );
+
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
