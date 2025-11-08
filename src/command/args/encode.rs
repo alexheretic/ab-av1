@@ -382,6 +382,9 @@ impl Encoder {
     pub fn default_min_crf(&self) -> f32 {
         match self.as_str() {
             "mpeg2video" => 2.0,
+            // Negative values indicate inverted scale (higher abs value = better quality)
+            // For hevc_videotoolbox: -100 means CRF 100 (best quality)
+            "hevc_videotoolbox" => -100.0,
             _ => 10.0,
         }
     }
@@ -391,6 +394,9 @@ impl Encoder {
             "librav1e" | "av1_vaapi" => 255.0,
             "libx264" | "libx265" => 46.0,
             "mpeg2video" => 30.0,
+            // Negative values indicate inverted scale (higher abs value = better quality)
+            // For hevc_videotoolbox: -1 means CRF 1 (worst quality)
+            "hevc_videotoolbox" => -10.0,
             // Works well for svt-av1
             _ => 55.0,
         }

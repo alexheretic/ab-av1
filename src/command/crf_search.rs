@@ -239,7 +239,7 @@ pub fn run(
 
         let min_q = q_from_crf(min_crf, crf_increment);
         let max_q = q_from_crf(max_crf, crf_increment);
-        let mut q: u64 = (min_q + max_q) / 2;
+        let mut q: i64 = (min_q + max_q) / 2;
 
         let mut args = sample_encode::Args {
             args: args.clone(),
@@ -263,7 +263,7 @@ pub fn run(
                 // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
                 _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
             };
-            args.crf = q.to_crf(crf_increment);
+            args.crf = q.to_crf(crf_increment).abs();
 
             let mut sample_enc = pin!(sample_encode::run(args.clone(), input_probe.clone()));
             let mut sample_enc_output = None;
@@ -355,12 +355,15 @@ pub fn run(
 pub struct Sample {
     pub enc: sample_encode::Output,
     pub crf_increment: f32,
-    pub q: u64,
+    pub q: i64,
 }
 
 impl Sample {
+    /// Returns the absolute CRF value for display purposes.
+    /// Internally we may use negative CRF values for inverted scales,
+    /// but externally we always show the absolute value.
     pub fn crf(&self) -> f32 {
-        self.q.to_crf(self.crf_increment)
+        self.q.to_crf(self.crf_increment).abs()
     }
 
     pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
@@ -442,7 +445,7 @@ impl StdoutFormat {
 /// though it seems to work better than a binary search.
 /// Perhaps a better approximation of a general crf->vmaf model could be found.
 /// This would be helpful particularly for small crf-increments.
-fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
+fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> i64 {
     assert!(
         worse_q.enc.score <= min_vmaf
             && worse_q.enc.score < better_q.enc.score
@@ -454,7 +457,7 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
     let vmaf_factor = (min_vmaf - worse_q.enc.score) / vmaf_diff;
 
     let q_diff = worse_q.q - better_q.q;
-    let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as u64;
+    let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as i64;
     lerp.clamp(better_q.q + 1, worse_q.q - 1)
 }
 
@@ -475,15 +478,16 @@ pub fn guess_progress(run: usize, sample_progress: f32, thorough: bool) -> f64 {
 ///
 /// * crf=33.5, inc=0.1 -> q=335
 /// * crf=27, inc=1 -> q=27
+/// * crf=-100, inc=1 -> q=-100 (inverted scale: higher abs value = better quality)
 #[inline]
-fn q_from_crf(crf: f32, crf_increment: f32) -> u64 {
+fn q_from_crf(crf: f32, crf_increment: f32) -> i64 {
     (f64::from(crf) / f64::from(crf_increment)).round() as _
 }
 
 trait QualityValue {
     fn to_crf(self, crf_increment: f32) -> f32;
 }
-impl QualityValue for u64 {
+impl QualityValue for i64 {
     #[inline]
     fn to_crf(self, crf_increment: f32) -> f32 {
         ((self as f64) * f64::from(crf_increment)) as _
@@ -492,8 +496,28 @@ impl QualityValue for u64 {
 
 #[test]
 fn q_crf_conversions() {
+    // Test normal scale
     assert_eq!(q_from_crf(33.5, 0.1), 335);
     assert_eq!(q_from_crf(27.0, 1.0), 27);
+
+    // Test inverted scale (negative CRF values)
+    assert_eq!(q_from_crf(-100.0, 1.0), -100);
+    assert_eq!(q_from_crf(-1.0, 1.0), -1);
+
+    // Test round-trip conversion for normal scale
+    assert_eq!(335_i64.to_crf(0.1), 33.5);
+    assert_eq!(27_i64.to_crf(1.0), 27.0);
+
+    // Test round-trip conversion for inverted scale
+    assert_eq!((-100_i64).to_crf(1.0), -100.0);
+    assert_eq!((-1_i64).to_crf(1.0), -1.0);
+
+    // Test that min_q < max_q for inverted scale (-100 < -1)
+    let min_crf = -100.0;
+    let max_crf = -1.0;
+    let min_q = q_from_crf(min_crf, 1.0);
+    let max_q = q_from_crf(max_crf, 1.0);
+    assert!(min_q < max_q, "min_q ({min_q}) should be < max_q ({max_q})");
 }
 
 #[derive(Debug)]

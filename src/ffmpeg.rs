@@ -74,7 +74,7 @@ pub fn encode_sample(
     dest_ext: &str,
 ) -> anyhow::Result<(PathBuf, FfmpegOutStream)> {
     let pre = pre_extension_name(&vcodec);
-    let crf_str = format!("{}", TerseF32(crf)).replace('.', "_");
+    let crf_str = format!("{}", TerseF32(crf.abs())).replace('.', "_");
     let dest_file_name = match &preset {
         Some(p) => input.with_extension(format!("{pre}.crf{crf_str}.{p}.{dest_ext}")),
         None => input.with_extension(format!("{pre}.crf{crf_str}.{dest_ext}")),
@@ -92,7 +92,7 @@ pub fn encode_sample(
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
-        .arg2(vcodec.crf_arg(), crf)
+        .arg2(vcodec.crf_arg(), crf.abs())
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -149,8 +149,9 @@ pub fn encode(
     };
     // This doesn't seem to work on .mp4 files
     let mut metadata = format!(
-        "AB_AV1_FFMPEG_ARGS=-c:v {vcodec} {} {crf}",
-        vcodec.crf_arg()
+        "AB_AV1_FFMPEG_ARGS=-c:v {vcodec} {} {}",
+        vcodec.crf_arg(),
+        crf.abs()
     );
     if let Some(preset) = &preset {
         write!(&mut metadata, " {} {preset}", vcodec.preset_arg()).unwrap();
@@ -168,7 +169,7 @@ pub fn encode(
         .arg2("-c:a", audio_codec)
         .arg2("-c:s", "copy")
         .args(output_args.iter().map(|a| &**a))
-        .arg2(vcodec.crf_arg(), crf)
+        .arg2(vcodec.crf_arg(), crf.abs())
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
