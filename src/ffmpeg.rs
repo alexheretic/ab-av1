@@ -220,6 +220,7 @@ impl VCodecSpecific for Arc<str> {
             // https://github.com/fraunhoferhhi/vvenc/wiki/FFmpeg-Integration#fix-qp-mode-constant-quality-mode
             "librav1e" | "libvvenc" => "-qp",
             "mpeg2video" => "-q",
+            "hevc_videotoolbox" => "-q:v",
             // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
             e if e.ends_with("_vaapi") => "-q",
             e if e.ends_with("_vulkan") => "-qp",
