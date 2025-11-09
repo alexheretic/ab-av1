@@ -80,6 +80,13 @@ pub struct Args {
     #[arg(long)]
     pub crf_increment: Option<f32>,
 
+    /// Set the interpretation of crf so that higher crfs mean higher quality.
+    /// For most encoders *lower* crfs mean higher quality.
+    ///
+    /// [default: false, true for hevc_videotoolbox]
+    #[arg(long, num_args=0..=1, default_missing_value = "true")]
+    pub high_crf_means_hq: Option<bool>,
+
     /// Enable sample-encode caching.
     #[arg(
         long,
@@ -178,13 +185,13 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
             }
             Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
             Update::Done(best) => {
-                info!("crf {} successful", best.crf());
+                info!("crf {} successful", best.crf);
                 bar.finish_with_message("");
                 if std::io::stderr().is_terminal() {
                     eprintln!(
                         "\n{} {}\n",
                         style("Encode with:").dim(),
-                        style(enc_args.encode_hint(best.crf())).dim().italic(),
+                        style(enc_args.encode_hint(best.crf)).dim().italic(),
                     );
                 }
                 StdoutFormat::Human.print_result(&best, input_is_image);
@@ -204,6 +211,7 @@ pub fn run(
         min_crf,
         max_crf,
         crf_increment,
+        high_crf_means_hq,
         thorough,
         sample,
         cache,
@@ -237,9 +245,14 @@ pub fn run(
             .unwrap_or_else(|| args.encoder.default_crf_increment())
             .max(0.001);
 
-        let min_q = q_from_crf(min_crf, crf_increment);
-        let max_q = q_from_crf(max_crf, crf_increment);
-        let mut q: u64 = (min_q + max_q) / 2;
+        let q_conv = QualityConverter {
+            crf_increment,
+            high_crf_means_hq: high_crf_means_hq.unwrap_or_else(|| args.encoder.high_crf_means_hq()),
+        };
+
+        let (min_q, max_q) = q_conv.min_max_q(min_crf, max_crf);
+        assert!(min_q < max_q);
+        let mut q = (min_q + max_q) / 2;
 
         let mut args = sample_encode::Args {
             args: args.clone(),
@@ -263,7 +276,7 @@ pub fn run(
                 // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
                 _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
             };
-            args.crf = q.to_crf(crf_increment);
+            args.crf = q_conv.crf(q);
 
             let mut sample_enc = pin!(sample_encode::run(args.clone(), input_probe.clone()));
             let mut sample_enc_output = None;
@@ -280,7 +293,7 @@ pub fn run(
             }
 
             let sample = Sample {
-                crf_increment,
+                crf: args.crf,
                 q,
                 enc: sample_enc_output.context("no sample output?")?,
             };
@@ -354,20 +367,16 @@ pub fn run(
 #[derive(Debug, Clone)]
 pub struct Sample {
     pub enc: sample_encode::Output,
-    pub crf_increment: f32,
-    pub q: u64,
+    pub crf: f32,
+    q: i64,
 }
 
 impl Sample {
-    pub fn crf(&self) -> f32 {
-        self.q.to_crf(self.crf_increment)
-    }
-
     pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
         if bar.is_hidden() {
             info!(
                 "crf {} {} {:.2} ({:.0}%){}",
-                TerseF32(self.crf()),
+                TerseF32(self.crf),
                 self.enc.score_kind,
                 self.enc.score,
                 self.enc.encode_percent,
@@ -377,7 +386,7 @@ impl Sample {
         }
 
         let crf_label = style("- crf").dim();
-        let mut crf = style(TerseF32(self.crf()));
+        let mut crf = style(TerseF32(self.crf));
         let vmaf_label = style(self.enc.score_kind).dim();
         let mut vmaf = style(self.enc.score);
         let mut percent = style!("{:.0}%", self.enc.encode_percent);
@@ -412,7 +421,7 @@ impl StdoutFormat {
     fn print_result(self, sample: &Sample, image: bool) {
         match self {
             Self::Human => {
-                let crf = style(TerseF32(sample.crf())).bold().green();
+                let crf = style(TerseF32(sample.crf)).bold().green();
                 let enc = &sample.enc;
                 let score = style(enc.score).bold().green();
                 let score_kind = enc.score_kind;
@@ -442,7 +451,7 @@ impl StdoutFormat {
 /// though it seems to work better than a binary search.
 /// Perhaps a better approximation of a general crf->vmaf model could be found.
 /// This would be helpful particularly for small crf-increments.
-fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
+fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> i64 {
     assert!(
         worse_q.enc.score <= min_vmaf
             && worse_q.enc.score < better_q.enc.score
@@ -454,7 +463,7 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> u64 {
     let vmaf_factor = (min_vmaf - worse_q.enc.score) / vmaf_diff;
 
     let q_diff = worse_q.q - better_q.q;
-    let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as u64;
+    let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as i64;
     lerp.clamp(better_q.q + 1, worse_q.q - 1)
 }
 
@@ -471,29 +480,80 @@ pub fn guess_progress(run: usize, sample_progress: f32, thorough: bool) -> f64 {
     ((run - 1) as f64 + sample_progress as f64) * BAR_LEN as f64 / total_runs_guess
 }
 
-/// Calculate "q" as a quality value integer multiple of crf.
+/// Conversion logic for integer "q" values used in the crf search.
 ///
-/// * crf=33.5, inc=0.1 -> q=335
-/// * crf=27, inc=1 -> q=27
-#[inline]
-fn q_from_crf(crf: f32, crf_increment: f32) -> u64 {
-    (f64::from(crf) / f64::from(crf_increment)).round() as _
+/// "q" values are
+/// * integers
+/// * low q means higher quality
+/// * they can be converted to/from crf
+struct QualityConverter {
+    high_crf_means_hq: bool,
+    crf_increment: f32,
 }
 
-trait QualityValue {
-    fn to_crf(self, crf_increment: f32) -> f32;
-}
-impl QualityValue for u64 {
-    #[inline]
-    fn to_crf(self, crf_increment: f32) -> f32 {
-        ((self as f64) * f64::from(crf_increment)) as _
+impl QualityConverter {
+    /// Calculate "q" as an integer quality value related to crf.
+    ///
+    /// # Example
+    /// * crf=33.5, inc=0.1 -> q=335
+    /// * crf=27, inc=1 -> q=27
+    ///
+    /// # Example: high_crf_means_hq encoders
+    /// * crf=33.5, inc=0.1 -> q=-335
+    /// * crf=27, inc=1 -> q=-27
+    pub fn q(&self, crf: f32) -> i64 {
+        let q = (f64::from(crf) / f64::from(self.crf_increment)).round() as i64;
+        match self.high_crf_means_hq {
+            true => -q,
+            false => q,
+        }
+    }
+
+    /// Calculate crf back from "q".
+    pub fn crf(&self, q: i64) -> f32 {
+        let pos_q = match self.high_crf_means_hq {
+            true => -q,
+            false => q,
+        };
+        ((pos_q as f64) * f64::from(self.crf_increment)) as _
+    }
+
+    pub fn min_max_q(&self, min_crf: f32, max_crf: f32) -> (i64, i64) {
+        match self.high_crf_means_hq {
+            true => (self.q(max_crf), self.q(min_crf)),
+            false => (self.q(min_crf), self.q(max_crf)),
+        }
     }
 }
 
 #[test]
 fn q_crf_conversions() {
-    assert_eq!(q_from_crf(33.5, 0.1), 335);
-    assert_eq!(q_from_crf(27.0, 1.0), 27);
+    let mut q_conv = QualityConverter {
+        crf_increment: 0.1,
+        high_crf_means_hq: false,
+    };
+
+    assert_eq!(q_conv.q(33.5), 335);
+    assert_eq!(q_conv.crf(335), 33.5);
+
+    q_conv.crf_increment = 1.0;
+    assert_eq!(q_conv.q(27.0), 27);
+    assert_eq!(q_conv.crf(27), 27.0);
+}
+
+#[test]
+fn q_crf_conversions_high_crf_means_hq() {
+    let mut q_conv = QualityConverter {
+        crf_increment: 0.1,
+        high_crf_means_hq: true,
+    };
+
+    assert_eq!(q_conv.q(33.5), -335);
+    assert_eq!(q_conv.crf(-335), 33.5);
+
+    q_conv.crf_increment = 1.0;
+    assert_eq!(q_conv.q(27.0), -27);
+    assert_eq!(q_conv.crf(-27), 27.0);
 }
 
 #[derive(Debug)]

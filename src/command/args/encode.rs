@@ -369,6 +369,13 @@ impl Encoder {
         &self.0
     }
 
+    /// Returns:
+    /// * `true`: Higher crf values mean higher quality.
+    /// * `false`: Higher crf values mean lower quality.
+    pub fn high_crf_means_hq(&self) -> bool {
+        self.as_str() == "hevc_videotoolbox"
+    }
+
     /// Returns default crf-increment.
     ///
     /// Generally 0.1 if codec supports decimal crf.
@@ -391,6 +398,7 @@ impl Encoder {
             "librav1e" | "av1_vaapi" => 255.0,
             "libx264" | "libx265" => 46.0,
             "mpeg2video" => 30.0,
+            "hevc_videotoolbox" => 100.0,
             // Works well for svt-av1
             _ => 55.0,
         }

@@ -181,7 +181,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     encode::run(
         encode::Args {
             args: enc_args,
-            crf: best.crf(),
+            crf: best.crf,
             encode: args::EncodeToOutput {
                 output: Some(output),
                 ..encode

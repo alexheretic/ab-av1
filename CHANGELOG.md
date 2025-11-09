@@ -1,6 +1,9 @@
 # Unreleased (v0.11.0)
 * Disallow having `--input` the same as `--output` as this can lead to unintended data loss.
   This may be explicitly overridden by passing `--overwrite-input`.
+* Add crf-search,auto-encode arg `--high-crf-means-hq` for use with encoders where high 
+  crf means _higher_ quality.
+* Default `--high-crf-means-hq` for hevc_videotoolbox.
 
 # v0.10.1
 * Support setting `--enc-input hwaccel=none --enc-input hwaccel_output_format=none` to omit defaults
