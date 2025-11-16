@@ -76,6 +76,8 @@ pub async fn vmaf(
             score.reference_vfilter.as_deref(),
         ),
         vmaf.fps(),
+        vmaf.cuda,
+        vmaf.cuda_hwaccel.unwrap_or(vmaf.cuda),
     )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut vmaf_score = None;
