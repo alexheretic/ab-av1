@@ -13,6 +13,8 @@ pub fn run(
     distorted: &Path,
     filter_complex: &str,
     fps: Option<f32>,
+    cuda: bool,
+    cuda_hwaccel: bool,
 ) -> anyhow::Result<impl Stream<Item = VmafOut> + use<>> {
     info!(
         "vmaf {} vs reference {}",
@@ -22,9 +24,13 @@ pub fn run(
 
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
+        .arg2_if(cuda && cuda_hwaccel, "-hwaccel", "cuda")
+        .arg2_if(cuda && cuda_hwaccel, "-hwaccel_output_format", "cuda")
         .arg2_opt("-r", fps)
         .arg2("-i", distorted)
         .arg2_opt("-r", fps)
+        .arg2_if(cuda && cuda_hwaccel, "-hwaccel", "cuda")
+        .arg2_if(cuda && cuda_hwaccel, "-hwaccel_output_format", "cuda")
         .arg2("-i", reference)
         .arg2("-filter_complex", filter_complex)
         // Workaround unused streams causing ffmpeg memory leaks
