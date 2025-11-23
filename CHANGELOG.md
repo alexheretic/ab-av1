@@ -1,4 +1,4 @@
-# Unreleased (v0.11.0)
+# v0.10.2
 * Disallow having `--input` the same as `--output` as this can lead to unintended data loss.
   This may be explicitly overridden by passing `--overwrite-input`.
 * Add crf-search,auto-encode arg `--high-crf-means-hq` for use with encoders where high 
