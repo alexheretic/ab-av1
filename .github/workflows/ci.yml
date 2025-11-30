@@ -13,7 +13,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - run: cargo test --locked
     # check print-completions don't fail
     - run: cargo run --locked -- print-completions bash
@@ -27,12 +27,12 @@ jobs:
   #     RUST_BACKTRACE: 1
   #   steps:
   #   - run: rustup update stable
-  #   - uses: actions/checkout@v4
+  #   - uses: actions/checkout@v6
   #   - run: cargo check
 
   rustfmt:
     runs-on: ubuntu-latest
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - run: cargo fmt -- --check

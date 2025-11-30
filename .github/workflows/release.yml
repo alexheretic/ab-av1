@@ -12,7 +12,7 @@ jobs:
     steps:
     - run: rustup update stable
     - run: rustup target add x86_64-unknown-linux-musl
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - run: cargo build --release --locked --target=x86_64-unknown-linux-musl
     - run: tar c ab-av1 | zstd -T0 -19 > ab-av1-${{ github.ref_name }}-x86_64-unknown-linux-musl.tar.zst
       working-directory: target/x86_64-unknown-linux-musl/release/
@@ -27,7 +27,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - run: rustup update stable
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - run: cargo build --release --locked
     - uses: svenstaro/upload-release-action@v2
       with:
