@@ -1,3 +1,6 @@
+# Unreleased (0.10.3)
+* Fix higher crf-search VMAF tolerance than expected when using `--crf-increment` values above 1.
+
 # v0.10.2
 * Disallow having `--input` the same as `--output` as this can lead to unintended data loss.
   This may be explicitly overridden by passing `--overwrite-input`.
