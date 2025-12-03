@@ -274,7 +274,7 @@ pub fn run(
                 true => 0.05,
                 // increment 1.0 => +0.1, +0.2, +0.4, +0.8 ..
                 // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
-                _ => (crf_increment * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
+                _ => (crf_increment.min(1.0) * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
             };
             args.crf = q_conv.crf(q);
 
