@@ -1,4 +1,4 @@
-# Unreleased (0.10.3)
+# v0.10.3
 * Fix higher crf-search VMAF tolerance than expected when using `--crf-increment` values above 1.
 
 # v0.10.2
