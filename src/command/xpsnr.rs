@@ -71,7 +71,7 @@ pub async fn xpsnr(
         &lavfi(score.reference_vfilter.as_deref()),
         xpsnr.fps(),
     )?);
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), None);
     let mut score = None;
     while let Some(next) = xpsnr_out.next().await {
         match next {

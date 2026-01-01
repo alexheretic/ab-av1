@@ -6,7 +6,7 @@ use crate::{
     console_ext::style,
     ffmpeg,
     ffprobe::{self, Ffprobe},
-    log::ProgressLogger,
+    log::{LogInterval, ProgressLogger},
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
@@ -36,6 +36,11 @@ pub struct Args {
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
+
+    /// Interval between progress log messages when running non-interactively.
+    /// Accepts duration (e.g., "30s", "1m") or percentage (e.g., "2%").
+    #[arg(long)]
+    pub log_interval: Option<LogInterval>,
 }
 
 pub async fn encode(args: Args) -> anyhow::Result<()> {
@@ -62,6 +67,7 @@ pub async fn run(
                 video_only,
                 overwrite_input,
             },
+        log_interval,
     }: Args,
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
@@ -105,7 +111,7 @@ pub async fn run(
     );
 
     let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), log_interval);
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
         match progress? {

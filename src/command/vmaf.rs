@@ -77,7 +77,7 @@ pub async fn vmaf(
         ),
         vmaf.fps(),
     )?);
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), None);
     let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {

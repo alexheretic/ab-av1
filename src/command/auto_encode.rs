@@ -7,6 +7,7 @@ use crate::{
     console_ext::style,
     ffprobe,
     float::TerseF32,
+    log::LogInterval,
     temporary,
 };
 use anyhow::Context;
@@ -36,9 +37,20 @@ pub struct Args {
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
+
+    /// Interval between progress log messages when running non-interactively.
+    /// Accepts duration (e.g., "30s", "1m") or percentage (e.g., "2%").
+    #[arg(long)]
+    pub log_interval: Option<LogInterval>,
 }
 
-pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
+pub async fn auto_encode(
+    Args {
+        mut search,
+        encode,
+        log_interval,
+    }: Args,
+) -> anyhow::Result<()> {
     const SPINNER_RUNNING: &str = "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})";
     const SPINNER_FINISHED: &str =
         "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg})";
@@ -186,6 +198,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 output: Some(output),
                 ..encode
             },
+            log_interval,
         },
         input_probe,
         &bar,
