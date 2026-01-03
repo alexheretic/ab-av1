@@ -7,7 +7,7 @@ use crate::{
         sample_encode::cache::ScoringInfo,
     },
     console_ext::style,
-    ffmpeg::{self, FfmpegEncodeArgs},
+    ffmpeg::{self, FfmpegEncodeArgs, remove_arg},
     ffprobe::{self, Ffprobe},
     log::ProgressLogger,
     process::FfmpegOut,
@@ -159,7 +159,11 @@ pub fn run(
         let input_pix_fmt = input_probe.pixel_format();
         let input_is_image = input_probe.is_image;
         let input_len = fs::metadata(&*input).await?.len();
-        let enc_args = args.to_encoder_args(crf, &input_probe)?;
+        let mut enc_args = args.to_encoder_args(crf, &input_probe)?;
+        // ignore user -fps_mode for sample encoding, as we always use passthrough
+        remove_arg(&mut enc_args.output_args, "-fps_mode");
+        remove_arg(&mut enc_args.output_args, "-vsync");
+
         let duration = input_probe.duration.clone()?;
         let input_fps = input_probe.fps.clone()?;
         let samples = sample_args.sample_count(duration).max(1);

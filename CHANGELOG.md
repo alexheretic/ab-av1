@@ -1,3 +1,6 @@
+# Unreleased
+* Use ffmpeg `-fps_mode passthrough` for all sample encodes. This improves VMAF scores in some cases.
+
 # v0.10.3
 * Fix higher crf-search VMAF tolerance than expected when using `--crf-increment` values above 1.
 
