@@ -66,7 +66,7 @@ pub fn encode_sample(
         pix_fmt,
         crf,
         preset,
-        mut output_args,
+        output_args,
         input_args,
         video_only: _,
     }: FfmpegEncodeArgs,
@@ -82,10 +82,6 @@ pub fn encode_sample(
     let dest_file_name = dest_file_name.file_name().unwrap();
     let mut dest = temporary::process_dir(temp_dir);
     dest.push(dest_file_name);
-
-    // ignore user -fps_mode for sample encoding, always use passthrough
-    remove_arg(&mut output_args, "-fps_mode");
-    remove_arg(&mut output_args, "-vsync");
 
     temporary::add(&dest, TempKind::Keepable);
 
@@ -238,7 +234,7 @@ impl VCodecSpecific for Arc<str> {
     }
 }
 
-fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
+pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
     let mut retain_next = true;
     args.retain(|a| {
         if **a == arg {
