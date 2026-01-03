@@ -66,7 +66,7 @@ pub fn encode_sample(
         pix_fmt,
         crf,
         preset,
-        output_args,
+        mut output_args,
         input_args,
         video_only: _,
     }: FfmpegEncodeArgs,
@@ -83,6 +83,10 @@ pub fn encode_sample(
     let mut dest = temporary::process_dir(temp_dir);
     dest.push(dest_file_name);
 
+    // ignore user -fps_mode for sample encoding, always use passthrough
+    remove_arg(&mut output_args, "-fps_mode");
+    remove_arg(&mut output_args, "-vsync");
+
     temporary::add(&dest, TempKind::Keepable);
 
     let mut cmd = Command::new("ffmpeg");
@@ -92,6 +96,8 @@ pub fn encode_sample(
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
+        // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
+        .arg2("-fps_mode", "passthrough")
         .arg2(vcodec.crf_arg(), crf)
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
@@ -230,4 +236,19 @@ impl VCodecSpecific for Arc<str> {
             _ => "-crf",
         }
     }
+}
+
+fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
+    let mut retain_next = true;
+    args.retain(|a| {
+        if **a == arg {
+            retain_next = false;
+            false
+        } else if !retain_next {
+            retain_next = true;
+            false
+        } else {
+            true
+        }
+    });
 }
