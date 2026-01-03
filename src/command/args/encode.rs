@@ -224,12 +224,12 @@ impl Encode {
                 if let Some((opt, val)) = arg.split_once('=') {
                     if opt == "svtav1-params" {
                         svtav1_params.push(arg.clone());
-                        vec![].into_iter()
+                        vec![]
                     } else {
-                        vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                        vec![opt.to_owned().into(), val.to_owned().into()]
                     }
                 } else {
-                    vec![arg.clone().into()].into_iter()
+                    vec![arg.clone().into()]
                 }
             })
             .collect();

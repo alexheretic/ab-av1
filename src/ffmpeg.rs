@@ -54,6 +54,7 @@ impl FfmpegEncodeArgs<'_> {
         self.preset.hash(state);
         self.output_args.hash(state);
         self.input_args.hash(state);
+        20250103.hash(state); // introduced -fps_mode passthrough
     }
 }
 
@@ -92,6 +93,8 @@ pub fn encode_sample(
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
+        // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
+        .arg2("-fps_mode", "passthrough")
         .arg2(vcodec.crf_arg(), crf)
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
@@ -230,4 +233,19 @@ impl VCodecSpecific for Arc<str> {
             _ => "-crf",
         }
     }
+}
+
+pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
+    let mut retain_next = true;
+    args.retain(|a| {
+        if **a == arg {
+            retain_next = false;
+            false
+        } else if !retain_next {
+            retain_next = true;
+            false
+        } else {
+            true
+        }
+    });
 }
