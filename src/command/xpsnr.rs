@@ -36,6 +36,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub xpsnr: args::Xpsnr,
+
+    #[clap(flatten)]
+    pub progress: args::ProgressLog,
 }
 
 pub async fn xpsnr(
@@ -44,6 +47,7 @@ pub async fn xpsnr(
         distorted,
         score,
         xpsnr,
+        progress: args::ProgressLog { log_interval },
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -71,7 +75,7 @@ pub async fn xpsnr(
         &lavfi(score.reference_vfilter.as_deref()),
         xpsnr.fps(),
     )?);
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), None);
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), log_interval);
     let mut score = None;
     while let Some(next) = xpsnr_out.next().await {
         match next {

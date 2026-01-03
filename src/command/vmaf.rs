@@ -41,6 +41,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub score: args::ScoreArgs,
+
+    #[clap(flatten)]
+    pub progress: args::ProgressLog,
 }
 
 pub async fn vmaf(
@@ -49,6 +52,7 @@ pub async fn vmaf(
         distorted,
         vmaf,
         score,
+        progress: args::ProgressLog { log_interval },
     }: Args,
 ) -> anyhow::Result<()> {
     let bar = ProgressBar::new(1).with_style(
@@ -77,7 +81,7 @@ pub async fn vmaf(
         ),
         vmaf.fps(),
     )?);
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), None);
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), log_interval);
     let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {

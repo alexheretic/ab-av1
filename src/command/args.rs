@@ -5,7 +5,7 @@ mod vmaf;
 pub use encode::*;
 pub use vmaf::*;
 
-use crate::{command::encode::default_output_ext, ffprobe::Ffprobe};
+use crate::{command::encode::default_output_ext, ffprobe::Ffprobe, log::LogInterval};
 use clap::{Parser, ValueHint};
 use std::{
     path::{Path, PathBuf},
@@ -141,4 +141,15 @@ impl std::hash::Hash for Xpsnr {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.xpsnr_fps.to_ne_bytes().hash(state);
     }
+}
+
+/// Progress logging arguments.
+#[derive(Debug, Parser, Clone, Default)]
+pub struct ProgressLog {
+    /// Interval between progress log messages when running non-interactively.
+    /// Accepts duration (e.g., "30s", "1m") or percentage (e.g., "2%").
+    /// Default: exponentially increasing intervals (16s, 32s, 64s, ...).
+    /// Not used during crf-search sampling.
+    #[arg(long, env = "AB_AV1_LOG_INTERVAL")]
+    pub log_interval: Option<LogInterval>,
 }

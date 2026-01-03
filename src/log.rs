@@ -34,11 +34,9 @@ impl std::str::FromStr for LogInterval {
             ensure!(!d.is_zero(), "interval must be greater than 0");
             return Ok(Self::Duration(d));
         }
-        let secs: u64 = s
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid interval: {s}"))?;
-        ensure!(secs > 0, "interval must be greater than 0");
-        Ok(Self::Duration(Duration::from_secs(secs)))
+        anyhow::bail!(
+            "invalid interval '{s}': expected duration (e.g., '30s', '1m') or percentage (e.g., '5%')"
+        );
     }
 }
 
