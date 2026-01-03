@@ -36,6 +36,9 @@ pub struct Args {
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
+
+    #[clap(flatten)]
+    pub progress: args::ProgressLog,
 }
 
 pub async fn encode(args: Args) -> anyhow::Result<()> {
@@ -62,6 +65,7 @@ pub async fn run(
                 video_only,
                 overwrite_input,
             },
+        progress: args::ProgressLog { log_interval },
     }: Args,
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
@@ -105,7 +109,7 @@ pub async fn run(
     );
 
     let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
-    let mut logger = ProgressLogger::new(module_path!(), Instant::now());
+    let mut logger = ProgressLogger::new(module_path!(), Instant::now(), log_interval);
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
         match progress? {

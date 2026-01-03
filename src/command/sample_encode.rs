@@ -262,7 +262,7 @@ pub fn run(
                 }
                 (None, key) => {
                     let b = Instant::now();
-                    let mut logger = ProgressLogger::new(module_path!(), b);
+                    let mut logger = ProgressLogger::new(module_path!(), b, None);
                     let (encoded_sample, mut output) = ffmpeg::encode_sample(
                         FfmpegEncodeArgs {
                             input: &sample,
@@ -312,7 +312,7 @@ pub fn run(
                                 vmaf.fps(),
                             )?;
                             let mut vmaf = pin!(vmaf);
-                            let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
+                            let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now(), None);
                             let mut vmaf_score = None;
                             while let Some(vmaf) = vmaf.next().await {
                                 match vmaf {
@@ -368,7 +368,7 @@ pub fn run(
                             );
                             let xpsnr_out = xpsnr::run(&sample, &encoded_sample, &lavfi, xpsnr_opts.fps())?;
                             let mut xpsnr_out = pin!(xpsnr_out);
-                            let mut logger = ProgressLogger::new("ab_av1::xpsnr", Instant::now());
+                            let mut logger = ProgressLogger::new("ab_av1::xpsnr", Instant::now(), None);
                             let mut score = None;
                             while let Some(next) = xpsnr_out.next().await {
                                 match next {

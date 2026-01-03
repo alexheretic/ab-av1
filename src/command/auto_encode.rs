@@ -36,9 +36,18 @@ pub struct Args {
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
+
+    #[clap(flatten)]
+    pub progress: args::ProgressLog,
 }
 
-pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()> {
+pub async fn auto_encode(
+    Args {
+        mut search,
+        encode,
+        progress,
+    }: Args,
+) -> anyhow::Result<()> {
     const SPINNER_RUNNING: &str = "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})";
     const SPINNER_FINISHED: &str =
         "{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg})";
@@ -186,6 +195,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                 output: Some(output),
                 ..encode
             },
+            progress,
         },
         input_probe,
         &bar,
