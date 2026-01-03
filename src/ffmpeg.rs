@@ -54,6 +54,7 @@ impl FfmpegEncodeArgs<'_> {
         self.preset.hash(state);
         self.output_args.hash(state);
         self.input_args.hash(state);
+        20250103.hash(state); // introduced -fps_mode passthrough
     }
 }
 

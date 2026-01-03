@@ -37,7 +37,6 @@ pub async fn cached_encode(
             input_extension,
             input_size,
             full_pass,
-            20250103, // introduced -fps_mode passthrough
         ),
         enc_args,
         scoring,
