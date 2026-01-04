@@ -310,6 +310,8 @@ pub fn run(
                                     score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
                                 ),
                                 vmaf.fps(),
+                                vmaf.cuda,
+                                vmaf.cuda_hwaccel.unwrap_or(vmaf.cuda),
                             )?;
                             let mut vmaf = pin!(vmaf);
                             let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());

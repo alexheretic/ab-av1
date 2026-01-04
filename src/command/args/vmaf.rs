@@ -40,6 +40,22 @@ pub struct Vmaf {
     /// Setting to 0 disables use.
     #[arg(long, default_value_t = DEFAULT_VMAF_FPS)]
     pub vmaf_fps: f32,
+
+    /// Use CUDA-accelerated VMAF (libvmaf_cuda) instead of standard libvmaf.
+    /// Requires a NVIDIA GPU with CUDA support and FFmpeg built with libvmaf_cuda.
+    #[arg(long)]
+    pub cuda: bool,
+
+    /// Use hardware decoding during processing with libvmaf_cuda.
+    /// Enabled by default when --cuda is used.
+    /// 
+    /// You may want to disable this if your GPU is unable to decode the source or processed videos.
+    /// 
+    /// If you need to use CPU-based reference-vfilters, disable this or add
+    /// an hwdownload filter to the start and an hwupload_cuda filter to the end 
+    /// of the reference-vfilter chain (will cause slow cpu-gpu transfers).
+    #[arg(long = "cuda-hwaccel", value_parser = clap::value_parser!(bool))]
+    pub cuda_hwaccel: Option<bool>,
 }
 
 impl Default for Vmaf {
@@ -48,6 +64,8 @@ impl Default for Vmaf {
             vmaf_args: <_>::default(),
             vmaf_scale: <_>::default(),
             vmaf_fps: DEFAULT_VMAF_FPS,
+            cuda: false,
+            cuda_hwaccel: None,
         }
     }
 }
@@ -57,7 +75,13 @@ impl std::hash::Hash for Vmaf {
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
         self.vmaf_fps.to_ne_bytes().hash(state);
+        self.cuda.hash(state);
+        self.cuda_hwaccel.hash(state);
     }
+}
+enum VmafBackend {
+    Cpu,
+    Cuda { hwaccel: bool },
 }
 
 fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
@@ -65,6 +89,15 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
+    fn backend(&self) -> VmafBackend {
+        if self.cuda {
+            VmafBackend::Cuda { hwaccel: self.cuda_hwaccel.unwrap_or(self.cuda) }
+        } else {
+            VmafBackend::Cpu
+        }
+    }
+
+
     pub fn fps(&self) -> Option<f32> {
         Some(self.vmaf_fps).filter(|r| *r > 0.0)
     }
@@ -77,7 +110,10 @@ impl Vmaf {
         ref_vfilter: Option<&str>,
     ) -> String {
         let mut args = self.vmaf_args.clone();
-        if !args.iter().any(|a| a.contains("n_threads")) {
+        let backend = self.backend();
+
+        // n_threads is only valid for CPU-based libvmaf, not libvmaf_cuda
+        if matches!(backend, VmafBackend::Cpu) && !args.iter().any(|a| a.contains("n_threads")) {
             // default n_threads to all cores
             args.push(
                 format!(
@@ -87,8 +123,28 @@ impl Vmaf {
                 .into(),
             );
         }
-        let mut lavfi = args.join(":");
-        lavfi.insert_str(0, "libvmaf=shortest=true:ts_sync_mode=nearest:");
+        // simply appending to the "lavfi" string failed when n_threads was missing due to cuda mode,
+        // this inserts semicolons between args more reliably
+        let mut vmaf_opts: Vec<String> = vec![
+            "shortest=true".to_string(),
+            "ts_sync_mode=nearest".to_string(),
+        ];
+        vmaf_opts.extend(
+            args
+                .iter()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty()),
+        );
+
+
+        let vmaf_filter_name = match backend {
+            VmafBackend::Cpu => "libvmaf",
+            VmafBackend::Cuda { .. } => "libvmaf_cuda",
+        };
+        let mut lavfi = format!(
+            "{vmaf_filter_name}={}",
+            vmaf_opts.join(":")
+        );
 
         let mut model = VmafModel::from_args(&args);
         if let (None, Some((w, h))) = (model, distorted_res)
@@ -105,11 +161,26 @@ impl Vmaf {
             Some(vf) if vf.ends_with(',') => vf.into(),
             Some(vf) => format!("{vf},").into(),
         };
-        let format = pix_fmt.map(|v| format!("format={v},")).unwrap_or_default();
-        let scale = self
-            .vf_scale(model.unwrap_or_default(), distorted_res)
-            .map(|(w, h)| format!("scale={w}:{h}:flags=bicubic,"))
-            .unwrap_or_default();
+  
+        let format = match backend {
+            VmafBackend::Cuda { .. } => "".to_string(), // media will be converted to yuv420p regardless during scaling
+            VmafBackend::Cpu => pix_fmt.map(|v| format!("format={v},")).unwrap_or_default(),
+        };
+
+        let scale = match backend {
+            VmafBackend::Cpu => self
+                .vf_scale(model.unwrap_or_default(), distorted_res)
+                .map(|(w, h)| format!("scale={w}:{h}:flags=bicubic,"))
+                .unwrap_or_default(),
+            VmafBackend::Cuda { hwaccel:false } => self
+                .vf_scale(model.unwrap_or_default(), distorted_res)
+                .map(|(w, h)| format!("hwupload_cuda,scale_cuda={w}:{h}:interp_algo=lanczos:format=yuv420p,"))
+                .unwrap_or(format!("hwupload_cuda,scale_cuda=format=yuv420p,")),
+            VmafBackend::Cuda { hwaccel:true } => self
+                .vf_scale(model.unwrap_or_default(), distorted_res)
+                .map(|(w, h)| format!("scale_cuda={w}:{h}:interp_algo=lanczos:format=yuv420p,"))
+                .unwrap_or(format!("scale_cuda=format=yuv420p,")),
+        };
 
         // prefix:
         // * Add reference-vfilter if any
@@ -382,5 +453,65 @@ fn vmaf_lavfi_1080p() {
         "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
          [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
          [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
+    );
+}
+
+#[test]
+fn vmaf_lavfi_cuda_scale_hwaccel() {
+    let vmaf = Vmaf {
+        cuda: true,
+        cuda_hwaccel: Some(true),
+        ..<_>::default()
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
+        "[0:v]scale_cuda=1920:-1:interp_algo=lanczos:format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+         [1:v]scale_cuda=1920:-1:interp_algo=lanczos:format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+         [dis][ref]libvmaf_cuda=shortest=true:ts_sync_mode=nearest"
+    );
+}
+
+#[test]
+fn vmaf_lavfi_cuda_scale() {
+    let vmaf = Vmaf {
+        cuda: true,
+        cuda_hwaccel: Some(false),
+        ..<_>::default()
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
+        "[0:v]hwupload_cuda,scale_cuda=1920:-1:interp_algo=lanczos:format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+         [1:v]hwupload_cuda,scale_cuda=1920:-1:interp_algo=lanczos:format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+         [dis][ref]libvmaf_cuda=shortest=true:ts_sync_mode=nearest"
+    );
+}
+
+#[test]
+fn vmaf_lavfi_cuda_hwaccel_1080p() {
+    let vmaf = Vmaf {
+        cuda: true,
+        cuda_hwaccel: Some(true),
+        ..<_>::default()
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((1920, 1080)), Some(PixelFormat::Yuv420p), None),
+        "[0:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+         [1:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+         [dis][ref]libvmaf_cuda=shortest=true:ts_sync_mode=nearest"
+    );
+}
+
+#[test]
+fn vmaf_lavfi_cuda_hwaccel_4k() {
+    let vmaf = Vmaf {
+        cuda: true,
+        cuda_hwaccel: Some(true),
+        ..<_>::default()
+    };
+    assert_eq!(
+        vmaf.ffmpeg_lavfi(Some((3840, 2160)), Some(PixelFormat::Yuv420p), None),
+        "[0:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+        [1:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+        [dis][ref]libvmaf_cuda=shortest=true:ts_sync_mode=nearest:model=version=vmaf_4k_v0.6.1"
     );
 }
