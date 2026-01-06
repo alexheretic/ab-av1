@@ -373,42 +373,7 @@ pub struct Sample {
 
 impl Sample {
     pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
-        if bar.is_hidden() {
-            info!(
-                "crf {} {} {:.2} ({:.0}%){}",
-                TerseF32(self.crf),
-                self.enc.score_kind,
-                self.enc.score,
-                self.enc.encode_percent,
-                if self.enc.from_cache { " (cache)" } else { "" }
-            );
-            return;
-        }
-
-        let crf_label = style("- crf").dim();
-        let mut crf = style(TerseF32(self.crf));
-        let vmaf_label = style(self.enc.score_kind).dim();
-        let mut vmaf = style(self.enc.score);
-        let mut percent = style!("{:.0}%", self.enc.encode_percent);
-        let open = style("(").dim();
-        let close = style(")").dim();
-        let cache_msg = match self.enc.from_cache {
-            true => style(" (cache)").dim(),
-            false => style(""),
-        };
-
-        if self.enc.score < min_score {
-            crf = crf.red().bright();
-            vmaf = vmaf.red().bright();
-        }
-        if self.enc.encode_percent > max_encoded_percent as _ {
-            crf = crf.red().bright();
-            percent = percent.red().bright();
-        }
-
-        bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
-        ));
+        StdoutFormat::Human.print_attempt(self, bar, min_score, max_encoded_percent);
     }
 }
 
@@ -435,6 +400,59 @@ impl StdoutFormat {
                 println!(
                     "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
+            }
+        }
+    }
+
+    pub fn print_attempt(
+        self,
+        sample: &Sample,
+        bar: &ProgressBar,
+        min_score: f32,
+        max_encoded_percent: f32,
+    ) {
+        match self {
+            Self::Human => {
+                if bar.is_hidden() {
+                    info!(
+                        "crf {} {} {:.2} ({:.0}%){}",
+                        TerseF32(sample.crf),
+                        sample.enc.score_kind,
+                        sample.enc.score,
+                        sample.enc.encode_percent,
+                        if sample.enc.from_cache {
+                            " (cache)"
+                        } else {
+                            ""
+                        }
+                    );
+                    return;
+                }
+
+                let crf_label = style("- crf").dim();
+                let mut crf = style(TerseF32(sample.crf));
+                let vmaf_label = style(sample.enc.score_kind).dim();
+                let mut vmaf = style(sample.enc.score);
+                let mut percent = style!("{:.0}%", sample.enc.encode_percent);
+                let open = style("(").dim();
+                let close = style(")").dim();
+                let cache_msg = match sample.enc.from_cache {
+                    true => style(" (cache)").dim(),
+                    false => style(""),
+                };
+
+                if sample.enc.score < min_score {
+                    crf = crf.red().bright();
+                    vmaf = vmaf.red().bright();
+                }
+                if sample.enc.encode_percent > max_encoded_percent as _ {
+                    crf = crf.red().bright();
+                    percent = percent.red().bright();
+                }
+
+                bar.println(format!(
+                    "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
+                ));
             }
         }
     }
