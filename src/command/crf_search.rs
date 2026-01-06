@@ -110,6 +110,10 @@ pub struct Args {
 
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
+
+    /// Stdout message format `human` or `json`.
+    #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
+    pub stdout_format: StdoutFormat,
 }
 
 impl Args {
@@ -136,12 +140,13 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let thorough = args.thorough;
     let enc_args = args.args.clone();
     let verbose = args.verbose;
+    let stdout_format = args.stdout_format;
 
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
             if let Error::NoGoodCrf { last } = e {
-                last.print_attempt(&bar, min_score, max_encoded_percent);
+                stdout_format.print_attempt(last, &bar, min_score, max_encoded_percent);
             }
         })?;
         match update {
@@ -183,7 +188,9 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
-            Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
+            Update::RunResult(result) => {
+                stdout_format.print_attempt(&result, &bar, min_score, max_encoded_percent)
+            }
             Update::Done(best) => {
                 info!("crf {} successful", best.crf);
                 bar.finish_with_message("");
@@ -194,7 +201,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(best.crf)).dim().italic(),
                     );
                 }
-                StdoutFormat::Human.print_result(&best, input_is_image);
+                stdout_format.print_result(&best, input_is_image);
                 return Ok(());
             }
         }
@@ -219,6 +226,7 @@ pub fn run(
         score,
         xpsnr,
         verbose: _,
+        stdout_format: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = Result<Update, Error>> {
@@ -380,6 +388,7 @@ impl Sample {
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum StdoutFormat {
     Human,
+    Json,
 }
 
 impl StdoutFormat {
@@ -399,6 +408,21 @@ impl StdoutFormat {
                 };
                 println!(
                     "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
+                );
+            }
+            Self::Json => {
+                let enc = &sample.enc;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "result",
+                        "crf": sample.crf,
+                        "score_kind": enc.score_kind.to_string(),
+                        "score": enc.score,
+                        "predicted_encode_size": enc.predicted_encode_size,
+                        "predicted_encode_percent": enc.encode_percent,
+                        "predicted_encode_seconds": enc.predicted_encode_time.as_secs_f64(),
+                    })
                 );
             }
         }
@@ -453,6 +477,21 @@ impl StdoutFormat {
                 bar.println(format!(
                     "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
                 ));
+            }
+            Self::Json => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "attempt",
+                        "crf": sample.crf,
+                        "score_kind": sample.enc.score_kind.to_string(),
+                        "score": sample.enc.score,
+                        "predicted_encode_percent": sample.enc.encode_percent,
+                        "predicted_encode_size": sample.enc.predicted_encode_size,
+                        "predicted_encode_seconds": sample.enc.predicted_encode_time.as_secs_f64(),
+                        "from_cache": sample.enc.from_cache,
+                    })
+                );
             }
         }
     }
