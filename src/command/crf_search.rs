@@ -145,9 +145,10 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
-            if let Error::NoGoodCrf { last } = e {
+            if let Error::NoGoodCrf { last, .. } = e {
                 stdout_format.print_attempt(last, &bar, min_score, max_encoded_percent);
             }
+            stdout_format.print_error(e);
         })?;
         match update {
             Update::Status {
@@ -233,6 +234,10 @@ pub fn run(
         Error::ensure_other(min_crf < max_crf, "Invalid --min-crf & --max-crf")?;
         // by default use vmaf 95, otherwise use whatever is specified
         let min_score = min_vmaf.or(min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF);
+        let score_kind = match min_xpsnr.is_some() {
+            true => sample_encode::ScoreKind::Xpsnr,
+            false => sample_encode::ScoreKind::Vmaf,
+        };
 
         // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
         // improve interpolation by narrowing the crf range a 20% (or 30%) subrange.
@@ -317,7 +322,7 @@ pub fn run(
 
                 match u_bound {
                     Some(upper) if upper.q == sample.q + 1 => {
-                        Error::ensure_or_no_good_crf(sample_small_enough, &sample)?;
+                        Error::ensure_or_no_good_crf(sample_small_enough, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::Done(sample);
                         return;
                     }
@@ -325,7 +330,7 @@ pub fn run(
                         q = vmaf_lerp_q(min_score, upper, &sample);
                     }
                     None if sample.q == max_q => {
-                        Error::ensure_or_no_good_crf(sample_small_enough, &sample)?;
+                        Error::ensure_or_no_good_crf(sample_small_enough, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::Done(sample);
                         return;
                     }
@@ -337,7 +342,12 @@ pub fn run(
             } else {
                 // not good enough
                 if !sample_small_enough || sample.q == min_q {
-                    Err(Error::NoGoodCrf { last: sample.clone() })?;
+                    Err(Error::NoGoodCrf {
+                        last: sample.clone(),
+                        min_score,
+                        max_encoded_percent,
+                        score_kind,
+                    })?;
                 }
 
                 let l_bound = crf_attempts
@@ -347,7 +357,7 @@ pub fn run(
 
                 match l_bound {
                     Some(lower) if lower.q + 1 == sample.q => {
-                        Error::ensure_or_no_good_crf(lower.enc.encode_percent <= max_encoded_percent as _, &sample)?;
+                        Error::ensure_or_no_good_crf(lower.enc.encode_percent <= max_encoded_percent as _, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::RunResult(sample.clone());
                         yield Update::Done(lower.clone());
                         return;
@@ -523,6 +533,58 @@ impl StdoutFormat {
                 {
                     result.print_attempt(bar, sample, Some(crf))
                 }
+            }
+        }
+    }
+
+    pub fn print_error(self, error: &Error) {
+        match (self, error) {
+            (Self::Human, Error::NoGoodCrf { .. }) => {
+                // Human errors use the enhanced Display impl via normal error propagation
+            }
+            (
+                Self::Json,
+                Error::NoGoodCrf {
+                    last,
+                    min_score,
+                    max_encoded_percent,
+                    score_kind,
+                },
+            ) => {
+                let score_too_low = last.enc.score < *min_score;
+                let encode_too_large = last.enc.encode_percent > *max_encoded_percent as f64;
+                let reason = match (score_too_low, encode_too_large) {
+                    (true, true) => "constraints_infeasible",
+                    (true, false) => "score_too_low",
+                    (false, true) => "encode_too_large",
+                    (false, false) => "unknown",
+                };
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "error",
+                        "reason": reason,
+                        "target_score": min_score,
+                        "max_encoded_percent": max_encoded_percent,
+                        "score_kind": score_kind.to_string(),
+                        "crf": last.crf,
+                        "score": last.enc.score,
+                        "predicted_encode_percent": last.enc.encode_percent,
+                    })
+                );
+            }
+            (Self::Json, Error::Other(err)) => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "error",
+                        "reason": "other",
+                        "message": err.to_string(),
+                    })
+                );
+            }
+            (Self::Human, Error::Other(_)) => {
+                // Human errors are handled by the normal error propagation
             }
         }
     }
