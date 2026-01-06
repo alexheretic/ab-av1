@@ -181,13 +181,8 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                 sample,
                 result,
             } => {
-                if verbose
-                    .log_level()
-                    .is_some_and(|lvl| lvl > log::Level::Error)
-                {
-                    result.print_attempt(&bar, sample, Some(crf))
-                }
-            }
+                stdout_format.print_sample_result(crf, sample, &result, &bar, &verbose);
+            },
             Update::RunResult(result) => {
                 stdout_format.print_attempt(&result, &bar, min_score, max_encoded_percent)
             }
@@ -492,6 +487,42 @@ impl StdoutFormat {
                         "from_cache": sample.enc.from_cache,
                     })
                 );
+            }
+        }
+    }
+
+    pub fn print_sample_result(
+        self,
+        crf: f32,
+        sample: u64,
+        result: &sample_encode::EncodeResult,
+        bar: &ProgressBar,
+        verbose: &clap_verbosity_flag::Verbosity,
+    ) {
+        match self {
+            Self::Json => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "sample",
+                        "crf": crf,
+                        "sample": sample,
+                        "score_kind": result.score_kind.to_string(),
+                        "score": result.score,
+                        "encoded_size": result.encoded_size,
+                        "sample_size": result.sample_size,
+                        "encode_time_secs": result.encode_time.as_secs_f64(),
+                        "from_cache": result.from_cache,
+                    })
+                );
+            }
+            Self::Human => {
+                if verbose
+                    .log_level()
+                    .is_some_and(|lvl| lvl > log::Level::Error)
+                {
+                    result.print_attempt(bar, sample, Some(crf))
+                }
             }
         }
     }
