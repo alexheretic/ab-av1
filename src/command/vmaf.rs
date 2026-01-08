@@ -83,7 +83,6 @@ pub async fn vmaf(
         match vmaf {
             VmafOut::Done(score) => {
                 vmaf_score = Some(score);
-                break;
             }
             VmafOut::Progress(FfmpegOut::Progress {
                 frame, fps, time, ..
