@@ -318,7 +318,6 @@ pub fn run(
                                 match vmaf {
                                     VmafOut::Done(score) => {
                                         vmaf_score = Some(score);
-                                        break;
                                     }
                                     VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                                         yield Update::Status(Status {
@@ -374,7 +373,6 @@ pub fn run(
                                 match next {
                                     XpsnrOut::Done(s) => {
                                         score = Some(s);
-                                        break;
                                     }
                                     XpsnrOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
                                         yield Update::Status(Status {

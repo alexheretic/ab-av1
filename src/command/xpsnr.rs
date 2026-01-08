@@ -77,7 +77,6 @@ pub async fn xpsnr(
         match next {
             XpsnrOut::Done(s) => {
                 score = Some(s);
-                break;
             }
             XpsnrOut::Progress(FfmpegOut::Progress {
                 frame, fps, time, ..
