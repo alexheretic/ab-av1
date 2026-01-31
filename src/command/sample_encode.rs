@@ -363,7 +363,8 @@ pub fn run(
                             });
 
                             let lavfi = super::xpsnr::lavfi(
-                                score.reference_vfilter.as_deref().or(args.vfilter.as_deref())
+                                score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
+                                PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
                             );
                             let xpsnr_out = xpsnr::run(&sample, &encoded_sample, &lavfi, xpsnr_opts.fps())?;
                             let mut xpsnr_out = pin!(xpsnr_out);

@@ -1,5 +1,8 @@
 use crate::{
-    command::{PROGRESS_CHARS, args},
+    command::{
+        PROGRESS_CHARS,
+        args::{self, PixelFormat},
+    },
     ffprobe,
     log::ProgressLogger,
     process::FfmpegOut,
@@ -9,10 +12,9 @@ use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
-    borrow::Cow,
+    fmt::Write,
     path::PathBuf,
     pin::pin,
-    sync::LazyLock,
     time::{Duration, Instant},
 };
 use tokio_stream::StreamExt;
@@ -55,12 +57,9 @@ pub async fn xpsnr(
     bar.set_message("xpsnr running, ");
 
     let dprobe = ffprobe::probe(&distorted);
-    let rprobe = LazyLock::new(|| ffprobe::probe(&reference));
+    let rprobe = ffprobe::probe(&reference);
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
-    let duration = dprobe
-        .duration
-        .as_ref()
-        .or_else(|_| rprobe.duration.as_ref());
+    let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
         bar.set_length(nframes);
     }
@@ -68,7 +67,10 @@ pub async fn xpsnr(
     let mut xpsnr_out = pin!(xpsnr::run(
         &reference,
         &distorted,
-        &lavfi(score.reference_vfilter.as_deref()),
+        &lavfi(
+            score.reference_vfilter.as_deref(),
+            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+        ),
         xpsnr.fps(),
     )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
@@ -101,23 +103,59 @@ pub async fn xpsnr(
     Ok(())
 }
 
-pub fn lavfi(ref_vfilter: Option<&str>) -> Cow<'static, str> {
-    match ref_vfilter {
-        None => "xpsnr=stats_file=-".into(),
-        Some(vf) => format!("[0:v]{vf}[ref];[ref][1:v]xpsnr=stats_file=-").into(),
+pub fn lavfi(ref_vfilter: Option<&str>, pix_fmt: Option<PixelFormat>) -> String {
+    let mut lavfi = String::from("[0:v]");
+    if let Some(pix_fmt) = pix_fmt {
+        _ = write!(&mut lavfi, "format={pix_fmt}");
     }
+    if let Some(vf) = ref_vfilter {
+        if pix_fmt.is_some() {
+            lavfi.push(',');
+        }
+        lavfi.push_str(vf);
+    }
+    lavfi.push_str("[ref];[1:v]");
+    if let Some(pix_fmt) = pix_fmt {
+        _ = write!(&mut lavfi, "format={pix_fmt}");
+    }
+    lavfi.push_str("[dis];[ref][dis]xpsnr=stats_file=-");
+    lavfi
 }
 
 #[test]
 fn test_lavfi_default() {
-    assert_eq!(lavfi(None), "xpsnr=stats_file=-");
+    assert_eq!(
+        lavfi(None, None),
+        "[0:v][ref];[1:v][dis];[ref][dis]xpsnr=stats_file=-"
+    );
 }
 
 #[test]
 fn test_lavfi_ref_vfilter() {
     assert_eq!(
-        lavfi(Some("scale=1280:-1")),
+        lavfi(Some("scale=1280:-1"), None),
         "[0:v]scale=1280:-1[ref];\
-         [ref][1:v]xpsnr=stats_file=-"
+         [1:v][dis];\
+         [ref][dis]xpsnr=stats_file=-"
+    );
+}
+
+#[test]
+fn test_lavfi_pixel_format() {
+    assert_eq!(
+        lavfi(None, Some(PixelFormat::Yuv420p10le)),
+        "[0:v]format=yuv420p10le[ref];\
+         [1:v]format=yuv420p10le[dis];\
+         [ref][dis]xpsnr=stats_file=-"
+    );
+}
+
+#[test]
+fn test_lavfi_all() {
+    assert_eq!(
+        lavfi(Some("scale=640:-1"), Some(PixelFormat::Yuv420p10le)),
+        "[0:v]format=yuv420p10le,scale=640:-1[ref];\
+         [1:v]format=yuv420p10le[dis];\
+         [ref][dis]xpsnr=stats_file=-"
     );
 }
