@@ -721,7 +721,7 @@ impl StdoutFormat {
                 let mut json = serde_json::json!({
                     "predicted_encode_size": predicted_encode_size,
                     "predicted_encode_percent": encode_percent,
-                    "predicted_encode_seconds": predicted_encode_time.as_secs(),
+                    "predicted_encode_seconds": predicted_encode_time.as_secs_f64(),
                 });
                 match score_kind {
                     ScoreKind::Vmaf => json["vmaf"] = (*score).into(),

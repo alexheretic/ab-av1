@@ -3,7 +3,13 @@
 ## sample-encode
 Single json emitted after sample encoding has finished.
 
-* `xpsnr` is present when using --xpsnr (in that case `vmaf` will be absent).
+Field | Description | Type/Units
+---|---|---
+`predicted_encode_percent` | Predicted output encode size percentage vs input | float
+`predicted_encode_seconds` | Predicted output encode time in seconds | float
+`predicted_encode_size` | Predicted output encode size in bytes | uint
+`vmaf` | VMAF score (absent when using --xpsnr) | float
+`xpsnr` | XPSNR score (present only when using --xpsnr) | float
 
 ### Example
 ```json
