@@ -2,6 +2,7 @@
 * Use ffmpeg `-fps_mode passthrough` for all sample encodes. This improves VMAF scores in some cases.
 * Use explicit pixel format in xpsnr calls, use highest quality format of the ref & distorted streams.
   This can improve scores in some cases.
+* Wait for vmaf/xpsnr processes to finish e.g. to allow custom logging to flush.
 
 # v0.10.3
 * Fix higher crf-search VMAF tolerance than expected when using `--crf-increment` values above 1.
