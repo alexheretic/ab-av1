@@ -77,6 +77,9 @@ Works with videos and images.
 ab-av1 xpsnr --reference <REFERENCE> --distorted <DISTORTED>
 ```
 
+## JSON output
+See `--stdout-format json` [docs](./stdout-format-json.md).
+
 ## Install
 ### Arch Linux
 Available in the [AUR](https://aur.archlinux.org/packages/ab-av1).
