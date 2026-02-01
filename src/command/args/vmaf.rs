@@ -40,6 +40,11 @@ pub struct Vmaf {
     /// Setting to 0 disables use.
     #[arg(long, default_value_t = DEFAULT_VMAF_FPS)]
     pub vmaf_fps: f32,
+
+    /// Use CUDA-accelerated VMAF calculation (libvmaf_cuda filter).
+    /// Requires ffmpeg built with CUDA VMAF support.
+    #[arg(long)]
+    pub cuda: bool,
 }
 
 impl Default for Vmaf {
@@ -48,6 +53,7 @@ impl Default for Vmaf {
             vmaf_args: <_>::default(),
             vmaf_scale: <_>::default(),
             vmaf_fps: DEFAULT_VMAF_FPS,
+            cuda: false,
         }
     }
 }
@@ -57,6 +63,7 @@ impl std::hash::Hash for Vmaf {
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
         self.vmaf_fps.to_ne_bytes().hash(state);
+        self.cuda.hash(state);
     }
 }
 
@@ -119,6 +126,50 @@ impl Vmaf {
         let prefix = format!(
             "[0:v]{format}{scale}setpts=PTS-STARTPTS,settb=AVTB[dis];\
              [1:v]{format}{ref_vf}{scale}setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]"
+        );
+
+        lavfi.insert_str(0, &prefix);
+        lavfi
+    }
+
+    /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf with CUDA.
+    pub fn ffmpeg_lavfi_cuda(
+        &self,
+        distorted_res: Option<(u32, u32)>,
+        _pix_fmt: Option<PixelFormat>,
+        ref_vfilter: Option<&str>,
+    ) -> String {
+        // Don't use n_threads with libvmaf_cuda - it causes errors
+        let mut args = self.vmaf_args.clone();
+        args.retain(|a| !a.contains("n_threads"));
+        
+        let mut lavfi = args.join(":");
+        // Don't use shortest=true:ts_sync_mode=nearest with CUDA as it causes errors
+        lavfi.insert_str(0, "libvmaf_cuda=");
+
+        let mut model = VmafModel::from_args(&args);
+        if let (None, Some((w, h))) = (model, distorted_res)
+            && w > 2560
+            && h > 1440
+        {
+            // for >2k resolutions use 4k model
+            lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
+            model = Some(VmafModel::Vmaf4K);
+        }
+
+        let ref_vf: Cow<_> = match ref_vfilter {
+            None => "".into(),
+            Some(vf) if vf.ends_with(',') => vf.into(),
+            Some(vf) => format!("{vf},").into(),
+        };
+        
+        // Build CUDA filter chain with format conversion to yuv420p
+        // libvmaf_cuda doesn't support 10-bit formats like p010le
+        // Convert to 8-bit before uploading to GPU
+        let prefix = format!(
+            "[0:v]format=yuv420p,hwupload_cuda[dis];\
+             [1:v]{ref_vf}format=yuv420p,hwupload_cuda[ref];\
              [dis][ref]"
         );
 
