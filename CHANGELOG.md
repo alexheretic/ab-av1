@@ -1,4 +1,4 @@
-# Unreleased
+# v0.10.4
 * Use ffmpeg `-fps_mode passthrough` for all sample encodes. This improves VMAF scores in some cases.
 * Use explicit pixel format in xpsnr calls, use highest quality format of the ref & distorted streams.
   This can improve scores in some cases.
