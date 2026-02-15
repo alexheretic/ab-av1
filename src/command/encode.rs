@@ -85,7 +85,7 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let mut enc_args = args.to_encoder_args(crf, &probe)?;
+    let mut enc_args = args.to_ffmpeg_args(crf, &probe)?;
     enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
     if let Ok(d) = &probe.duration {

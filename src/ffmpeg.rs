@@ -95,7 +95,7 @@ pub fn encode_sample(
         .args(output_args.iter().map(|a| &**a))
         // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
         .arg2("-fps_mode", "passthrough")
-        .arg2(vcodec.crf_arg(), crf)
+        .arg2(vcodec.crf_arg(), vcodec.crf(crf))
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -171,7 +171,7 @@ pub fn encode(
         .arg2("-c:a", audio_codec)
         .arg2("-c:s", "copy")
         .args(output_args.iter().map(|a| &**a))
-        .arg2(vcodec.crf_arg(), crf)
+        .arg2(vcodec.crf_arg(), vcodec.crf(crf))
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -206,6 +206,8 @@ trait VCodecSpecific {
     fn preset_arg(&self) -> &str;
     /// Arg to use crf values with, normally `-crf`.
     fn crf_arg(&self) -> &str;
+    /// crf value to pass to ffmpeg.
+    fn crf(&self, crf: f32) -> f32;
 }
 impl VCodecSpecific for Arc<str> {
     fn preset_arg(&self) -> &str {
@@ -231,6 +233,14 @@ impl VCodecSpecific for Arc<str> {
             // https://ffmpeg.org//ffmpeg-codecs.html#QSV-Encoders
             e if e.ends_with("_qsv") => "-global_quality",
             _ => "-crf",
+        }
+    }
+
+    fn crf(&self, crf: f32) -> f32 {
+        match &**self {
+            // ffmpeg svt-av1 crf above 63 don't work, but up to 70 does work in -svtav1-params
+            "libsvtav1" => crf.min(63.0),
+            _ => crf,
         }
     }
 }

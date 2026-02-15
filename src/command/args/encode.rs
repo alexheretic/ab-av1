@@ -128,14 +128,6 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
 }
 
 impl Encode {
-    pub fn to_encoder_args(
-        &self,
-        crf: f32,
-        probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        self.to_ffmpeg_args(crf, probe)
-    }
-
     pub fn encode_hint(&self, crf: f32) -> String {
         let Self {
             encoder,
@@ -190,7 +182,11 @@ impl Encode {
         hint
     }
 
-    fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+    pub fn to_ffmpeg_args(
+        &self,
+        crf: f32,
+        probe: &Ffprobe,
+    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
         let vcodec = &self.encoder.0;
         let svtav1 = vcodec.as_ref() == "libsvtav1";
         ensure!(
@@ -331,8 +327,7 @@ impl Encode {
             vcodec: Arc::clone(vcodec),
             pix_fmt,
             vfilter: self.vfilter.as_deref(),
-            // ffmpeg svt-av1 crf above 63 don't work, but up to 70 does work in -svtav1-params
-            crf: if svtav1 { crf.min(63.0) } else { crf },
+            crf,
             preset,
             output_args: args,
             input_args,

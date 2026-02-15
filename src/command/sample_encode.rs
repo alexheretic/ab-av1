@@ -159,7 +159,7 @@ pub fn run(
         let input_pix_fmt = input_probe.pixel_format();
         let input_is_image = input_probe.is_image;
         let input_len = fs::metadata(&*input).await?.len();
-        let mut enc_args = args.to_encoder_args(crf, &input_probe)?;
+        let mut enc_args = args.to_ffmpeg_args(crf, &input_probe)?;
         // ignore user -fps_mode for sample encoding, as we always use passthrough
         remove_arg(&mut enc_args.output_args, "-fps_mode");
         remove_arg(&mut enc_args.output_args, "-vsync");
