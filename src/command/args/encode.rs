@@ -213,6 +213,8 @@ impl Encode {
                 _ => 0,
             };
             svtav1_params.push(format!("scd={scd}"));
+            // include crf in svtav1-params to support quarter-steps
+            svtav1_params.push(format!("crf={crf}"));
             // add all --svt args
             svtav1_params.extend(self.svt_args.iter().map(|a| a.to_string()));
         }
@@ -382,6 +384,7 @@ impl Encoder {
     pub fn default_crf_increment(&self) -> f32 {
         match self.as_str() {
             "libx264" | "libx265" => 0.1,
+            "libsvtav1" => 0.25,
             _ => 1.0,
         }
     }
@@ -653,7 +656,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=1:film-grain=30");
+    assert_eq!(svtargs, "scd=1:crf=32:film-grain=30");
     assert!(input_args.is_empty());
 }
 
@@ -714,6 +717,6 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=0");
+    assert_eq!(svtargs, "scd=0:crf=32");
     assert!(input_args.is_empty());
 }
