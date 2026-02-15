@@ -392,6 +392,7 @@ impl Encoder {
     pub fn default_min_crf(&self) -> f32 {
         match self.as_str() {
             "mpeg2video" => 2.0,
+            "libsvtav1" => 5.0,
             _ => 10.0,
         }
     }
@@ -402,7 +403,7 @@ impl Encoder {
             "libx264" | "libx265" => 46.0,
             "mpeg2video" => 30.0,
             "hevc_videotoolbox" => 100.0,
-            // Works well for svt-av1
+            "libsvtav1" => 70.0,
             _ => 55.0,
         }
     }

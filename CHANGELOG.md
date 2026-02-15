@@ -1,6 +1,7 @@
 # Unreleased (0.11)
-* libsvtav1: Support crf quarter steps. Default `--crf-increment` to 0.25 for this encoder.
+* svt-av1: Support crf quarter steps. Default `--crf-increment` to 0.25 for this encoder.
   This requires svt-av1 >= v4.0.0, if using an older version you may want to use crf-search with `--crf-increment 1`.
+* svt-av1: Widen default crf search range [10, 55] -> [5, 70].
 
 # v0.10.4
 * Use ffmpeg `-fps_mode passthrough` for all sample encodes. This improves VMAF scores in some cases.
