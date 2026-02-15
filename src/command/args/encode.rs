@@ -656,7 +656,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=1:film-grain=30");
+    assert_eq!(svtargs, "scd=1:crf=32:film-grain=30");
     assert!(input_args.is_empty());
 }
 
@@ -717,6 +717,6 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=0");
+    assert_eq!(svtargs, "scd=0:crf=32");
     assert!(input_args.is_empty());
 }
