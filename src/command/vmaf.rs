@@ -13,11 +13,10 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     path::PathBuf,
-    pin::pin,
+    pin::Pin,
     time::{Duration, Instant},
 };
-use tokio_stream::StreamExt;
-
+use tokio_stream::{Stream, StreamExt};
 /// Full VMAF score calculation, distorted file vs reference file.
 /// Works with videos and images.
 ///
@@ -67,19 +66,33 @@ pub async fn vmaf(
         bar.set_length(nframes);
     }
 
-    let mut vmaf = pin!(vmaf::run(
-        &reference,
-        &distorted,
-        &vmaf.ffmpeg_lavfi(
-            dprobe.resolution,
-            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
-            score.reference_vfilter.as_deref(),
-        ),
-        vmaf.fps(),
-    )?);
+    let mut vmaf_stream: Pin<Box<dyn Stream<Item = VmafOut>>> = if vmaf.cuda {
+        Box::pin(vmaf::run_cuda(
+            &reference,
+            &distorted,
+            &vmaf.ffmpeg_lavfi_cuda(
+                dprobe.resolution,
+                PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+                score.reference_vfilter.as_deref(),
+            ),
+            vmaf.fps(),
+        )?)
+    } else {
+        Box::pin(vmaf::run(
+            &reference,
+            &distorted,
+            &vmaf.ffmpeg_lavfi(
+                dprobe.resolution,
+                PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+                score.reference_vfilter.as_deref(),
+            ),
+            vmaf.fps(),
+        )?)
+    };
+    
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut vmaf_score = None;
-    while let Some(vmaf) = vmaf.next().await {
+    while let Some(vmaf) = vmaf_stream.next().await {
         match vmaf {
             VmafOut::Done(score) => {
                 vmaf_score = Some(score);
