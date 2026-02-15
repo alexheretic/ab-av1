@@ -331,7 +331,8 @@ impl Encode {
             vcodec: Arc::clone(vcodec),
             pix_fmt,
             vfilter: self.vfilter.as_deref(),
-            crf,
+            // ffmpeg svt-av1 crf above 63 don't work, but up to 70 does work in -svtav1-params
+            crf: if svtav1 { crf.min(63.0) } else { crf },
             preset,
             output_args: args,
             input_args,
