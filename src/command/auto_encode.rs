@@ -85,7 +85,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     while let Some(update) = crf_search.next().await {
         match update {
             Err(err) => {
-                if let crf_search::Error::NoGoodCrf { last } = &err {
+                if let crf_search::Error::NoGoodCrf { last, .. } = &err {
                     // show last sample attempt in progress bar
                     bar.set_style(
                         ProgressStyle::default_bar()

@@ -110,6 +110,10 @@ pub struct Args {
 
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
+
+    /// Stdout message format `human` or `json`.
+    #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
+    pub stdout_format: StdoutFormat,
 }
 
 impl Args {
@@ -136,13 +140,15 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     let thorough = args.thorough;
     let enc_args = args.args.clone();
     let verbose = args.verbose;
+    let stdout_format = args.stdout_format;
 
     let mut run = pin!(run(args, probe.into()));
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
-            if let Error::NoGoodCrf { last } = e {
-                last.print_attempt(&bar, min_score, max_encoded_percent);
+            if let Error::NoGoodCrf { last, .. } = e {
+                stdout_format.print_attempt(last, &bar, min_score, max_encoded_percent);
             }
+            stdout_format.print_error(e);
         })?;
         match update {
             Update::Status {
@@ -176,14 +182,11 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                 sample,
                 result,
             } => {
-                if verbose
-                    .log_level()
-                    .is_some_and(|lvl| lvl > log::Level::Error)
-                {
-                    result.print_attempt(&bar, sample, Some(crf))
-                }
+                stdout_format.print_sample_result(crf, sample, &result, &bar, &verbose);
+            },
+            Update::RunResult(result) => {
+                stdout_format.print_attempt(&result, &bar, min_score, max_encoded_percent)
             }
-            Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
             Update::Done(best) => {
                 info!("crf {} successful", best.crf);
                 bar.finish_with_message("");
@@ -194,7 +197,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(best.crf)).dim().italic(),
                     );
                 }
-                StdoutFormat::Human.print_result(&best, input_is_image);
+                stdout_format.print_result(&best, input_is_image);
                 return Ok(());
             }
         }
@@ -219,6 +222,7 @@ pub fn run(
         score,
         xpsnr,
         verbose: _,
+        stdout_format: _,
     }: Args,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = Result<Update, Error>> {
@@ -230,6 +234,10 @@ pub fn run(
         Error::ensure_other(min_crf < max_crf, "Invalid --min-crf & --max-crf")?;
         // by default use vmaf 95, otherwise use whatever is specified
         let min_score = min_vmaf.or(min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF);
+        let score_kind = match min_xpsnr.is_some() {
+            true => sample_encode::ScoreKind::Xpsnr,
+            false => sample_encode::ScoreKind::Vmaf,
+        };
 
         // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
         // improve interpolation by narrowing the crf range a 20% (or 30%) subrange.
@@ -314,7 +322,7 @@ pub fn run(
 
                 match u_bound {
                     Some(upper) if upper.q == sample.q + 1 => {
-                        Error::ensure_or_no_good_crf(sample_small_enough, &sample)?;
+                        Error::ensure_or_no_good_crf(sample_small_enough, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::Done(sample);
                         return;
                     }
@@ -322,7 +330,7 @@ pub fn run(
                         q = vmaf_lerp_q(min_score, upper, &sample);
                     }
                     None if sample.q == max_q => {
-                        Error::ensure_or_no_good_crf(sample_small_enough, &sample)?;
+                        Error::ensure_or_no_good_crf(sample_small_enough, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::Done(sample);
                         return;
                     }
@@ -334,7 +342,12 @@ pub fn run(
             } else {
                 // not good enough
                 if !sample_small_enough || sample.q == min_q {
-                    Err(Error::NoGoodCrf { last: sample.clone() })?;
+                    Err(Error::NoGoodCrf {
+                        last: sample.clone(),
+                        min_score,
+                        max_encoded_percent,
+                        score_kind,
+                    })?;
                 }
 
                 let l_bound = crf_attempts
@@ -344,7 +357,7 @@ pub fn run(
 
                 match l_bound {
                     Some(lower) if lower.q + 1 == sample.q => {
-                        Error::ensure_or_no_good_crf(lower.enc.encode_percent <= max_encoded_percent as _, &sample)?;
+                        Error::ensure_or_no_good_crf(lower.enc.encode_percent <= max_encoded_percent as _, &sample, min_score, max_encoded_percent, score_kind)?;
                         yield Update::RunResult(sample.clone());
                         yield Update::Done(lower.clone());
                         return;
@@ -373,48 +386,14 @@ pub struct Sample {
 
 impl Sample {
     pub fn print_attempt(&self, bar: &ProgressBar, min_score: f32, max_encoded_percent: f32) {
-        if bar.is_hidden() {
-            info!(
-                "crf {} {} {:.2} ({:.0}%){}",
-                TerseF32(self.crf),
-                self.enc.score_kind,
-                self.enc.score,
-                self.enc.encode_percent,
-                if self.enc.from_cache { " (cache)" } else { "" }
-            );
-            return;
-        }
-
-        let crf_label = style("- crf").dim();
-        let mut crf = style(TerseF32(self.crf));
-        let vmaf_label = style(self.enc.score_kind).dim();
-        let mut vmaf = style(self.enc.score);
-        let mut percent = style!("{:.0}%", self.enc.encode_percent);
-        let open = style("(").dim();
-        let close = style(")").dim();
-        let cache_msg = match self.enc.from_cache {
-            true => style(" (cache)").dim(),
-            false => style(""),
-        };
-
-        if self.enc.score < min_score {
-            crf = crf.red().bright();
-            vmaf = vmaf.red().bright();
-        }
-        if self.enc.encode_percent > max_encoded_percent as _ {
-            crf = crf.red().bright();
-            percent = percent.red().bright();
-        }
-
-        bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
-        ));
+        StdoutFormat::Human.print_attempt(self, bar, min_score, max_encoded_percent);
     }
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum StdoutFormat {
     Human,
+    Json,
 }
 
 impl StdoutFormat {
@@ -435,6 +414,177 @@ impl StdoutFormat {
                 println!(
                     "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
+            }
+            Self::Json => {
+                let enc = &sample.enc;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "result",
+                        "crf": sample.crf,
+                        "score_kind": enc.score_kind.to_string(),
+                        "score": enc.score,
+                        "predicted_encode_size": enc.predicted_encode_size,
+                        "predicted_encode_percent": enc.encode_percent,
+                        "predicted_encode_seconds": enc.predicted_encode_time.as_secs_f64(),
+                    })
+                );
+            }
+        }
+    }
+
+    pub fn print_attempt(
+        self,
+        sample: &Sample,
+        bar: &ProgressBar,
+        min_score: f32,
+        max_encoded_percent: f32,
+    ) {
+        match self {
+            Self::Human => {
+                if bar.is_hidden() {
+                    info!(
+                        "crf {} {} {:.2} ({:.0}%){}",
+                        TerseF32(sample.crf),
+                        sample.enc.score_kind,
+                        sample.enc.score,
+                        sample.enc.encode_percent,
+                        if sample.enc.from_cache {
+                            " (cache)"
+                        } else {
+                            ""
+                        }
+                    );
+                    return;
+                }
+
+                let crf_label = style("- crf").dim();
+                let mut crf = style(TerseF32(sample.crf));
+                let vmaf_label = style(sample.enc.score_kind).dim();
+                let mut vmaf = style(sample.enc.score);
+                let mut percent = style!("{:.0}%", sample.enc.encode_percent);
+                let open = style("(").dim();
+                let close = style(")").dim();
+                let cache_msg = match sample.enc.from_cache {
+                    true => style(" (cache)").dim(),
+                    false => style(""),
+                };
+
+                if sample.enc.score < min_score {
+                    crf = crf.red().bright();
+                    vmaf = vmaf.red().bright();
+                }
+                if sample.enc.encode_percent > max_encoded_percent as _ {
+                    crf = crf.red().bright();
+                    percent = percent.red().bright();
+                }
+
+                bar.println(format!(
+                    "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
+                ));
+            }
+            Self::Json => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "attempt",
+                        "crf": sample.crf,
+                        "score_kind": sample.enc.score_kind.to_string(),
+                        "score": sample.enc.score,
+                        "predicted_encode_percent": sample.enc.encode_percent,
+                        "predicted_encode_size": sample.enc.predicted_encode_size,
+                        "predicted_encode_seconds": sample.enc.predicted_encode_time.as_secs_f64(),
+                        "from_cache": sample.enc.from_cache,
+                    })
+                );
+            }
+        }
+    }
+
+    pub fn print_sample_result(
+        self,
+        crf: f32,
+        sample: u64,
+        result: &sample_encode::EncodeResult,
+        bar: &ProgressBar,
+        verbose: &clap_verbosity_flag::Verbosity,
+    ) {
+        match self {
+            Self::Json => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "sample",
+                        "crf": crf,
+                        "sample": sample,
+                        "score_kind": result.score_kind.to_string(),
+                        "score": result.score,
+                        "encoded_size": result.encoded_size,
+                        "sample_size": result.sample_size,
+                        "encode_time_secs": result.encode_time.as_secs_f64(),
+                        "from_cache": result.from_cache,
+                    })
+                );
+            }
+            Self::Human => {
+                if verbose
+                    .log_level()
+                    .is_some_and(|lvl| lvl > log::Level::Error)
+                {
+                    result.print_attempt(bar, sample, Some(crf))
+                }
+            }
+        }
+    }
+
+    pub fn print_error(self, error: &Error) {
+        match (self, error) {
+            (Self::Human, Error::NoGoodCrf { .. }) => {
+                // Human errors use the enhanced Display impl via normal error propagation
+            }
+            (
+                Self::Json,
+                Error::NoGoodCrf {
+                    last,
+                    min_score,
+                    max_encoded_percent,
+                    score_kind,
+                },
+            ) => {
+                let score_too_low = last.enc.score < *min_score;
+                let encode_too_large = last.enc.encode_percent > *max_encoded_percent as f64;
+                let reason = match (score_too_low, encode_too_large) {
+                    (true, true) => "constraints_infeasible",
+                    (true, false) => "score_too_low",
+                    (false, true) => "encode_too_large",
+                    (false, false) => "unknown",
+                };
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "error",
+                        "reason": reason,
+                        "target_score": min_score,
+                        "max_encoded_percent": max_encoded_percent,
+                        "score_kind": score_kind.to_string(),
+                        "crf": last.crf,
+                        "score": last.enc.score,
+                        "predicted_encode_percent": last.enc.encode_percent,
+                    })
+                );
+            }
+            (Self::Json, Error::Other(err)) => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "type": "error",
+                        "reason": "other",
+                        "message": err.to_string(),
+                    })
+                );
+            }
+            (Self::Human, Error::Other(_)) => {
+                // Human errors are handled by the normal error propagation
             }
         }
     }
