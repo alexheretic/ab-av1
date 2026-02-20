@@ -1,4 +1,4 @@
-# Unreleased (0.11)
+# v0.11.0
 * svt-av1: Support crf quarter steps. Default `--crf-increment` to 0.25 for this encoder.
   This requires svt-av1 >= [v4.0.0](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/CHANGELOG.md#400---2026-01-13), 
   if using an older version you may want to use crf-search with `--crf-increment 1`.
