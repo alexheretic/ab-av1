@@ -105,7 +105,7 @@ fn score_from_line(line: &str) -> Option<f32> {
 
     let end_idx = tail
         .char_indices()
-        .take_while(|(_, c)| *c == '.' || c.is_numeric())
+        .take_while(|(_, c)| *c == '-' || *c == '.' || c.is_numeric())
         .last()?
         .0;
     tail[..=end_idx].parse().ok()
@@ -236,5 +236,74 @@ XPSNR average, 1344 frames  y: 40.7139
         }
 
         assert_eq!(xpsnr_score, Some(39.1440), "failed to parse xpsnr score");
+    }
+
+    #[test]
+    fn parse_xpsnr_negative_score() {
+        // Note: some lines omitted for brevity
+        const FFMPEG_OUT: &str = r#"ffmpeg version n8.0.1 Copyright (c) 2000-2025 the FFmpeg developers
+          built with gcc 15.2.1 (GCC) 20260209
+          configuration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan
+          libavutil      60.  8.100 / 60.  8.100
+          libavcodec     62. 11.100 / 62. 11.100
+          libavformat    62.  3.100 / 62.  3.100
+          libavdevice    62.  1.100 / 62.  1.100
+          libavfilter    11.  4.100 / 11.  4.100
+          libswscale      9.  1.100 /  9.  1.100
+          libswresample   6.  1.100 /  6.  1.100
+        Input #0, matroska,webm, from '/home/alex/ab-av1-test/.ab-av1-UHW8SqHReeew/vertical.sample20+600f.mkv':
+          Metadata:
+            ENCODER         : Lavf62.3.100
+          Duration: 00:00:20.03, start: 0.000000, bitrate: 94 kb/s
+          Stream #0:0: Video: h264 (High), yuv420p(tv, progressive), 720x1280 [SAR 1:1 DAR 9:16], 30 fps, 30 tbr, 1k tbn
+            Metadata:
+              ENCODER         : Lavc62.11.100 libx264
+              DURATION        : 00:00:20.033000000
+        Input #1, matroska,webm, from '/home/alex/ab-av1-test/.ab-av1-UHW8SqHReeew/vertical.sample20+600f.av1.crf32.8.mkv':
+          Metadata:
+            ENCODER         : Lavf62.3.100
+          Duration: 00:00:20.03, start: 0.000000, bitrate: 66 kb/s
+          Stream #1:0: Video: av1 (libdav1d) (Main), yuv420p10le(tv, progressive), 720x1280, SAR 1:1 DAR 9:16, 30 fps, 30 tbr, 1k tbn
+            Metadata:
+              ENCODER         : Lavc62.11.100 libsvtav1
+              DURATION        : 00:00:20.033000000
+        Stream mapping:
+          Stream #0:0 (h264) -> format:default
+          Stream #1:0 (libdav1d) -> format:default
+          xpsnr:default -> Stream #0:0 (wrapped_avframe)
+        Press [q] to stop, [?] for help
+        Output #0, null, to 'pipe:':
+          Metadata:
+            encoder         : Lavf62.3.100
+          Stream #0:0: Video: wrapped_avframe, yuv420p10le(tv, progressive), 720x1280 [SAR 1:1 DAR 9:16], q=2-31, 200 kb/s, 60 fps, 60 tbn
+            Metadata:
+              encoder         : Lavc62.11.100 wrapped_avframe
+        [Parsed_xpsnr_2 @ 0x7fa708005280] XPSNR  y: -3.2830  u: -2.8081  v: -3.2703  (minimum: -3.2830)
+        [out#0/null @ 0x5597832befc0] video:244KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+        frame=  600 fps=257 q=-0.0 Lsize=N/A time=00:00:10.00 bitrate=N/A speed=4.28x elapsed=0:00:02.33
+"#;
+
+        const CHUNK_SIZE: usize = 64;
+
+        let ffmpeg = FFMPEG_OUT.as_bytes();
+
+        let mut chunks = Chunks::default();
+        let mut start_idx = 0;
+        let mut xpsnr_score = None;
+        while start_idx < ffmpeg.len() {
+            let chunk = &ffmpeg[start_idx..(start_idx + CHUNK_SIZE).min(FFMPEG_OUT.len())];
+            println!("* {}", String::from_utf8_lossy(chunk).trim());
+
+            if let Some(xpsnr) = XpsnrOut::try_from_chunk(chunk, &mut chunks) {
+                println!("{xpsnr:?}");
+                if let XpsnrOut::Done(score) = xpsnr {
+                    xpsnr_score = Some(score);
+                }
+            }
+
+            start_idx += CHUNK_SIZE;
+        }
+
+        assert_eq!(xpsnr_score, Some(-3.283), "failed to parse xpsnr score");
     }
 }
