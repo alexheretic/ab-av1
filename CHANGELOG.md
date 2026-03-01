@@ -1,4 +1,4 @@
-# Unreleased (0.11.1)
+# v0.11.1
 * Support parsing negative XPSNR scores.
 
 # v0.11.0
