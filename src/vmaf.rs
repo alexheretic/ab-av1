@@ -73,6 +73,67 @@ pub fn run(
     })
 }
 
+/// Calculate VMAF score using ffmpeg with CUDA acceleration.
+pub fn run_cuda(
+    reference: &Path,
+    distorted: &Path,
+    filter_complex: &str,
+    fps: Option<f32>,
+) -> anyhow::Result<impl Stream<Item = VmafOut> + use<>> {
+    info!(
+        "vmaf (cuda) {} vs reference {}",
+        distorted.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+        reference.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+    );
+
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
+        .arg2_opt("-r", fps)
+        .arg2("-i", distorted)
+        .arg2_opt("-r", fps)
+        .arg2("-i", reference)
+        .arg2("-filter_complex", filter_complex)
+        .arg2("-f", "null")
+        .arg("-")
+        .stdin(Stdio::null());
+
+    let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
+    let mut vmaf = crate::process::child::AddOnDropChunkStream::from(
+        ProcessChunkStream::try_from(cmd).context("ffmpeg vmaf (cuda)")?,
+    );
+
+    Ok(async_stream::stream! {
+        let mut chunks = Chunks::default();
+        let mut parsed_done = false;
+        while let Some(next) = vmaf.next().await {
+            match next {
+                Item::Stderr(chunk) => {
+                    if let Some(out) = VmafOut::try_from_chunk(&chunk, &mut chunks) {
+                        if matches!(out, VmafOut::Done(_)) {
+                            parsed_done = true;
+                        }
+                        yield out;
+                    }
+                }
+                Item::Stdout(_) => {}
+                Item::Done(code) => {
+                    if let Err(err) = exit_ok_stderr("ffmpeg vmaf (cuda)", code, &cmd_str, &chunks) {
+                        yield VmafOut::Err(err);
+                    }
+                }
+            }
+        }
+        if !parsed_done {
+            yield VmafOut::Err(cmd_err(
+                "could not parse ffmpeg vmaf (cuda) score",
+                &cmd_str,
+                &chunks,
+            ));
+        }
+    })
+}
+
 #[derive(Debug)]
 pub enum VmafOut {
     Progress(FfmpegOut),
