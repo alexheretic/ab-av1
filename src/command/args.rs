@@ -129,6 +129,10 @@ pub struct Xpsnr {
     /// Setting to 0 disables use.
     #[arg(long, default_value_t = 60.0)]
     pub xpsnr_fps: f32,
+
+    /// Pixel format used in xpsnr analysis only. By default this is inferred from sources.
+    #[arg(value_enum, long)]
+    pub xpsnr_pix_format: Option<PixelFormat>,
 }
 
 impl Xpsnr {
