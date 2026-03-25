@@ -69,7 +69,10 @@ pub async fn xpsnr(
         &distorted,
         &lavfi(
             score.reference_vfilter.as_deref(),
-            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+            xpsnr.xpsnr_pix_format.or(PixelFormat::opt_max(
+                dprobe.pixel_format(),
+                rprobe.pixel_format()
+            )),
         ),
         xpsnr.fps(),
     )?);
@@ -104,30 +107,47 @@ pub async fn xpsnr(
 }
 
 pub fn lavfi(ref_vfilter: Option<&str>, pix_fmt: Option<PixelFormat>) -> String {
-    let mut lavfi = String::from("[0:v]");
-    if let Some(pix_fmt) = pix_fmt {
-        _ = write!(&mut lavfi, "format={pix_fmt}");
-    }
-    if let Some(vf) = ref_vfilter {
-        if pix_fmt.is_some() {
-            lavfi.push(',');
+    /// Add filter to `lavfi`, if necessary. If no filter added return `old_name`.
+    /// Otherwise return `new_name`.
+    fn add_filter(
+        lavfi: &mut String,
+        old_name: &'static str,
+        new_name: &'static str,
+        vfilter: Option<&str>,
+        pix_fmt: Option<PixelFormat>,
+    ) -> &'static str {
+        if vfilter.is_none() && pix_fmt.is_none() {
+            return old_name;
         }
-        lavfi.push_str(vf);
+
+        lavfi.push_str(old_name);
+        if let Some(pix_fmt) = pix_fmt {
+            _ = write!(lavfi, "format={pix_fmt}");
+        }
+        if let Some(vf) = vfilter {
+            if pix_fmt.is_some() {
+                lavfi.push(',');
+            }
+            lavfi.push_str(vf);
+        }
+        lavfi.push_str(new_name);
+        lavfi.push(';');
+        new_name
     }
-    lavfi.push_str("[ref];[1:v]");
-    if let Some(pix_fmt) = pix_fmt {
-        _ = write!(&mut lavfi, "format={pix_fmt}");
-    }
-    lavfi.push_str("[dis];[ref][dis]xpsnr=stats_file=-");
+
+    let mut lavfi = String::new();
+
+    let ref_stream = add_filter(&mut lavfi, "[0:v]", "[ref]", ref_vfilter, pix_fmt);
+    let dis_stream = add_filter(&mut lavfi, "[1:v]", "[dis]", None, pix_fmt);
+    lavfi.push_str(ref_stream);
+    lavfi.push_str(dis_stream);
+    lavfi.push_str("xpsnr");
     lavfi
 }
 
 #[test]
 fn test_lavfi_default() {
-    assert_eq!(
-        lavfi(None, None),
-        "[0:v][ref];[1:v][dis];[ref][dis]xpsnr=stats_file=-"
-    );
+    assert_eq!(lavfi(None, None), "[0:v][1:v]xpsnr");
 }
 
 #[test]
@@ -135,8 +155,7 @@ fn test_lavfi_ref_vfilter() {
     assert_eq!(
         lavfi(Some("scale=1280:-1"), None),
         "[0:v]scale=1280:-1[ref];\
-         [1:v][dis];\
-         [ref][dis]xpsnr=stats_file=-"
+         [ref][1:v]xpsnr"
     );
 }
 
@@ -146,7 +165,7 @@ fn test_lavfi_pixel_format() {
         lavfi(None, Some(PixelFormat::Yuv420p10le)),
         "[0:v]format=yuv420p10le[ref];\
          [1:v]format=yuv420p10le[dis];\
-         [ref][dis]xpsnr=stats_file=-"
+         [ref][dis]xpsnr"
     );
 }
 
@@ -156,6 +175,6 @@ fn test_lavfi_all() {
         lavfi(Some("scale=640:-1"), Some(PixelFormat::Yuv420p10le)),
         "[0:v]format=yuv420p10le,scale=640:-1[ref];\
          [1:v]format=yuv420p10le[dis];\
-         [ref][dis]xpsnr=stats_file=-"
+         [ref][dis]xpsnr"
     );
 }

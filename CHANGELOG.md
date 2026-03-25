@@ -1,3 +1,7 @@
+# Unreleased (0.11.2)
+* Add arg `--xpsnr-pix-format` for setting an explicit pixel format to use in XPSNR analysis.
+  This can be used to workaround some issues with 10-bit video, by setting `--xpsnr-pix-format yuv420p`.
+
 # v0.11.1
 * Support parsing negative XPSNR scores.
 
