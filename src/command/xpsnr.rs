@@ -69,10 +69,9 @@ pub async fn xpsnr(
         &distorted,
         &lavfi(
             score.reference_vfilter.as_deref(),
-            xpsnr.xpsnr_pix_format.or(PixelFormat::opt_max(
-                dprobe.pixel_format(),
-                rprobe.pixel_format()
-            )),
+            xpsnr
+                .xpsnr_pix_format
+                .or_else(|| PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format())),
         ),
         xpsnr.fps(),
     )?);
