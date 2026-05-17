@@ -57,7 +57,7 @@ pub struct Args {
 
     /// Minimum (highest quality) crf value to try.
     ///
-    /// [default: 10, 2 for mpeg2video]
+    /// [default: 10, 5 for svt-av1, 2 for mpeg2video]
     #[arg(long)]
     pub min_crf: Option<f32>,
 
