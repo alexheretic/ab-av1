@@ -8,8 +8,8 @@ Field | Description | Type/Units
 `predicted_encode_percent` | Predicted output encode size percentage vs input | float
 `predicted_encode_seconds` | Predicted output encode time in seconds | float
 `predicted_encode_size` | Predicted output encode size in bytes | uint
-`vmaf` | VMAF score (absent when using --xpsnr without --do-vmaf) | float
-`xpsnr` | XPSNR score (present only when using --xpsnr) | float
+`vmaf` | VMAF score (present when requested (default)) | float
+`xpsnr` | XPSNR score (present when requested) | float
 
 ### Example
 ```json
