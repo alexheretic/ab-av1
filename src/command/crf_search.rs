@@ -297,13 +297,13 @@ pub fn run(
                 q,
                 enc: sample_enc_output.context("no sample output?")?,
             };
-
+            let score = sample.enc.single_score();
             crf_attempts.push(sample.clone());
             let sample_small_enough = sample.enc.encode_percent <= max_encoded_percent as _;
 
-            if sample.enc.score > min_score {
+            if score > min_score {
                 // good
-                if sample_small_enough && sample.enc.score < min_score + higher_tolerance {
+                if sample_small_enough && score < min_score + higher_tolerance {
                     yield Update::Done(sample);
                     return;
                 }
@@ -377,8 +377,8 @@ impl Sample {
             info!(
                 "crf {} {} {:.2} ({:.0}%){}",
                 TerseF32(self.crf),
-                self.enc.score_kind,
-                self.enc.score,
+                self.enc.single_score_kind(),
+                self.enc.single_score(),
                 self.enc.encode_percent,
                 if self.enc.from_cache { " (cache)" } else { "" }
             );
@@ -387,8 +387,10 @@ impl Sample {
 
         let crf_label = style("- crf").dim();
         let mut crf = style(TerseF32(self.crf));
-        let vmaf_label = style(self.enc.score_kind).dim();
-        let mut vmaf = style(self.enc.score);
+
+        let score_v = self.enc.single_score();
+        let mut score = style(score_v);
+        let score_label = style(self.enc.single_score_kind()).dim();
         let mut percent = style!("{:.0}%", self.enc.encode_percent);
         let open = style("(").dim();
         let close = style(")").dim();
@@ -397,9 +399,9 @@ impl Sample {
             false => style(""),
         };
 
-        if self.enc.score < min_score {
+        if score_v < min_score {
             crf = crf.red().bright();
-            vmaf = vmaf.red().bright();
+            score = score.red().bright();
         }
         if self.enc.encode_percent > max_encoded_percent as _ {
             crf = crf.red().bright();
@@ -407,7 +409,7 @@ impl Sample {
         }
 
         bar.println(format!(
-            "{crf_label} {crf} {vmaf_label} {vmaf:.2} {open}{percent}{close}{cache_msg}"
+            "{crf_label} {crf} {score_label} {score:.2} {open}{percent}{close}{cache_msg}"
         ));
     }
 }
@@ -423,8 +425,8 @@ impl StdoutFormat {
             Self::Human => {
                 let crf = style(TerseF32(sample.crf)).bold().green();
                 let enc = &sample.enc;
-                let score = style(enc.score).bold().green();
-                let score_kind = enc.score_kind;
+                let score = style(enc.single_score()).bold().green();
+                let score_kind = enc.single_score_kind();
                 let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
                 let percent = style!("{}%", enc.encode_percent.round()).bold().green();
                 let time = style(HumanDuration(enc.predicted_encode_time)).bold();
@@ -453,14 +455,14 @@ impl StdoutFormat {
 /// This would be helpful particularly for small crf-increments.
 fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> i64 {
     assert!(
-        worse_q.enc.score <= min_vmaf
-            && worse_q.enc.score < better_q.enc.score
+        worse_q.enc.single_score() <= min_vmaf
+            && worse_q.enc.single_score() < better_q.enc.single_score()
             && worse_q.q > better_q.q,
         "invalid vmaf_lerp_crf usage: ({min_vmaf}, {worse_q:?}, {better_q:?})"
     );
 
-    let vmaf_diff = better_q.enc.score - worse_q.enc.score;
-    let vmaf_factor = (min_vmaf - worse_q.enc.score) / vmaf_diff;
+    let vmaf_diff = better_q.enc.single_score() - worse_q.enc.single_score();
+    let vmaf_factor = (min_vmaf - worse_q.enc.single_score()) / vmaf_diff;
 
     let q_diff = worse_q.q - better_q.q;
     let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as i64;

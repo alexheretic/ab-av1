@@ -1,8 +1,5 @@
 //! _sample-encode_ file system caching logic.
-use crate::{
-    command::args::{ScoreArgs, Vmaf, Xpsnr},
-    ffmpeg::FfmpegEncodeArgs,
-};
+use crate::ffmpeg::FfmpegEncodeArgs;
 use anyhow::Context;
 use std::{
     ffi::OsStr,
@@ -21,7 +18,7 @@ pub async fn cached_encode(
     input_size: u64,
     full_pass: bool,
     enc_args: &FfmpegEncodeArgs<'_>,
-    scoring: ScoringInfo<'_>,
+    scoring: impl Hash,
 ) -> (Option<super::EncodeResult>, Option<Key>) {
     if !cache {
         return (None, None);
@@ -66,12 +63,6 @@ pub async fn cached_encode(
             (None, None)
         }
     }
-}
-
-#[derive(Debug, Hash, Clone, Copy)]
-pub enum ScoringInfo<'a> {
-    Vmaf(&'a Vmaf, &'a ScoreArgs),
-    Xpsnr(&'a Xpsnr, &'a ScoreArgs),
 }
 
 pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Result<()> {

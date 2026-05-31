@@ -92,15 +92,15 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                             .template(SPINNER_FINISHED)?
                             .progress_chars(PROGRESS_CHARS),
                     );
-                    let mut vmaf = style(last.enc.score);
-                    if last.enc.score < min_score {
+                    let mut vmaf = style(last.enc.single_score());
+                    if last.enc.single_score() < min_score {
                         vmaf = vmaf.red();
                     }
                     let mut percent = style!("{:.0}%", last.enc.encode_percent);
                     if last.enc.encode_percent > max_encoded_percent as _ {
                         percent = percent.red();
                     }
-                    let score_kind = last.enc.score_kind;
+                    let score_kind = last.enc.single_score_kind();
                     bar.finish_with_message(format!("{score_kind} {vmaf:.2}, size {percent}"));
                 }
                 bar.finish();
@@ -164,8 +164,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
     bar.finish_with_message(format!(
         "{} {:.2}, size {}",
-        best.enc.score_kind,
-        style(best.enc.score).green(),
+        best.enc.single_score_kind(),
+        style(best.enc.single_score()).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
     temporary::clean_all().await;
