@@ -8,6 +8,12 @@ const DEFAULT_VMAF_FPS: f32 = 25.0;
 /// Common vmaf options.
 #[derive(Debug, Parser, Clone)]
 pub struct Vmaf {
+    /// Set to calculate vmaf when it would otherwise not be, e.g. when calculating xpsnr.
+    /// So using this allows both vmaf & xpsnr to be calculated at the same time.
+    // TODO: nicer if named "--vmaf"
+    #[arg(long, num_args=0..=1, default_missing_value = "true")]
+    pub and_vmaf: Option<bool>,
+
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
     /// By default `n_threads` is set to available system threads.
@@ -45,6 +51,7 @@ pub struct Vmaf {
 impl Default for Vmaf {
     fn default() -> Self {
         Self {
+            and_vmaf: None,
             vmaf_args: <_>::default(),
             vmaf_scale: <_>::default(),
             vmaf_fps: DEFAULT_VMAF_FPS,
@@ -54,6 +61,7 @@ impl Default for Vmaf {
 
 impl std::hash::Hash for Vmaf {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.and_vmaf.hash(state);
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
         self.vmaf_fps.to_ne_bytes().hash(state);

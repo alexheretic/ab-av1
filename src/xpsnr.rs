@@ -8,6 +8,7 @@ use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
 /// Calculate XPSNR score using ffmpeg.
+// TODO: fix progress update to account for fps
 pub fn run(
     reference: &Path,
     distorted: &Path,
