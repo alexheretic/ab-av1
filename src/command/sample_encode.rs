@@ -305,7 +305,7 @@ pub fn run(
                         from_cache: false,
                     };
 
-                    let do_vmaf = vmaf.do_vmaf.unwrap_or(!xpsnr);
+                    let do_vmaf = vmaf.and_vmaf.unwrap_or(!xpsnr);
                     if xpsnr {
                         yield Update::Status(Status {
                             work: Work::Score(ScoreKind::Xpsnr),

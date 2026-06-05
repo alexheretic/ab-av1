@@ -12,7 +12,7 @@ pub struct Vmaf {
     /// So using this allows both vmaf & xpsnr to be calculated at the same time.
     // TODO: nicer if named "--vmaf"
     #[arg(long, num_args=0..=1, default_missing_value = "true")]
-    pub do_vmaf: Option<bool>,
+    pub and_vmaf: Option<bool>,
 
     /// Additional vmaf arg(s). E.g. --vmaf n_threads=8 --vmaf n_subsample=4
     ///
@@ -51,7 +51,7 @@ pub struct Vmaf {
 impl Default for Vmaf {
     fn default() -> Self {
         Self {
-            do_vmaf: None,
+            and_vmaf: None,
             vmaf_args: <_>::default(),
             vmaf_scale: <_>::default(),
             vmaf_fps: DEFAULT_VMAF_FPS,
@@ -61,7 +61,7 @@ impl Default for Vmaf {
 
 impl std::hash::Hash for Vmaf {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.do_vmaf.hash(state);
+        self.and_vmaf.hash(state);
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
         self.vmaf_fps.to_ne_bytes().hash(state);
