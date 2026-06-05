@@ -1,5 +1,5 @@
 # Unreleased (v0.11.3)
-* Add sample-encode support for computing both XPSNR **and** VMAF using `--xpsnr --do-vmaf`.
+* Add sample-encode support for computing both XPSNR **and** VMAF using `--xpsnr --and-vmaf`.
 
 # v0.11.2
 * Add arg `--xpsnr-pix-format` for setting an explicit pixel format to use in XPSNR analysis.
