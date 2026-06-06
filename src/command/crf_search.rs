@@ -116,9 +116,24 @@ impl Args {
     pub fn min_score(&self) -> f32 {
         self.min_vmaf.or(self.min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF)
     }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.min_vmaf.is_none()
+            && let Some(num) = self
+                .vmaf
+                .vmaf_args
+                .iter()
+                .find_map(|arg| arg.parse::<f32>().ok())
+        {
+            anyhow::bail!("Invalid use of --vmaf NUMBER, did you mean: --min-vmaf {num}");
+        }
+        Ok(())
+    }
 }
 
 pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
+    args.validate()?;
+
     let bar = ProgressBar::new(BAR_LEN).with_style(
         ProgressStyle::default_bar()
             .template("{spinner:.cyan.bold} {elapsed_precise:.bold} {prefix} {wide_bar:.cyan/blue} ({msg}eta {eta})")?
