@@ -1,4 +1,4 @@
-# Unreleased (v0.11.3)
+# v0.11.3
 * Add sample-encode support for computing both XPSNR **and** VMAF using `--xpsnr --and-vmaf`.
 * Add error & hint when mistakenly using `--vmaf NUMBER` without using `--min-vmaf` arg.
 
