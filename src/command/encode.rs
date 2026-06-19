@@ -16,6 +16,7 @@ use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use log::info;
 use same_file::is_same_file;
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -104,7 +105,15 @@ pub async fn run(
         output.file_name().and_then(|n| n.to_str()).unwrap_or("")
     );
 
-    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    let tmp_output = tmp_output_name(&output);
+
+    let mut enc = ffmpeg::encode(
+        enc_args,
+        &tmp_output,
+        has_audio,
+        audio_codec,
+        stereo_downmix,
+    )?;
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
@@ -128,6 +137,8 @@ pub async fn run(
     }
     enc.wait().await?; // ensure process has exited
     bar.finish();
+
+    std::fs::rename(tmp_output, &output)?;
 
     // successful encode, so don't delete it!
     temporary::unadd(&output);
@@ -180,4 +191,17 @@ pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> P
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
     let ext = default_output_ext(input, encoder, is_image);
     input.with_extension(format!("{pre}.{ext}"))
+}
+
+pub fn tmp_output_name(output: &Path) -> PathBuf {
+    let mut tmp_prefix = OsString::from(".tmp.ab-av1-encoding.");
+    let file_name = output
+        .file_name()
+        .expect("We couldn't have gotten this far if there was no name to refer to it by");
+
+    tmp_prefix.extend([file_name]);
+
+    let mut output = output.to_path_buf();
+    output.set_file_name(tmp_prefix);
+    output
 }
