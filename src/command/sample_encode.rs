@@ -548,13 +548,13 @@ impl EncodeResult {
         } = self;
         info!(
             "sample {sample_n}/{samples} crf {crf}{}{} ({:.0}%){}",
-            100.0 * *encoded_size as f32 / *sample_size as f32,
             vmaf_score
                 .map(|s| format!(" VMAF {s:.2}"))
                 .unwrap_or_default(),
             xpsnr_score
                 .map(|s| format!(" XPSNR {s:.2}"))
                 .unwrap_or_default(),
+            100.0 * *encoded_size as f32 / *sample_size as f32,
             if *from_cache { " (cache)" } else { "" }
         );
     }
