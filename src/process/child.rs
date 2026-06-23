@@ -15,6 +15,41 @@ use tokio_process_stream::ProcessChunkStream;
 
 static RUNNING: LazyLock<Mutex<Vec<ProcessChunkStream>>> = LazyLock::new(<_>::default);
 
+struct RegisteredChildren(Vec<ProcessChunkStream>);
+
+impl RegisteredChildren {
+    fn take() -> Self {
+        Self(mem::take(&mut *RUNNING.lock().unwrap()))
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [ProcessChunkStream] {
+        &mut self.0
+    }
+}
+
+impl Drop for RegisteredChildren {
+    fn drop(&mut self) {
+        if self.0.is_empty() {
+            return;
+        }
+
+        let mut running = RUNNING.lock().unwrap();
+        running.retain_mut(|child| {
+            child
+                .child_mut()
+                .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
+        });
+        for mut child in self.0.drain(..) {
+            if child
+                .child_mut()
+                .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
+            {
+                running.push(child);
+            }
+        }
+    }
+}
+
 /// Add a child process so it may be waited on before exiting.
 pub fn add(mut child: ProcessChunkStream) {
     let mut running = RUNNING.lock().unwrap();
@@ -37,10 +72,10 @@ pub fn add(mut child: ProcessChunkStream) {
 pub async fn wait() {
     // if waiting takes >500ms log what's happening
     let mut log_deadline = Some(Instant::now() + Duration::from_millis(500));
-    let procs = mem::take(&mut *RUNNING.lock().unwrap());
+    let mut procs = RegisteredChildren::take();
     let mut ctrl_c = pin!(signal::ctrl_c());
 
-    for mut proc in procs {
+    for proc in procs.as_mut_slice() {
         if let Some(child) = proc.child_mut() {
             if let Some(deadline) = log_deadline
                 && timeout_at(deadline, child.wait()).await.is_err()
@@ -194,5 +229,40 @@ mod tests {
 
         wait().await;
         clear_running();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_wait_keeps_unfinished_children_registered() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 0.2")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn running child");
+
+        add(ProcessChunkStream::from(child));
+
+        let timed_out = tokio::time::timeout(Duration::from_millis(10), wait())
+            .await
+            .is_err();
+        let registered_after_cancel = running_len();
+
+        if registered_after_cancel > 0 {
+            wait().await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        clear_running();
+
+        assert!(timed_out, "wait should still be pending for a live child");
+        assert_eq!(
+            registered_after_cancel, 1,
+            "cancelling wait should not drop unfinished children from the shutdown registry"
+        );
     }
 }
