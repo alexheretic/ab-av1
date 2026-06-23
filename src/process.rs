@@ -324,6 +324,100 @@ fn parse_ffmpeg_stream_sizes() {
     );
 }
 
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+    use std::process::Stdio;
+    use tokio::process::Command;
+    use tokio_stream::StreamExt;
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_parses_stderr_progress_and_waits() {
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("printf 'frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \\r' >&2")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        let child = child.spawn().expect("spawn progress fixture");
+        let mut stream = FfmpegOut::stream(child, "progress fixture", "progress fixture".into());
+
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("progress item")
+                .expect("progress parse"),
+            FfmpegOut::Progress {
+                frame: 12,
+                fps: 24.0,
+                time: Duration::new(1, 500_000_000),
+            }
+        );
+
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait progress fixture")
+                .success(),
+            "success-path wait should reap the child"
+        );
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_reports_failure_with_stderr_context() {
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("printf badness >&2; exit 7")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        let child = child.spawn().expect("spawn failure fixture");
+        let mut stream = FfmpegOut::stream(child, "failure fixture", "failure fixture".into());
+
+        let err = stream
+            .next()
+            .await
+            .expect("failure item")
+            .expect_err("non-zero exit should surface as stream error")
+            .to_string();
+
+        assert!(err.contains("failure fixture exit code 7"));
+        assert!(err.contains("----cmd-----\nfailure fixture"));
+        assert!(err.contains("---stderr---\nbadness"));
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_ignores_stdout_while_parsing_stderr_progress() {
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("printf stdout-noise; printf 'frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \\r' >&2")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let child = child.spawn().expect("spawn mixed-output fixture");
+        let mut stream =
+            FfmpegOut::stream(child, "mixed-output fixture", "mixed-output fixture".into());
+
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("progress item")
+                .expect("progress parse"),
+            FfmpegOut::Progress {
+                frame: 3,
+                fps: 30.0,
+                time: Duration::new(0, 250_000_000),
+            }
+        );
+    }
+}
+
 pub trait CommandExt {
     /// Adds two arguments.
     fn arg2(&mut self, a: impl ArgString, b: impl ArgString) -> &mut Self;
