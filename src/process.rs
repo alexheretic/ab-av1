@@ -1,4 +1,5 @@
 pub mod child;
+pub mod managed;
 
 use anyhow::{anyhow, ensure};
 use std::{
