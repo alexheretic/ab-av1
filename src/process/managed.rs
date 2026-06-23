@@ -158,6 +158,56 @@ impl ManagedProcess {
         }
     }
 
+    pub fn stderr_events_terminate_on_drop(
+        self,
+    ) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
+        struct TerminateOnDrop(Option<ManagedProcess>);
+
+        impl Drop for TerminateOnDrop {
+            fn drop(&mut self) {
+                let Some(process) = self.0.take() else {
+                    return;
+                };
+
+                let Ok(handle) = tokio::runtime::Handle::try_current() else {
+                    return;
+                };
+
+                handle.spawn(async move {
+                    let _ = process.terminate_after(Duration::ZERO).await;
+                });
+            }
+        }
+
+        async_stream::try_stream! {
+            let mut process = TerminateOnDrop(Some(self));
+            let Some(inner) = process.0.as_mut() else {
+                return;
+            };
+            let mut stderr = inner.handle.stderr().try_subscribe()?;
+            while let Some(event) = stderr.next_event().await {
+                match event {
+                    StreamEvent::Chunk(chunk) => {
+                        yield ManagedEvent::Stderr(chunk.as_ref().to_vec());
+                    }
+                    StreamEvent::Gap => {}
+                    StreamEvent::Eof => break,
+                    StreamEvent::ReadError(err) => Err(err)?,
+                }
+            }
+
+            let Some(mut inner) = process.0.take() else {
+                return;
+            };
+            let status = inner
+                .handle
+                .wait_for_completion(inner.options.wait_timeout)
+                .await?
+                .expect_completed("process should complete");
+            yield ManagedEvent::Done(status);
+        }
+    }
+
     pub async fn observe_stdout_chunks(
         mut self,
         on_chunk: impl FnMut(Chunk) -> Next + Send + 'static,
@@ -200,6 +250,56 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::process::Command;
     use tokio_stream::StreamExt;
+
+    async fn process_is_alive(pid: u32) -> bool {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!("kill -0 {pid} 2>/dev/null"))
+            .status()
+            .await
+            .expect("check child liveness")
+            .success()
+    }
+
+    async fn assert_process_exits(pid: u32) {
+        for _ in 0..50 {
+            if !process_is_alive(pid).await {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("process {pid} should have exited");
+    }
+
+    async fn assert_score_like_stream_terminates_when_dropped_after_logical_done(
+        stderr_line: &str,
+        done_marker: &str,
+    ) {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(format!("printf '{stderr_line}\\n' >&2; sleep 30"));
+        let process =
+            ManagedProcess::spawn("score-like stderr fixture", cmd).expect("spawn shell fixture");
+        let pid = process.id().expect("process id");
+        let mut events = Box::pin(process.stderr_events_terminate_on_drop());
+        let mut parsed_logical_done = false;
+
+        while let Some(event) = events.next().await {
+            match event.expect("managed event") {
+                ManagedEvent::Stderr(chunk) => {
+                    if String::from_utf8_lossy(&chunk).contains(done_marker) {
+                        parsed_logical_done = true;
+                        break;
+                    }
+                }
+                ManagedEvent::Done(_) => panic!("test must stop polling before ManagedEvent::Done"),
+            }
+        }
+
+        assert!(parsed_logical_done, "fixture should emit a parseable score");
+        drop(events);
+        assert_process_exits(pid).await;
+    }
 
     #[tokio::test]
     async fn managed_process_collects_stderr_and_waits() {
@@ -331,6 +431,20 @@ mod tests {
 
         assert_eq!(stderr, b"onetwo");
         assert!(status.expect("done status").success());
+    }
+
+    #[tokio::test]
+    async fn score_like_stderr_event_stream_terminates_when_dropped_after_logical_done() {
+        assert_score_like_stream_terminates_when_dropped_after_logical_done(
+            "VMAF score: 97.500000",
+            "VMAF score:",
+        )
+        .await;
+        assert_score_like_stream_terminates_when_dropped_after_logical_done(
+            "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)",
+            "XPSNR",
+        )
+        .await;
     }
 
     #[tokio::test]

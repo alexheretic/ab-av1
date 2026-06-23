@@ -41,7 +41,7 @@ pub fn run(
     debug!("cmd `{cmd_str}`");
     let vmaf = ManagedProcess::spawn("ffmpeg vmaf", cmd)
         .context("ffmpeg vmaf")?
-        .stderr_events();
+        .stderr_events_terminate_on_drop();
 
     Ok(async_stream::stream! {
         let mut chunks = Chunks::default();
