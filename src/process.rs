@@ -1,5 +1,6 @@
 pub mod managed;
 
+use crate::process::managed::{ManagedEvent, ManagedProcess};
 use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
@@ -9,13 +10,11 @@ use std::{
     pin::Pin,
     process::{ExitStatus, Output},
     sync::Arc,
-    task::{Context, Poll, ready},
+    task::{Context, Poll},
     time::Duration,
 };
 use time::macros::format_description;
-use tokio::process::Child;
-use tokio_process_stream::{Item, ProcessChunkStream};
-use tokio_stream::Stream;
+use tokio_stream::{Stream, StreamExt};
 
 pub fn ensure_success(name: &'static str, out: &Output) -> anyhow::Result<()> {
     ensure!(
@@ -107,12 +106,13 @@ impl FfmpegOut {
         None
     }
 
-    pub fn stream(child: Child, name: &'static str, cmd_str: String) -> FfmpegOutStream {
+    pub fn stream(process: ManagedProcess, name: &'static str, cmd_str: String) -> FfmpegOutStream {
         FfmpegOutStream {
-            chunk_stream: ProcessChunkStream::from(child),
+            events: Box::pin(process.stderr_events()),
             chunks: <_>::default(),
             name,
             cmd_str,
+            done: None,
         }
     }
 }
@@ -229,19 +229,24 @@ pin_project_lite::pin_project! {
     #[must_use = "streams do nothing unless polled"]
     pub struct FfmpegOutStream {
         #[pin]
-        chunk_stream: ProcessChunkStream,
+        events: Pin<Box<dyn Stream<Item = anyhow::Result<ManagedEvent>>>>,
         name: &'static str,
         cmd_str: String,
         chunks: Chunks,
+        done: Option<ExitStatus>,
     }
 }
 
 impl FfmpegOutStream {
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        match self.chunk_stream.child_mut() {
-            Some(c) => c.wait().await,
-            None => Ok(<_>::default()),
+        while self.done.is_none() {
+            match self.next().await {
+                Some(Ok(_)) => {}
+                Some(Err(err)) => return Err(io::Error::other(err)),
+                None => break,
+            }
         }
+        Ok(self.done.unwrap_or_default())
     }
 }
 
@@ -250,30 +255,33 @@ impl Stream for FfmpegOutStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            match ready!(self.as_mut().project().chunk_stream.poll_next(cx)) {
-                Some(item) => match item {
-                    Item::Stderr(chunk) => {
+            let this = self.as_mut().project();
+            match this.events.poll_next(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(item)) => match item {
+                    Ok(ManagedEvent::Stderr(chunk)) => {
                         self.chunks.push(&chunk);
                         if let Some(out) = FfmpegOut::try_parse(self.chunks.last_line()) {
                             return Poll::Ready(Some(Ok(out)));
                         }
                     }
-                    Item::Stdout(_) => {}
-                    Item::Done(code) => {
+                    Ok(ManagedEvent::Done(status)) => {
+                        self.done = Some(status);
                         if let Err(err) =
-                            exit_ok_stderr(self.name, code, &self.cmd_str, &self.chunks)
+                            exit_ok_stderr(self.name, Ok(status), &self.cmd_str, &self.chunks)
                         {
                             return Poll::Ready(Some(Err(err)));
                         }
                     }
+                    Err(err) => return Poll::Ready(Some(Err(err))),
                 },
-                None => return Poll::Ready(None),
+                Poll::Ready(None) => return Poll::Ready(None),
             }
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, self.chunk_stream.size_hint().1)
+        (0, self.events.size_hint().1)
     }
 }
 
@@ -326,7 +334,6 @@ fn parse_ffmpeg_stream_sizes() {
 #[cfg(test)]
 mod stream_tests {
     use super::*;
-    use std::process::Stdio;
     use tokio::process::Command;
     use tokio_stream::StreamExt;
 
@@ -335,11 +342,9 @@ mod stream_tests {
         let mut child = Command::new("sh");
         child
             .arg("-c")
-            .arg("printf 'frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \\r' >&2")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        let child = child.spawn().expect("spawn progress fixture");
+            .arg("printf 'frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \\r' >&2");
+        let child =
+            ManagedProcess::spawn("progress fixture", child).expect("spawn progress fixture");
         let mut stream = FfmpegOut::stream(child, "progress fixture", "progress fixture".into());
 
         assert_eq!(
@@ -368,13 +373,8 @@ mod stream_tests {
     #[tokio::test]
     async fn ffmpeg_out_stream_reports_failure_with_stderr_context() {
         let mut child = Command::new("sh");
-        child
-            .arg("-c")
-            .arg("printf badness >&2; exit 7")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        let child = child.spawn().expect("spawn failure fixture");
+        child.arg("-c").arg("printf badness >&2; exit 7");
+        let child = ManagedProcess::spawn("failure fixture", child).expect("spawn failure fixture");
         let mut stream = FfmpegOut::stream(child, "failure fixture", "failure fixture".into());
 
         let err = stream
@@ -394,11 +394,9 @@ mod stream_tests {
         let mut child = Command::new("sh");
         child
             .arg("-c")
-            .arg("printf stdout-noise; printf 'frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \\r' >&2")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let child = child.spawn().expect("spawn mixed-output fixture");
+            .arg("printf stdout-noise; printf 'frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \\r' >&2");
+        let child = ManagedProcess::spawn("mixed-output fixture", child)
+            .expect("spawn mixed-output fixture");
         let mut stream =
             FfmpegOut::stream(child, "mixed-output fixture", "mixed-output fixture".into());
 
@@ -413,6 +411,14 @@ mod stream_tests {
                 fps: 30.0,
                 time: Duration::new(0, 250_000_000),
             }
+        );
+
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait mixed-output fixture")
+                .success()
         );
     }
 }
