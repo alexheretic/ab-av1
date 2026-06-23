@@ -1,6 +1,6 @@
 #![allow(
     dead_code,
-    reason = "tokio-process-tools wrapper is introduced before callers migrate onto it"
+    reason = "managed process wrapper is introduced before callers migrate onto it"
 )]
 
 use std::process::ExitStatus;
@@ -14,8 +14,37 @@ use tokio_process_tools::{
 };
 use tokio_process_tools::{NumBytesExt, ProcessHandle, SingleSubscriberOutputStream};
 
+const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_TERMINATION_GRACE: Duration = Duration::from_millis(25);
+const DEFAULT_STDERR_LIMIT: usize = 32_768;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ManagedProcessOptions {
+    wait_timeout: Duration,
+    termination_grace: Duration,
+    stderr_limit: usize,
+}
+
+impl Default for ManagedProcessOptions {
+    fn default() -> Self {
+        Self {
+            wait_timeout: DEFAULT_WAIT_TIMEOUT,
+            termination_grace: DEFAULT_TERMINATION_GRACE,
+            stderr_limit: DEFAULT_STDERR_LIMIT,
+        }
+    }
+}
+
+impl ManagedProcessOptions {
+    pub fn with_stderr_limit(mut self, stderr_limit: usize) -> Self {
+        self.stderr_limit = stderr_limit;
+        self
+    }
+}
+
 pub struct ManagedProcess {
     handle: ProcessHandle<SingleSubscriberOutputStream, SingleSubscriberOutputStream>,
+    options: ManagedProcessOptions,
 }
 
 pub struct ManagedOutput {
@@ -26,6 +55,14 @@ pub struct ManagedOutput {
 
 impl ManagedProcess {
     pub fn spawn(name: &'static str, cmd: Command) -> anyhow::Result<Self> {
+        Self::spawn_with_options(name, cmd, ManagedProcessOptions::default())
+    }
+
+    pub fn spawn_with_options(
+        name: &'static str,
+        cmd: Command,
+        options: ManagedProcessOptions,
+    ) -> anyhow::Result<Self> {
         let handle = Process::new(cmd)
             .name(name)
             .stdout_and_stderr(|stream| {
@@ -37,22 +74,22 @@ impl ManagedProcess {
                     .max_buffered_chunks(DEFAULT_MAX_BUFFERED_CHUNKS)
             })
             .spawn()?;
-        Ok(Self { handle })
+        Ok(Self { handle, options })
     }
 
     pub async fn stderr_chunks(self) -> anyhow::Result<(ExitStatus, Vec<u8>)> {
-        let output = self.stderr_output(32_768).await?;
+        let output = self.stderr_output().await?;
         Ok((output.status, output.stderr))
     }
 
-    pub async fn stderr_output(mut self, max_bytes: usize) -> anyhow::Result<ManagedOutput> {
+    pub async fn stderr_output(mut self) -> anyhow::Result<ManagedOutput> {
         let output = self
             .handle
-            .wait_for_completion(Duration::from_secs(30))
+            .wait_for_completion(self.options.wait_timeout)
             .with_raw_output(
                 DEFAULT_OUTPUT_EOF_TIMEOUT,
                 RawOutputOptions::symmetric(RawCollectionOptions::Bounded {
-                    max_bytes: max_bytes.bytes(),
+                    max_bytes: self.options.stderr_limit.bytes(),
                     overflow_behavior: CollectionOverflowBehavior::DropOldestData,
                 }),
             )
@@ -76,7 +113,7 @@ impl ManagedProcess {
             .consume(InspectChunks::builder().f(on_chunk).build())?;
         let status = self
             .handle
-            .wait_for_completion(Duration::from_secs(30))
+            .wait_for_completion(self.options.wait_timeout)
             .await?
             .expect_completed("process should complete");
         consumer.wait().await?;
@@ -93,7 +130,7 @@ impl ManagedProcess {
             .consume(InspectChunks::builder().f(on_chunk).build())?;
         let status = self
             .handle
-            .wait_for_completion(Duration::from_secs(30))
+            .wait_for_completion(self.options.wait_timeout)
             .await?
             .expect_completed("process should complete");
         consumer.wait().await?;
@@ -110,8 +147,8 @@ impl ManagedProcess {
             .wait_for_completion(timeout)
             .or_terminate(
                 GracefulShutdown::builder()
-                    .unix_sigterm(Duration::from_millis(25))
-                    .windows_ctrl_break(Duration::from_millis(25))
+                    .unix_sigterm(self.options.termination_grace)
+                    .windows_ctrl_break(self.options.termination_grace)
                     .build(),
             )
             .await?
@@ -169,7 +206,24 @@ mod tests {
 
         let output = ManagedProcess::spawn("noisy stderr fixture", cmd)
             .expect("spawn shell fixture")
-            .stderr_output(4)
+            .stderr_output()
+            .await
+            .expect("collect bounded stderr");
+
+        assert!(output.status.success());
+        assert_eq!(output.stderr, b"1234567890");
+        assert!(!output.stderr_truncated);
+    }
+
+    #[tokio::test]
+    async fn managed_process_reports_custom_bounded_stderr_truncation() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("printf 1234567890 >&2");
+        let options = ManagedProcessOptions::default().with_stderr_limit(4);
+
+        let output = ManagedProcess::spawn_with_options("noisy stderr fixture", cmd, options)
+            .expect("spawn shell fixture")
+            .stderr_output()
             .await
             .expect("collect bounded stderr");
 
@@ -223,5 +277,16 @@ mod tests {
 
         assert!(status.success());
         assert_eq!(&*seen.lock().expect("seen chunks lock"), b"onetwo");
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn dropping_live_managed_process_panics_instead_of_silently_detaching() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 30");
+
+        let process = ManagedProcess::spawn("drop guard fixture", cmd).expect("spawn fixture");
+
+        drop(process);
     }
 }
