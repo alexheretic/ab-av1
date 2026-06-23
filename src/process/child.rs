@@ -20,9 +20,15 @@ pub fn add(mut child: ProcessChunkStream) {
     let mut running = RUNNING.lock().unwrap();
 
     // remove any that have exited already
-    running.retain_mut(|c| c.child_mut().is_some_and(|c| c.try_wait().is_err()));
+    running.retain_mut(|c| {
+        c.child_mut()
+            .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+    });
 
-    if child.child_mut().is_some_and(|c| c.try_wait().is_err()) {
+    if child
+        .child_mut()
+        .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+    {
         running.push(child);
     }
 }
@@ -96,5 +102,97 @@ impl Deref for AddOnDropChunkStream {
 impl DerefMut for AddOnDropChunkStream {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.as_mut().unwrap() // only none after drop
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{process::Stdio, sync::MutexGuard};
+    use tokio::process::Command;
+
+    static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(<_>::default);
+
+    fn test_guard() -> MutexGuard<'static, ()> {
+        TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn clear_running() {
+        RUNNING.lock().unwrap().clear();
+    }
+
+    fn running_len() -> usize {
+        RUNNING.lock().unwrap().len()
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn add_tracks_running_child() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 5")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn running child");
+
+        add(ProcessChunkStream::from(child));
+
+        assert_eq!(running_len(), 1, "running child should be tracked");
+
+        wait().await;
+        clear_running();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn add_ignores_exited_child() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("exit 0")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = child.spawn().expect("spawn exited child");
+        child.wait().await.expect("wait exited child");
+
+        add(ProcessChunkStream::from(child));
+
+        assert_eq!(running_len(), 0, "exited child should not be tracked");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn drop_of_running_stream_registers_child() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 5")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn running child");
+
+        let tracked = AddOnDropChunkStream::from(ProcessChunkStream::from(child));
+        drop(tracked);
+
+        assert_eq!(
+            running_len(),
+            1,
+            "dropping a live stream should register it"
+        );
+
+        wait().await;
+        clear_running();
     }
 }
