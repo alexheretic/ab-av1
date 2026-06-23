@@ -62,8 +62,6 @@ async fn main() {
     };
     drop(local);
 
-    crate::process::child::wait().await;
-
     // Final cleanup. Samples are already deleted (if wished by the user) during `command::sample_encode::run`.
     temporary::clean(keep).await;
 

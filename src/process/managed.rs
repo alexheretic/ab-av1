@@ -10,9 +10,10 @@ use tokio_process_tools::{Chunk, visitors::inspect::InspectChunks};
 use tokio_process_tools::{
     CollectionOverflowBehavior, Consumable, DEFAULT_MAX_BUFFERED_CHUNKS,
     DEFAULT_OUTPUT_EOF_TIMEOUT, DEFAULT_READ_CHUNK_SIZE, GracefulShutdown, Next, Process,
-    RawCollectionOptions, RawOutputOptions,
+    RawCollectionOptions, RawOutputOptions, StreamEvent, Subscribable, Subscription,
 };
 use tokio_process_tools::{NumBytesExt, ProcessHandle, SingleSubscriberOutputStream};
+use tokio_stream::Stream;
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_TERMINATION_GRACE: Duration = Duration::from_millis(25);
@@ -51,6 +52,11 @@ pub struct ManagedOutput {
     pub status: ExitStatus,
     pub stderr: Vec<u8>,
     pub stderr_truncated: bool,
+}
+
+pub enum ManagedEvent {
+    Stderr(Vec<u8>),
+    Done(ExitStatus),
 }
 
 impl ManagedProcess {
@@ -120,6 +126,29 @@ impl ManagedProcess {
         Ok(status)
     }
 
+    pub fn stderr_events(mut self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
+        async_stream::try_stream! {
+            let mut stderr = self.handle.stderr().try_subscribe()?;
+            while let Some(event) = stderr.next_event().await {
+                match event {
+                    StreamEvent::Chunk(chunk) => {
+                        yield ManagedEvent::Stderr(chunk.as_ref().to_vec());
+                    }
+                    StreamEvent::Gap => {}
+                    StreamEvent::Eof => break,
+                    StreamEvent::ReadError(err) => Err(err)?,
+                }
+            }
+
+            let status = self
+                .handle
+                .wait_for_completion(self.options.wait_timeout)
+                .await?
+                .expect_completed("process should complete");
+            yield ManagedEvent::Done(status);
+        }
+    }
+
     pub async fn observe_stdout_chunks(
         mut self,
         on_chunk: impl FnMut(Chunk) -> Next + Send + 'static,
@@ -161,6 +190,7 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use tokio::process::Command;
+    use tokio_stream::StreamExt;
 
     #[tokio::test]
     async fn managed_process_collects_stderr_and_waits() {
@@ -257,6 +287,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn managed_process_streams_stderr_events_then_done() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("printf one >&2; printf two >&2");
+        let events = ManagedProcess::spawn("stderr events fixture", cmd)
+            .expect("spawn shell fixture")
+            .stderr_events();
+        tokio::pin!(events);
+
+        let mut stderr = Vec::new();
+        let mut status = None;
+        while let Some(event) = events.next().await {
+            match event.expect("managed event") {
+                ManagedEvent::Stderr(chunk) => stderr.extend(chunk),
+                ManagedEvent::Done(done) => status = Some(done),
+            }
+        }
+
+        assert_eq!(stderr, b"onetwo");
+        assert!(status.expect("done status").success());
+    }
+
+    #[tokio::test]
     async fn managed_process_observes_stdout_chunks_while_waiting() {
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg("printf one; sleep 0.01; printf two");
@@ -288,5 +340,28 @@ mod tests {
         let process = ManagedProcess::spawn("drop guard fixture", cmd).expect("spawn fixture");
 
         drop(process);
+    }
+
+    #[tokio::test]
+    async fn explicit_termination_is_the_supported_active_process_cleanup_path() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 30");
+
+        let process =
+            ManagedProcess::spawn("explicit termination fixture", cmd).expect("spawn fixture");
+        assert!(
+            process.id().is_some(),
+            "managed process should expose liveness before terminal transition"
+        );
+
+        let status = process
+            .terminate_after(Duration::from_millis(25))
+            .await
+            .expect("terminate managed process");
+
+        assert!(
+            !status.success(),
+            "timeout termination should return the child terminal status"
+        );
     }
 }

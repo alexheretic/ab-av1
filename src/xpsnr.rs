@@ -1,10 +1,12 @@
 //! xpsnr logic
-use crate::process::{Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr};
+use crate::process::{
+    Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr,
+    managed::{ManagedEvent, ManagedProcess},
+};
 use anyhow::Context;
 use log::{debug, info};
-use std::{path::Path, process::Stdio};
+use std::path::Path;
 use tokio::process::Command;
-use tokio_process_stream::{Item, ProcessChunkStream};
 use tokio_stream::{Stream, StreamExt};
 
 /// Calculate XPSNR score using ffmpeg.
@@ -22,28 +24,28 @@ pub fn run(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.kill_on_drop(true)
+    cmd.arg("-nostdin")
         .arg2_opt("-r", fps)
         .arg2("-i", reference)
         .arg2_opt("-r", fps)
         .arg2("-i", distorted)
         .arg2("-filter_complex", filter_complex)
         .arg2("-f", "null")
-        .arg("-")
-        .stdin(Stdio::null());
+        .arg("-");
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let mut xpsnr = crate::process::child::AddOnDropChunkStream::from(
-        ProcessChunkStream::try_from(cmd).context("ffmpeg xpsnr")?,
-    );
+    let xpsnr = ManagedProcess::spawn("ffmpeg xpsnr", cmd)
+        .context("ffmpeg xpsnr")?
+        .stderr_events();
 
     Ok(async_stream::stream! {
         let mut chunks = Chunks::default();
         let mut parsed_done = false;
+        tokio::pin!(xpsnr);
         while let Some(next) = xpsnr.next().await {
             match next {
-                Item::Stderr(chunk) => {
+                Ok(ManagedEvent::Stderr(chunk)) => {
                     if let Some(out) = XpsnrOut::try_from_chunk(&chunk, &mut chunks) {
                         if matches!(out, XpsnrOut::Done(_)) {
                             parsed_done = true;
@@ -51,12 +53,12 @@ pub fn run(
                         yield out;
                     }
                 }
-                Item::Stdout(_) => {}
-                Item::Done(code) => {
-                    if let Err(err) = exit_ok_stderr("ffmpeg xpsnr", code, &cmd_str, &chunks) {
+                Ok(ManagedEvent::Done(status)) => {
+                    if let Err(err) = exit_ok_stderr("ffmpeg xpsnr", Ok(status), &cmd_str, &chunks) {
                         yield XpsnrOut::Err(err);
                     }
                 }
+                Err(err) => yield XpsnrOut::Err(err),
             }
         }
         if !parsed_done {
