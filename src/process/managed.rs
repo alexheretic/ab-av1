@@ -3,19 +3,21 @@
     reason = "managed process wrapper is introduced before callers migrate onto it"
 )]
 
+use anyhow::bail;
 use std::process::{ExitStatus, Output};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio_process_tools::{Chunk, visitors::inspect::InspectChunks};
 use tokio_process_tools::{
     CollectionOverflowBehavior, Consumable, DEFAULT_MAX_BUFFERED_CHUNKS,
-    DEFAULT_OUTPUT_EOF_TIMEOUT, DEFAULT_READ_CHUNK_SIZE, GracefulShutdown, Next, Process,
-    RawCollectionOptions, RawOutputOptions, StreamEvent, Subscribable, Subscription,
+    DEFAULT_OUTPUT_EOF_TIMEOUT, DEFAULT_READ_CHUNK_SIZE, GracefulShutdown,
+    LossyWithoutBackpressure, Next, Process, RawCollectionOptions, RawOutputOptions, ReplayEnabled,
+    StreamEvent, Subscribable, Subscription,
 };
 use tokio_process_tools::{NumBytesExt, ProcessHandle, SingleSubscriberOutputStream};
 use tokio_stream::Stream;
 
-const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const DEFAULT_TERMINATION_GRACE: Duration = Duration::from_millis(25);
 const DEFAULT_STDERR_LIMIT: usize = 32_768;
 
@@ -37,6 +39,11 @@ impl Default for ManagedProcessOptions {
 }
 
 impl ManagedProcessOptions {
+    pub fn with_wait_timeout(mut self, wait_timeout: Duration) -> Self {
+        self.wait_timeout = wait_timeout;
+        self
+    }
+
     pub fn with_stderr_limit(mut self, stderr_limit: usize) -> Self {
         self.stderr_limit = stderr_limit;
         self
@@ -44,10 +51,14 @@ impl ManagedProcessOptions {
 }
 
 pub struct ManagedProcess {
-    handle: ProcessHandle<SingleSubscriberOutputStream, SingleSubscriberOutputStream>,
+    handle: ProcessHandle<
+        SingleSubscriberOutputStream<LossyWithoutBackpressure, ReplayEnabled>,
+        SingleSubscriberOutputStream<LossyWithoutBackpressure, ReplayEnabled>,
+    >,
     options: ManagedProcessOptions,
 }
 
+#[derive(Debug)]
 pub struct ManagedOutput {
     pub status: ExitStatus,
     pub stderr: Vec<u8>,
@@ -75,12 +86,19 @@ impl ManagedProcess {
                 stream
                     .single_subscriber()
                     .lossy_without_backpressure()
-                    .no_replay()
+                    .replay_last_bytes(DEFAULT_STDERR_LIMIT.bytes())
                     .read_chunk_size(DEFAULT_READ_CHUNK_SIZE)
                     .max_buffered_chunks(DEFAULT_MAX_BUFFERED_CHUNKS)
             })
             .spawn()?;
         Ok(Self { handle, options })
+    }
+
+    fn graceful_shutdown_for(options: ManagedProcessOptions) -> GracefulShutdown {
+        GracefulShutdown::builder()
+            .unix_sigterm(options.termination_grace)
+            .windows_ctrl_break(options.termination_grace)
+            .build()
     }
 
     pub async fn stderr_chunks(self) -> anyhow::Result<(ExitStatus, Vec<u8>)> {
@@ -98,18 +116,26 @@ impl ManagedProcess {
     }
 
     pub async fn stderr_output(mut self) -> anyhow::Result<ManagedOutput> {
+        let options = self.options;
+        let shutdown = Self::graceful_shutdown_for(options);
         let output = self
             .handle
-            .wait_for_completion(self.options.wait_timeout)
+            .wait_for_completion(options.wait_timeout)
             .with_raw_output(
                 DEFAULT_OUTPUT_EOF_TIMEOUT,
                 RawOutputOptions::symmetric(RawCollectionOptions::Bounded {
-                    max_bytes: self.options.stderr_limit.bytes(),
+                    max_bytes: options.stderr_limit.bytes(),
                     overflow_behavior: CollectionOverflowBehavior::DropOldestData,
                 }),
             )
-            .await?
-            .expect_completed("process should complete");
+            .or_terminate(shutdown)
+            .await?;
+        let Some(output) = output.into_completed() else {
+            bail!(
+                "process exceeded {:?} and was terminated",
+                options.wait_timeout
+            );
+        };
 
         Ok(ManagedOutput {
             status: output.status,
@@ -122,21 +148,31 @@ impl ManagedProcess {
         mut self,
         on_chunk: impl FnMut(Chunk) -> Next + Send + 'static,
     ) -> anyhow::Result<ExitStatus> {
+        let options = self.options;
+        let shutdown = Self::graceful_shutdown_for(options);
         let consumer = self
             .handle
             .stderr()
             .consume(InspectChunks::builder().f(on_chunk).build())?;
         let status = self
             .handle
-            .wait_for_completion(self.options.wait_timeout)
-            .await?
-            .expect_completed("process should complete");
+            .wait_for_completion(options.wait_timeout)
+            .or_terminate(shutdown)
+            .await?;
+        let Some(status) = status.into_completed() else {
+            bail!(
+                "process exceeded {:?} and was terminated",
+                options.wait_timeout
+            );
+        };
         consumer.wait().await?;
         Ok(status)
     }
 
     pub fn stderr_events(mut self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
         async_stream::try_stream! {
+            let options = self.options;
+            let shutdown = Self::graceful_shutdown_for(options);
             let mut stderr = self.handle.stderr().try_subscribe()?;
             while let Some(event) = stderr.next_event().await {
                 match event {
@@ -151,9 +187,16 @@ impl ManagedProcess {
 
             let status = self
                 .handle
-                .wait_for_completion(self.options.wait_timeout)
-                .await?
-                .expect_completed("process should complete");
+                .wait_for_completion(options.wait_timeout)
+                .or_terminate(shutdown)
+                .await?;
+            let status = match status.into_completed() {
+                Some(status) => status,
+                None => Err(anyhow::anyhow!(
+                    "process exceeded {:?} and was terminated",
+                    options.wait_timeout,
+                ))?,
+            };
             yield ManagedEvent::Done(status);
         }
     }
@@ -199,11 +242,20 @@ impl ManagedProcess {
             let Some(mut inner) = process.0.take() else {
                 return;
             };
+            let options = inner.options;
+            let shutdown = Self::graceful_shutdown_for(options);
             let status = inner
                 .handle
-                .wait_for_completion(inner.options.wait_timeout)
-                .await?
-                .expect_completed("process should complete");
+                .wait_for_completion(options.wait_timeout)
+                .or_terminate(shutdown)
+                .await?;
+            let status = match status.into_completed() {
+                Some(status) => status,
+                None => Err(anyhow::anyhow!(
+                    "process exceeded {:?} and was terminated",
+                    options.wait_timeout,
+                ))?,
+            };
             yield ManagedEvent::Done(status);
         }
     }
@@ -212,15 +264,23 @@ impl ManagedProcess {
         mut self,
         on_chunk: impl FnMut(Chunk) -> Next + Send + 'static,
     ) -> anyhow::Result<ExitStatus> {
+        let options = self.options;
+        let shutdown = Self::graceful_shutdown_for(options);
         let consumer = self
             .handle
             .stdout()
             .consume(InspectChunks::builder().f(on_chunk).build())?;
         let status = self
             .handle
-            .wait_for_completion(self.options.wait_timeout)
-            .await?
-            .expect_completed("process should complete");
+            .wait_for_completion(options.wait_timeout)
+            .or_terminate(shutdown)
+            .await?;
+        let Some(status) = status.into_completed() else {
+            bail!(
+                "process exceeded {:?} and was terminated",
+                options.wait_timeout
+            );
+        };
         consumer.wait().await?;
         Ok(status)
     }
@@ -400,6 +460,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn managed_process_output_timeout_returns_error() {
+        let cmd = fixture_command("sleep-long");
+        let options = ManagedProcessOptions::default().with_wait_timeout(Duration::from_millis(1));
+
+        let err = ManagedProcess::spawn_with_options("timeout fixture", cmd, options)
+            .expect("spawn fixture")
+            .stderr_output()
+            .await
+            .expect_err("timeout should be reported as an error");
+
+        assert!(err.to_string().contains("process exceeded"));
+    }
+
+    #[tokio::test]
     async fn managed_process_reports_bounded_stderr_truncation() {
         let cmd = fixture_command("stderr-digits");
 
@@ -477,6 +551,27 @@ mod tests {
 
         assert_eq!(stderr, b"onetwo");
         assert!(status.expect("done status").success());
+    }
+
+    #[tokio::test]
+    async fn managed_process_replays_stderr_emitted_before_subscription() {
+        let cmd = fixture_command("stderr-onetwo");
+        let process =
+            ManagedProcess::spawn("stderr replay fixture", cmd).expect("spawn shell fixture");
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let events = process.stderr_events();
+        tokio::pin!(events);
+
+        let mut stderr = Vec::new();
+        while let Some(event) = events.next().await {
+            match event.expect("managed event") {
+                ManagedEvent::Stderr(chunk) => stderr.extend(chunk),
+                ManagedEvent::Done(_) => break,
+            }
+        }
+
+        assert_eq!(stderr, b"onetwo");
     }
 
     #[tokio::test]

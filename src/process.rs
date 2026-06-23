@@ -246,7 +246,12 @@ impl FfmpegOutStream {
                 None => break,
             }
         }
-        Ok(self.done.unwrap_or_default())
+        self.done.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "ffmpeg event stream ended before process completion",
+            )
+        })
     }
 }
 
