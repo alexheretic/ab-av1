@@ -3,7 +3,7 @@
     reason = "managed process wrapper is introduced before callers migrate onto it"
 )]
 
-use std::process::ExitStatus;
+use std::process::{ExitStatus, Output};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio_process_tools::{Chunk, visitors::inspect::InspectChunks};
@@ -86,6 +86,15 @@ impl ManagedProcess {
     pub async fn stderr_chunks(self) -> anyhow::Result<(ExitStatus, Vec<u8>)> {
         let output = self.stderr_output().await?;
         Ok((output.status, output.stderr))
+    }
+
+    pub async fn output(self) -> anyhow::Result<Output> {
+        let output = self.stderr_output().await?;
+        Ok(Output {
+            status: output.status,
+            stdout: Vec::new(),
+            stderr: output.stderr,
+        })
     }
 
     pub async fn stderr_output(mut self) -> anyhow::Result<ManagedOutput> {
@@ -205,6 +214,22 @@ mod tests {
 
         assert!(status.success());
         assert_eq!(stderr, b"progress");
+    }
+
+    #[tokio::test]
+    async fn managed_process_output_returns_status_and_stderr() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("printf warning >&2");
+
+        let output = ManagedProcess::spawn("output fixture", cmd)
+            .expect("spawn shell fixture")
+            .output()
+            .await
+            .expect("collect output");
+
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, b"warning");
     }
 
     #[tokio::test]

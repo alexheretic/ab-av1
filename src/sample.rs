@@ -1,12 +1,12 @@
 //! ffmpeg logic
 use crate::{
+    process::managed::ManagedProcess,
     process::{CommandExt, ensure_success},
     temporary::{self, TempKind},
 };
 use anyhow::Context;
 use std::{
     path::{Path, PathBuf},
-    process::Stdio,
     time::Duration,
 };
 use tokio::process::Command;
@@ -42,7 +42,8 @@ pub async fn copy(
 
     // Note: `-ss` before `-i` & `-frames:v` instead of `-t`
     // See https://github.com/alexheretic/ab-av1/issues/36#issuecomment-1146634936
-    let mut out = Command::new("ffmpeg")
+    let mut cmd = Command::new("ffmpeg");
+    cmd.arg("-nostdin")
         .arg("-y")
         .arg2("-ss", sample_start_s)
         .arg2("-i", input)
@@ -50,8 +51,9 @@ pub async fn copy(
         .arg2("-c:v", "copy")
         .arg("-an")
         .arg("-sn")
-        .arg(&dest)
-        .stdin(Stdio::null())
+        .arg(&dest);
+    let mut out = ManagedProcess::spawn("ffmpeg copy", cmd)
+        .context("ffmpeg copy")?
         .output()
         .await
         .context("ffmpeg copy")?;
@@ -60,7 +62,8 @@ pub async fn copy(
         && String::from_utf8_lossy(&out.stderr)
             .contains("Can't write packet with unknown timestamp")
     {
-        out = Command::new("ffmpeg")
+        let mut cmd = Command::new("ffmpeg");
+        cmd.arg("-nostdin")
             .arg("-y")
             // try +genpts workaround
             .arg2("-fflags", "+genpts")
@@ -70,8 +73,9 @@ pub async fn copy(
             .arg2("-c:v", "copy")
             .arg("-an")
             .arg("-sn")
-            .arg(&dest)
-            .stdin(Stdio::null())
+            .arg(&dest);
+        out = ManagedProcess::spawn("ffmpeg copy", cmd)
+            .context("ffmpeg copy")?
             .output()
             .await
             .context("ffmpeg copy")?;
