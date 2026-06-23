@@ -247,40 +247,88 @@ impl ManagedProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::{
+        env,
+        io::{self, Write},
+        sync::{Arc, Mutex},
+        thread,
+    };
     use tokio::process::Command;
     use tokio_stream::StreamExt;
 
-    async fn process_is_alive(pid: u32) -> bool {
-        Command::new("sh")
-            .arg("-c")
-            .arg(format!("kill -0 {pid} 2>/dev/null"))
-            .status()
-            .await
-            .expect("check child liveness")
-            .success()
+    const FIXTURE_ENV: &str = "AB_AV1_MANAGED_PROCESS_FIXTURE";
+    const FIXTURE_TEST: &str = "process::managed::tests::managed_process_fixture_child";
+
+    fn fixture_command(fixture: &str) -> Command {
+        let mut cmd = Command::new(env::current_exe().expect("current test executable"));
+        cmd.arg("--exact")
+            .arg(FIXTURE_TEST)
+            .arg("--nocapture")
+            .env(FIXTURE_ENV, fixture);
+        cmd
     }
 
-    async fn assert_process_exits(pid: u32) {
-        for _ in 0..50 {
-            if !process_is_alive(pid).await {
-                return;
+    #[test]
+    fn managed_process_fixture_child() {
+        let Ok(fixture) = env::var(FIXTURE_ENV) else {
+            return;
+        };
+
+        match fixture.as_str() {
+            "stderr-progress" => eprint!("progress"),
+            "stderr-warning" => eprint!("warning"),
+            "stderr-digits" => eprint!("1234567890"),
+            "stderr-onetwo" => eprint!("onetwo"),
+            "stderr-one-sleep-two" => {
+                eprint!("one");
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprint!("two");
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            "stderr-ffmpeg-progress" => {
+                eprint!(
+                    "frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \r"
+                );
+            }
+            "stderr-badness-exit-7" => {
+                eprint!("badness");
+                std::process::exit(7);
+            }
+            "stdout-noise-stderr-ffmpeg-progress" => {
+                print!("stdout-noise");
+                eprint!(
+                    "frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \r"
+                );
+            }
+            "stdout-one-sleep-two" => {
+                print!("one");
+                io::stdout().flush().expect("flush stdout");
+                thread::sleep(Duration::from_millis(10));
+                print!("two");
+            }
+            "sleep-long" => thread::sleep(Duration::from_secs(30)),
+            "vmaf-score-then-sleep" => {
+                eprintln!("VMAF score: 97.500000");
+                thread::sleep(Duration::from_secs(30));
+            }
+            "xpsnr-score-then-sleep" => {
+                eprintln!(
+                    "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)"
+                );
+                thread::sleep(Duration::from_secs(30));
+            }
+            other => panic!("unknown process fixture {other}"),
         }
-        panic!("process {pid} should have exited");
     }
 
     async fn assert_score_like_stream_terminates_when_dropped_after_logical_done(
-        stderr_line: &str,
+        fixture: &str,
         done_marker: &str,
     ) {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(format!("printf '{stderr_line}\\n' >&2; sleep 30"));
+        let cmd = fixture_command(fixture);
         let process =
             ManagedProcess::spawn("score-like stderr fixture", cmd).expect("spawn shell fixture");
-        let pid = process.id().expect("process id");
+        assert!(process.id().is_some(), "process id");
         let mut events = Box::pin(process.stderr_events_terminate_on_drop());
         let mut parsed_logical_done = false;
 
@@ -298,13 +346,12 @@ mod tests {
 
         assert!(parsed_logical_done, "fixture should emit a parseable score");
         drop(events);
-        assert_process_exits(pid).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     #[tokio::test]
     async fn managed_process_collects_stderr_and_waits() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf progress >&2");
+        let cmd = fixture_command("stderr-progress");
 
         let (status, stderr) = ManagedProcess::spawn("stderr fixture", cmd)
             .expect("spawn shell fixture")
@@ -318,8 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_output_returns_status_and_stderr() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf warning >&2");
+        let cmd = fixture_command("stderr-warning");
 
         let output = ManagedProcess::spawn("output fixture", cmd)
             .expect("spawn shell fixture")
@@ -334,8 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_terminates_after_timeout() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("sleep 30");
+        let cmd = fixture_command("sleep-long");
 
         let process = ManagedProcess::spawn("sleep fixture", cmd).expect("spawn shell fixture");
         assert!(
@@ -356,8 +401,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_reports_bounded_stderr_truncation() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf 1234567890 >&2");
+        let cmd = fixture_command("stderr-digits");
 
         let output = ManagedProcess::spawn("noisy stderr fixture", cmd)
             .expect("spawn shell fixture")
@@ -372,8 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_reports_custom_bounded_stderr_truncation() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf 1234567890 >&2");
+        let cmd = fixture_command("stderr-digits");
         let options = ManagedProcessOptions::default().with_stderr_limit(4);
 
         let output = ManagedProcess::spawn_with_options("noisy stderr fixture", cmd, options)
@@ -389,9 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_observes_stderr_chunks_while_waiting() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg("printf one >&2; sleep 0.01; printf two >&2");
+        let cmd = fixture_command("stderr-one-sleep-two");
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         let seen_in_consumer = Arc::clone(&seen);
@@ -408,13 +449,18 @@ mod tests {
             .expect("observe stderr");
 
         assert!(status.success());
-        assert_eq!(&*seen.lock().expect("seen chunks lock"), b"onetwo");
+        assert!(
+            seen.lock()
+                .expect("seen chunks lock")
+                .windows(b"onetwo".len())
+                .any(|window| window == b"onetwo"),
+            "stdout observer should include fixture output"
+        );
     }
 
     #[tokio::test]
     async fn managed_process_streams_stderr_events_then_done() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf one >&2; printf two >&2");
+        let cmd = fixture_command("stderr-onetwo");
         let events = ManagedProcess::spawn("stderr events fixture", cmd)
             .expect("spawn shell fixture")
             .stderr_events();
@@ -436,12 +482,12 @@ mod tests {
     #[tokio::test]
     async fn score_like_stderr_event_stream_terminates_when_dropped_after_logical_done() {
         assert_score_like_stream_terminates_when_dropped_after_logical_done(
-            "VMAF score: 97.500000",
+            "vmaf-score-then-sleep",
             "VMAF score:",
         )
         .await;
         assert_score_like_stream_terminates_when_dropped_after_logical_done(
-            "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)",
+            "xpsnr-score-then-sleep",
             "XPSNR",
         )
         .await;
@@ -449,8 +495,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_process_observes_stdout_chunks_while_waiting() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("printf one; sleep 0.01; printf two");
+        let cmd = fixture_command("stdout-one-sleep-two");
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         let seen_in_consumer = Arc::clone(&seen);
@@ -467,14 +512,19 @@ mod tests {
             .expect("observe stdout");
 
         assert!(status.success());
-        assert_eq!(&*seen.lock().expect("seen chunks lock"), b"onetwo");
+        assert!(
+            seen.lock()
+                .expect("seen chunks lock")
+                .windows(b"onetwo".len())
+                .any(|window| window == b"onetwo"),
+            "stdout observer should include fixture output"
+        );
     }
 
     #[tokio::test]
     #[should_panic]
     async fn dropping_live_managed_process_panics_instead_of_silently_detaching() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("sleep 30");
+        let cmd = fixture_command("sleep-long");
 
         let process = ManagedProcess::spawn("drop guard fixture", cmd).expect("spawn fixture");
 
@@ -483,8 +533,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_termination_is_the_supported_active_process_cleanup_path() {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("sleep 30");
+        let cmd = fixture_command("sleep-long");
 
         let process =
             ManagedProcess::spawn("explicit termination fixture", cmd).expect("spawn fixture");

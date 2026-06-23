@@ -334,17 +334,29 @@ fn parse_ffmpeg_stream_sizes() {
 #[cfg(test)]
 mod stream_tests {
     use super::*;
+    use std::env;
     use tokio::process::Command;
     use tokio_stream::StreamExt;
 
+    const FIXTURE_ENV: &str = "AB_AV1_MANAGED_PROCESS_FIXTURE";
+    const FIXTURE_TEST: &str = "process::managed::tests::managed_process_fixture_child";
+
+    fn fixture_command(fixture: &str) -> Command {
+        let mut cmd = Command::new(env::current_exe().expect("current test executable"));
+        cmd.arg("--exact")
+            .arg(FIXTURE_TEST)
+            .arg("--nocapture")
+            .env(FIXTURE_ENV, fixture);
+        cmd
+    }
+
     #[tokio::test]
     async fn ffmpeg_out_stream_parses_stderr_progress_and_waits() {
-        let mut child = Command::new("sh");
-        child
-            .arg("-c")
-            .arg("printf 'frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \\r' >&2");
-        let child =
-            ManagedProcess::spawn("progress fixture", child).expect("spawn progress fixture");
+        let child = ManagedProcess::spawn(
+            "progress fixture",
+            fixture_command("stderr-ffmpeg-progress"),
+        )
+        .expect("spawn progress fixture");
         let mut stream = FfmpegOut::stream(child, "progress fixture", "progress fixture".into());
 
         assert_eq!(
@@ -372,9 +384,9 @@ mod stream_tests {
 
     #[tokio::test]
     async fn ffmpeg_out_stream_reports_failure_with_stderr_context() {
-        let mut child = Command::new("sh");
-        child.arg("-c").arg("printf badness >&2; exit 7");
-        let child = ManagedProcess::spawn("failure fixture", child).expect("spawn failure fixture");
+        let child =
+            ManagedProcess::spawn("failure fixture", fixture_command("stderr-badness-exit-7"))
+                .expect("spawn failure fixture");
         let mut stream = FfmpegOut::stream(child, "failure fixture", "failure fixture".into());
 
         let err = stream
@@ -391,12 +403,11 @@ mod stream_tests {
 
     #[tokio::test]
     async fn ffmpeg_out_stream_ignores_stdout_while_parsing_stderr_progress() {
-        let mut child = Command::new("sh");
-        child
-            .arg("-c")
-            .arg("printf stdout-noise; printf 'frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \\r' >&2");
-        let child = ManagedProcess::spawn("mixed-output fixture", child)
-            .expect("spawn mixed-output fixture");
+        let child = ManagedProcess::spawn(
+            "mixed-output fixture",
+            fixture_command("stdout-noise-stderr-ffmpeg-progress"),
+        )
+        .expect("spawn mixed-output fixture");
         let mut stream =
             FfmpegOut::stream(child, "mixed-output fixture", "mixed-output fixture".into());
 
