@@ -47,6 +47,20 @@ impl RegisteredChildren {
     fn as_mut_slice(&mut self) -> &mut [ProcessChunkStream] {
         &mut self.0
     }
+
+    async fn kill_and_reap_all(&mut self) {
+        for proc in &mut self.0 {
+            if let Some(child) = proc.child_mut()
+                && child.try_wait().is_ok_and(|status| status.is_none())
+            {
+                _ = child.kill().await;
+            }
+        }
+    }
+
+    fn discard(mut self) {
+        self.0.clear();
+    }
 }
 
 impl Drop for RegisteredChildren {
@@ -74,26 +88,39 @@ pub fn add(child: ProcessChunkStream) {
 
 /// Wait for all child processes, that were added with [`add`], to exit.
 pub async fn wait() {
-    // if waiting takes >500ms log what's happening
-    let mut log_deadline = Some(Instant::now() + Duration::from_millis(500));
     let mut procs = RegisteredChildren::take();
     let mut ctrl_c = pin!(signal::ctrl_c());
 
-    for proc in procs.as_mut_slice() {
+    tokio::select! {
+        _ = &mut ctrl_c => {
+            log_abort_wait();
+            procs.kill_and_reap_all().await;
+            procs.discard();
+        }
+        _ = wait_for_children(
+            procs.as_mut_slice(),
+            Duration::from_millis(500),
+            log_waiting,
+        ) => {}
+    }
+}
+
+async fn wait_for_children(
+    procs: &mut [ProcessChunkStream],
+    slow_wait_after: Duration,
+    mut on_slow_wait: impl FnMut(),
+) {
+    let mut log_deadline = Some(Instant::now() + slow_wait_after);
+
+    for proc in procs {
         if let Some(child) = proc.child_mut() {
             if let Some(deadline) = log_deadline
                 && timeout_at(deadline, child.wait()).await.is_err()
             {
-                log_waiting();
+                on_slow_wait();
                 log_deadline = None;
             }
-            tokio::select! {
-                _ = &mut ctrl_c => {
-                    log_abort_wait();
-                    return;
-                }
-                _ = child.wait() => {}
-            }
+            let _ = child.wait().await;
         }
     }
 }
@@ -165,6 +192,13 @@ mod tests {
         running_registry().len()
     }
 
+    fn all_children_reaped(registered: &mut RegisteredChildren) -> bool {
+        registered
+            .as_mut_slice()
+            .iter_mut()
+            .all(|proc| !is_running(proc))
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn add_tracks_running_child() {
         let _guard = test_guard();
@@ -172,8 +206,9 @@ mod tests {
 
         let mut child = Command::new("sh");
         child
+            .kill_on_drop(true)
             .arg("-c")
-            .arg("sleep 5")
+            .arg("sleep 1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -215,7 +250,7 @@ mod tests {
         let mut child = Command::new("sh");
         child
             .arg("-c")
-            .arg("sleep 5")
+            .arg("sleep 1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -308,6 +343,71 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn aborting_shutdown_wait_kills_reaps_and_discards_unfinished_children() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .kill_on_drop(true)
+            .arg("-c")
+            .arg("sleep 1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn running child");
+
+        add(ProcessChunkStream::from(child));
+        let mut registered = RegisteredChildren::take();
+        registered.kill_and_reap_all().await;
+        let killed_and_reaped = all_children_reaped(&mut registered);
+        registered.discard();
+
+        assert_eq!(
+            running_len(),
+            0,
+            "aborted shutdown children should not be re-registered"
+        );
+        assert!(
+            killed_and_reaped,
+            "aborted shutdown children should be killed and reaped before discard"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn aborting_shutdown_wait_reaps_children_that_exit_before_cleanup() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 0.05")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn short-lived child");
+
+        add(ProcessChunkStream::from(child));
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        let mut registered = RegisteredChildren::take();
+        registered.kill_and_reap_all().await;
+        let reaped = all_children_reaped(&mut registered);
+        registered.discard();
+
+        assert_eq!(
+            running_len(),
+            0,
+            "aborted shutdown children should not be re-registered after exit races"
+        );
+        assert!(
+            reaped,
+            "children that exit before abort cleanup should still be reaped before discard"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn add_prunes_children_that_already_exited() {
         let _guard = test_guard();
         clear_running();
@@ -343,5 +443,57 @@ mod tests {
 
         wait().await;
         clear_running();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_for_children_waits_for_supplied_children() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 0.1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn short-lived child");
+        let mut children = vec![ProcessChunkStream::from(child)];
+        let mut slow_wait_logged = false;
+
+        wait_for_children(&mut children, Duration::from_secs(60), || {
+            slow_wait_logged = true
+        })
+        .await;
+
+        assert!(!slow_wait_logged, "short waits should not log");
+        assert!(
+            children.iter_mut().all(|child| !is_running(child)),
+            "wait_for_children should leave supplied children exited"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_for_children_logs_once_after_slow_wait_threshold() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("sleep 0.1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn slow child");
+        let mut children = vec![ProcessChunkStream::from(child)];
+        let mut slow_wait_logs = 0;
+
+        wait_for_children(&mut children, Duration::from_millis(10), || {
+            slow_wait_logs += 1
+        })
+        .await;
+
+        assert_eq!(slow_wait_logs, 1, "slow wait should log once");
     }
 }
