@@ -38,7 +38,7 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let mut vmaf = crate::process::child::AddOnDropChunkStream::from(
+    let mut vmaf = crate::process::child::TrackedChildStream::from(
         ProcessChunkStream::try_from(cmd).context("ffmpeg vmaf")?,
     );
 

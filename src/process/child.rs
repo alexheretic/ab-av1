@@ -2,9 +2,9 @@ use log::info;
 use std::{
     io::IsTerminal,
     mem,
-    ops::{Deref, DerefMut},
-    pin::pin,
-    sync::{LazyLock, Mutex},
+    pin::{Pin, pin},
+    sync::{LazyLock, Mutex, MutexGuard},
+    task::{Context, Poll},
     time::Duration,
 };
 use tokio::{
@@ -12,14 +12,36 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 use tokio_process_stream::ProcessChunkStream;
+use tokio_stream::Stream;
 
 static RUNNING: LazyLock<Mutex<Vec<ProcessChunkStream>>> = LazyLock::new(<_>::default);
+
+fn running_registry() -> MutexGuard<'static, Vec<ProcessChunkStream>> {
+    RUNNING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn is_running(proc: &mut ProcessChunkStream) -> bool {
+    proc.child_mut()
+        .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
+}
+
+fn prune_exited(running: &mut Vec<ProcessChunkStream>) {
+    running.retain_mut(is_running);
+}
+
+fn register_if_running(running: &mut Vec<ProcessChunkStream>, mut child: ProcessChunkStream) {
+    if is_running(&mut child) {
+        running.push(child);
+    }
+}
 
 struct RegisteredChildren(Vec<ProcessChunkStream>);
 
 impl RegisteredChildren {
     fn take() -> Self {
-        Self(mem::take(&mut *RUNNING.lock().unwrap()))
+        Self(mem::take(&mut *running_registry()))
     }
 
     fn as_mut_slice(&mut self) -> &mut [ProcessChunkStream] {
@@ -33,39 +55,21 @@ impl Drop for RegisteredChildren {
             return;
         }
 
-        let mut running = RUNNING.lock().unwrap();
-        running.retain_mut(|child| {
-            child
-                .child_mut()
-                .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
-        });
-        for mut child in self.0.drain(..) {
-            if child
-                .child_mut()
-                .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
-            {
-                running.push(child);
-            }
+        let mut running = running_registry();
+        prune_exited(&mut running);
+        for child in self.0.drain(..) {
+            register_if_running(&mut running, child);
         }
     }
 }
 
 /// Add a child process so it may be waited on before exiting.
-pub fn add(mut child: ProcessChunkStream) {
-    let mut running = RUNNING.lock().unwrap();
+pub fn add(child: ProcessChunkStream) {
+    let mut running = running_registry();
 
     // remove any that have exited already
-    running.retain_mut(|c| {
-        c.child_mut()
-            .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
-    });
-
-    if child
-        .child_mut()
-        .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
-    {
-        running.push(child);
-    }
+    prune_exited(&mut running);
+    register_if_running(&mut running, child);
 }
 
 /// Wait for all child processes, that were added with [`add`], to exit.
@@ -108,17 +112,17 @@ fn log_abort_wait() {
     }
 }
 
-/// Wrapper that [`add`]s the inner on drop.
+/// Stream wrapper that [`add`]s the inner child process on drop.
 #[derive(Debug)]
-pub struct AddOnDropChunkStream(Option<ProcessChunkStream>);
+pub struct TrackedChildStream(Option<ProcessChunkStream>);
 
-impl From<ProcessChunkStream> for AddOnDropChunkStream {
+impl From<ProcessChunkStream> for TrackedChildStream {
     fn from(v: ProcessChunkStream) -> Self {
         Self(Some(v))
     }
 }
 
-impl Drop for AddOnDropChunkStream {
+impl Drop for TrackedChildStream {
     fn drop(&mut self) {
         if let Some(child) = self.0.take() {
             add(child);
@@ -126,17 +130,14 @@ impl Drop for AddOnDropChunkStream {
     }
 }
 
-impl Deref for AddOnDropChunkStream {
-    type Target = ProcessChunkStream;
+impl Stream for TrackedChildStream {
+    type Item = <ProcessChunkStream as Stream>::Item;
 
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref().unwrap() // only none after drop
-    }
-}
-
-impl DerefMut for AddOnDropChunkStream {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.as_mut().unwrap() // only none after drop
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.0.as_mut() {
+            Some(stream) => Pin::new(stream).poll_next(cx),
+            None => Poll::Ready(None),
+        }
     }
 }
 
@@ -145,6 +146,8 @@ mod tests {
     use super::*;
     use std::{process::Stdio, sync::MutexGuard};
     use tokio::process::Command;
+    use tokio_process_stream::Item;
+    use tokio_stream::StreamExt;
 
     static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(<_>::default);
 
@@ -155,11 +158,11 @@ mod tests {
     }
 
     fn clear_running() {
-        RUNNING.lock().unwrap().clear();
+        running_registry().clear();
     }
 
     fn running_len() -> usize {
-        RUNNING.lock().unwrap().len()
+        running_registry().len()
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -218,7 +221,7 @@ mod tests {
             .stderr(Stdio::null());
         let child = child.spawn().expect("spawn running child");
 
-        let tracked = AddOnDropChunkStream::from(ProcessChunkStream::from(child));
+        let tracked = TrackedChildStream::from(ProcessChunkStream::from(child));
         drop(tracked);
 
         assert_eq!(
@@ -228,6 +231,44 @@ mod tests {
         );
 
         wait().await;
+        clear_running();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tracked_child_stream_yields_inner_process_items() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut child = Command::new("sh");
+        child
+            .arg("-c")
+            .arg("printf tracked-output")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let child = child.spawn().expect("spawn output child");
+        let mut tracked = TrackedChildStream::from(ProcessChunkStream::from(child));
+        let mut stdout = Vec::new();
+
+        while let Some(next) = tracked.next().await {
+            match next {
+                Item::Stdout(chunk) => stdout.extend_from_slice(&chunk),
+                Item::Stderr(_) => {}
+                Item::Done(status) => {
+                    assert!(status.expect("wait output child").success());
+                    break;
+                }
+            }
+        }
+        drop(tracked);
+
+        assert_eq!(stdout, b"tracked-output");
+        assert_eq!(
+            running_len(),
+            0,
+            "a completed tracked stream should not be registered on drop"
+        );
+
         clear_running();
     }
 
@@ -264,5 +305,43 @@ mod tests {
             registered_after_cancel, 1,
             "cancelling wait should not drop unfinished children from the shutdown registry"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn add_prunes_children_that_already_exited() {
+        let _guard = test_guard();
+        clear_running();
+
+        let mut exited = Command::new("sh");
+        exited
+            .arg("-c")
+            .arg("sleep 0.1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let exited = exited.spawn().expect("spawn short-lived child");
+
+        add(ProcessChunkStream::from(exited));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let mut running = Command::new("sh");
+        running
+            .arg("-c")
+            .arg("sleep 5")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let running = running.spawn().expect("spawn running child");
+
+        add(ProcessChunkStream::from(running));
+
+        assert_eq!(
+            running_len(),
+            1,
+            "adding a child should prune any tracked children that already exited"
+        );
+
+        wait().await;
+        clear_running();
     }
 }

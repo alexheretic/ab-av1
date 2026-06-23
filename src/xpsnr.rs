@@ -34,7 +34,7 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let mut xpsnr = crate::process::child::AddOnDropChunkStream::from(
+    let mut xpsnr = crate::process::child::TrackedChildStream::from(
         ProcessChunkStream::try_from(cmd).context("ffmpeg xpsnr")?,
     );
 
