@@ -51,6 +51,11 @@ pub fn run_score_stream<Out>(
 ) -> impl Stream<Item = Out> {
     let events = process.terminate_on_drop().stderr_events();
 
+    // Score streams intentionally separate logical completion from process
+    // completion: callers may see `LogicalDone` and drop the stream, which
+    // terminates/reaps ffmpeg through the terminate-on-drop policy. If ffmpeg
+    // exits first or never prints a score, the final bounded stderr buffer is
+    // used to report child failure or parse failure with command context.
     async_stream::stream! {
         let mut chunks = Chunks::default();
         let mut logical_score = LogicalScoreCompletion::Pending;

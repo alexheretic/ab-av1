@@ -58,8 +58,18 @@ pub struct ManagedProcess {
     options: ManagedProcessOptions,
 }
 
+/// Process policy for streams that must run through process completion.
+///
+/// Use this for encode/progress streams where dropping before `ProcessDone` is
+/// a programming error. Dropping the wrapper while the child is live preserves
+/// the underlying process drop guard, so misuse is loud in tests.
 pub struct MustCompleteProcess(ManagedProcess);
 
+/// Process policy for streams where the caller may stop after a logical result.
+///
+/// Use this for score streams: VMAF/XPSNR can produce a logical score before
+/// ffmpeg exits. Dropping this wrapper or a stream built from it terminates the
+/// child instead of detaching it.
 pub struct TerminateOnDropProcess(Option<ManagedProcess>);
 
 impl Drop for TerminateOnDropProcess {
@@ -78,6 +88,10 @@ impl Drop for TerminateOnDropProcess {
     }
 }
 
+/// Bounded terminal output collected after a process has exited.
+///
+/// Stderr keeps the newest bytes up to the configured limit; when older bytes
+/// were dropped, `stderr_truncation` is `Truncated`.
 #[derive(Debug)]
 pub struct ManagedOutput {
     pub status: ExitStatus,
@@ -138,6 +152,12 @@ impl ProcessDone {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputReplayGap;
 
+/// Typed process stderr stream event.
+///
+/// The underlying tokio-process-tools stream replays recent stderr bytes for
+/// delayed subscribers and may report `ReplayGap` when lossy buffering skipped
+/// data under pressure. `ProcessDone` means the child reached a terminal status;
+/// score streams may yield their own logical completion before this event.
 #[derive(Debug)]
 pub enum ManagedEvent {
     RawStderr(RawOutputChunk),
@@ -244,10 +264,18 @@ impl ManagedProcess {
         Ok(status)
     }
 
+    /// Select the must-complete streaming policy.
+    ///
+    /// This is the policy used by encode progress streams: consumers should
+    /// drive the stream to `ProcessDone` or call the stream's terminal `wait`.
     pub fn must_complete(self) -> MustCompleteProcess {
         MustCompleteProcess(self)
     }
 
+    /// Select the terminate-on-drop streaming policy.
+    ///
+    /// This is the policy used by score streams that can stop after a logical
+    /// score. Dropping the wrapper or stream schedules child termination.
     pub fn terminate_on_drop(self) -> TerminateOnDropProcess {
         TerminateOnDropProcess(Some(self))
     }
@@ -297,6 +325,11 @@ impl ManagedProcess {
 }
 
 impl MustCompleteProcess {
+    /// Stream stderr chunks and then the terminal process status.
+    ///
+    /// Read errors and timeout termination are yielded as errors. EOF from
+    /// stderr is not success by itself; the stream waits for process completion
+    /// and only then yields `ProcessDone`.
     pub fn stderr_events(self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
         async_stream::try_stream! {
             let mut process = self.0;
@@ -332,6 +365,11 @@ impl MustCompleteProcess {
 }
 
 impl TerminateOnDropProcess {
+    /// Stream stderr chunks with cancellation-on-drop semantics.
+    ///
+    /// If the stream is dropped during stderr streaming or final process wait,
+    /// the owned child is terminated. If it reaches `ProcessDone`, the child has
+    /// already completed and no cancellation is performed.
     pub fn stderr_events(mut self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
         async_stream::try_stream! {
             let mut process = TerminateOnDropProcess(self.0.take());
@@ -399,6 +437,11 @@ mod tests {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Portable process fixtures executed by re-running the current test binary.
+    ///
+    /// Keep expected output ordering in `expected_sequence` when adding a case;
+    /// the catalog test below guards the behaviors needed by streaming tests
+    /// without depending on shell, media files, or platform-specific signals.
     enum ManagedProcessFixture {
         StderrProgress,
         StderrWarning,

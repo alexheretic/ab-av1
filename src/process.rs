@@ -226,6 +226,12 @@ impl Chunks {
 }
 
 pin_project_lite::pin_project! {
+    /// Streaming ffmpeg stderr parser for encode/sample progress.
+    ///
+    /// This stream uses the must-complete process policy. Progress events are
+    /// opportunistic: ffmpeg may produce none, one, or many progress lines. Success
+    /// is only established by the consuming `wait` transition reaching process
+    /// completion; EOF before `ProcessDone` is reported as `UnexpectedEof`.
     #[must_use = "streams do nothing unless polled"]
     pub struct FfmpegOutStream {
         #[pin]
@@ -266,6 +272,11 @@ impl FfmpegProcessDone {
 }
 
 impl FfmpegOutStream {
+    /// Consume progress events until ffmpeg reaches a terminal process status.
+    ///
+    /// Child failure is returned with bounded stderr and command context.
+    /// Parser misses are not errors for encode progress: a successful child may
+    /// complete without emitting a parseable progress line.
     pub async fn wait(mut self) -> io::Result<ExitStatus> {
         while self.completion.status().is_none() {
             match self.next().await {
