@@ -2,6 +2,7 @@
 use crate::{
     command::args::PixelFormat,
     float::TerseF32,
+    process::managed::ManagedProcess,
     process::{CommandExt, FfmpegOut, FfmpegOutStream},
     temporary::{self, TempKind},
 };
@@ -12,7 +13,6 @@ use std::{
     fmt::Write,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{Arc, LazyLock},
 };
 use tokio::process::Command;
@@ -86,7 +86,7 @@ pub fn encode_sample(
     temporary::add(&dest, TempKind::Keepable);
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.kill_on_drop(true)
+    cmd.arg("-nostdin")
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
@@ -99,14 +99,11 @@ pub fn encode_sample(
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
         .arg("-an")
-        .arg(&dest)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .arg(&dest);
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
 
-    let enc = cmd.spawn().context("ffmpeg encode_sample")?;
+    let enc = ManagedProcess::spawn("ffmpeg encode_sample", cmd).context("ffmpeg encode_sample")?;
 
     let stream = FfmpegOut::stream(enc, "ffmpeg encode_sample", cmd_str);
     Ok((dest, stream))
@@ -159,7 +156,7 @@ pub fn encode(
     }
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.kill_on_drop(true)
+    cmd.arg("-nostdin")
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
@@ -179,14 +176,11 @@ pub fn encode(
         .arg2_if(set_ba_128k, "-b:a", "128k")
         .arg2_if(add_faststart, "-movflags", "+faststart")
         .arg2_if(add_cues_to_front, "-cues_to_front", "y")
-        .arg(output)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .arg(output);
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
 
-    let enc = cmd.spawn().context("ffmpeg encode")?;
+    let enc = ManagedProcess::spawn("ffmpeg encode", cmd).context("ffmpeg encode")?;
 
     Ok(FfmpegOut::stream(enc, "ffmpeg encode", cmd_str))
 }

@@ -1,5 +1,6 @@
-pub mod child;
+pub mod managed;
 
+use crate::process::managed::{ManagedEvent, ManagedProcess};
 use anyhow::{anyhow, ensure};
 use std::{
     borrow::Cow,
@@ -9,13 +10,11 @@ use std::{
     pin::Pin,
     process::{ExitStatus, Output},
     sync::Arc,
-    task::{Context, Poll, ready},
+    task::{Context, Poll},
     time::Duration,
 };
 use time::macros::format_description;
-use tokio::process::Child;
-use tokio_process_stream::{Item, ProcessChunkStream};
-use tokio_stream::Stream;
+use tokio_stream::{Stream, StreamExt};
 
 pub fn ensure_success(name: &'static str, out: &Output) -> anyhow::Result<()> {
     ensure!(
@@ -107,12 +106,13 @@ impl FfmpegOut {
         None
     }
 
-    pub fn stream(child: Child, name: &'static str, cmd_str: String) -> FfmpegOutStream {
+    pub fn stream(process: ManagedProcess, name: &'static str, cmd_str: String) -> FfmpegOutStream {
         FfmpegOutStream {
-            chunk_stream: ProcessChunkStream::from(child),
+            events: Box::pin(process.stderr_events()),
             chunks: <_>::default(),
             name,
             cmd_str,
+            done: None,
         }
     }
 }
@@ -229,19 +229,29 @@ pin_project_lite::pin_project! {
     #[must_use = "streams do nothing unless polled"]
     pub struct FfmpegOutStream {
         #[pin]
-        chunk_stream: ProcessChunkStream,
+        events: Pin<Box<dyn Stream<Item = anyhow::Result<ManagedEvent>>>>,
         name: &'static str,
         cmd_str: String,
         chunks: Chunks,
+        done: Option<ExitStatus>,
     }
 }
 
 impl FfmpegOutStream {
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        match self.chunk_stream.child_mut() {
-            Some(c) => c.wait().await,
-            None => Ok(<_>::default()),
+        while self.done.is_none() {
+            match self.next().await {
+                Some(Ok(_)) => {}
+                Some(Err(err)) => return Err(io::Error::other(err)),
+                None => break,
+            }
         }
+        self.done.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "ffmpeg event stream ended before process completion",
+            )
+        })
     }
 }
 
@@ -250,30 +260,33 @@ impl Stream for FfmpegOutStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            match ready!(self.as_mut().project().chunk_stream.poll_next(cx)) {
-                Some(item) => match item {
-                    Item::Stderr(chunk) => {
+            let this = self.as_mut().project();
+            match this.events.poll_next(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(item)) => match item {
+                    Ok(ManagedEvent::Stderr(chunk)) => {
                         self.chunks.push(&chunk);
                         if let Some(out) = FfmpegOut::try_parse(self.chunks.last_line()) {
                             return Poll::Ready(Some(Ok(out)));
                         }
                     }
-                    Item::Stdout(_) => {}
-                    Item::Done(code) => {
+                    Ok(ManagedEvent::Done(status)) => {
+                        self.done = Some(status);
                         if let Err(err) =
-                            exit_ok_stderr(self.name, code, &self.cmd_str, &self.chunks)
+                            exit_ok_stderr(self.name, Ok(status), &self.cmd_str, &self.chunks)
                         {
                             return Poll::Ready(Some(Err(err)));
                         }
                     }
+                    Err(err) => return Poll::Ready(Some(Err(err))),
                 },
-                None => return Poll::Ready(None),
+                Poll::Ready(None) => return Poll::Ready(None),
             }
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, self.chunk_stream.size_hint().1)
+        (0, self.events.size_hint().1)
     }
 }
 
@@ -321,6 +334,109 @@ fn parse_ffmpeg_stream_sizes() {
             other: 0,
         })
     );
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+    use std::env;
+    use tokio::process::Command;
+    use tokio_stream::StreamExt;
+
+    const FIXTURE_ENV: &str = "AB_AV1_MANAGED_PROCESS_FIXTURE";
+    const FIXTURE_TEST: &str = "process::managed::tests::managed_process_fixture_child";
+
+    fn fixture_command(fixture: &str) -> Command {
+        let mut cmd = Command::new(env::current_exe().expect("current test executable"));
+        cmd.arg("--exact")
+            .arg(FIXTURE_TEST)
+            .arg("--nocapture")
+            .env(FIXTURE_ENV, fixture);
+        cmd
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_parses_stderr_progress_and_waits() {
+        let child = ManagedProcess::spawn(
+            "progress fixture",
+            fixture_command("stderr-ffmpeg-progress"),
+        )
+        .expect("spawn progress fixture");
+        let mut stream = FfmpegOut::stream(child, "progress fixture", "progress fixture".into());
+
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("progress item")
+                .expect("progress parse"),
+            FfmpegOut::Progress {
+                frame: 12,
+                fps: 24.0,
+                time: Duration::new(1, 500_000_000),
+            }
+        );
+
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait progress fixture")
+                .success(),
+            "success-path wait should reap the child"
+        );
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_reports_failure_with_stderr_context() {
+        let child =
+            ManagedProcess::spawn("failure fixture", fixture_command("stderr-badness-exit-7"))
+                .expect("spawn failure fixture");
+        let mut stream = FfmpegOut::stream(child, "failure fixture", "failure fixture".into());
+
+        let err = stream
+            .next()
+            .await
+            .expect("failure item")
+            .expect_err("non-zero exit should surface as stream error")
+            .to_string();
+
+        assert!(err.contains("failure fixture exit code 7"));
+        assert!(err.contains("----cmd-----\nfailure fixture"));
+        assert!(err.contains("---stderr---\nbadness"));
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_ignores_stdout_while_parsing_stderr_progress() {
+        let child = ManagedProcess::spawn(
+            "mixed-output fixture",
+            fixture_command("stdout-noise-stderr-ffmpeg-progress"),
+        )
+        .expect("spawn mixed-output fixture");
+        let mut stream =
+            FfmpegOut::stream(child, "mixed-output fixture", "mixed-output fixture".into());
+
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("progress item")
+                .expect("progress parse"),
+            FfmpegOut::Progress {
+                frame: 3,
+                fps: 30.0,
+                time: Duration::new(0, 250_000_000),
+            }
+        );
+
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait mixed-output fixture")
+                .success()
+        );
+    }
 }
 
 pub trait CommandExt {
