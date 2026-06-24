@@ -324,6 +324,35 @@ impl ManagedProcess {
     }
 }
 
+fn managed_event_from_stream_event(event: StreamEvent) -> anyhow::Result<Option<ManagedEvent>> {
+    Ok(match event {
+        StreamEvent::Chunk(chunk) => Some(ManagedEvent::RawStderr(RawOutputChunk::new(
+            chunk.as_ref().to_vec(),
+        ))),
+        StreamEvent::Gap => Some(ManagedEvent::ReplayGap(OutputReplayGap)),
+        StreamEvent::Eof => None,
+        StreamEvent::ReadError(err) => Err(err)?,
+    })
+}
+
+async fn wait_for_process_done(process: &mut ManagedProcess) -> anyhow::Result<ProcessDone> {
+    let options = process.options;
+    let shutdown = ManagedProcess::graceful_shutdown_for(options);
+    let status = process
+        .handle
+        .wait_for_completion(options.wait_timeout)
+        .or_terminate(shutdown)
+        .await?;
+    let status = match status.into_completed() {
+        Some(status) => status,
+        None => Err(anyhow::anyhow!(
+            "process exceeded {:?} and was terminated",
+            options.wait_timeout,
+        ))?,
+    };
+    Ok(ProcessDone::new(status))
+}
+
 impl MustCompleteProcess {
     /// Stream stderr chunks and then the terminal process status.
     ///
@@ -333,33 +362,17 @@ impl MustCompleteProcess {
     pub fn stderr_events(self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
         async_stream::try_stream! {
             let mut process = self.0;
-            let options = process.options;
-            let shutdown = ManagedProcess::graceful_shutdown_for(options);
             let mut stderr = process.handle.stderr().try_subscribe()?;
             while let Some(event) = stderr.next_event().await {
-                match event {
-                    StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
-                    }
-                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
-                    StreamEvent::Eof => break,
-                    StreamEvent::ReadError(err) => Err(err)?,
+                match managed_event_from_stream_event(event)? {
+                    Some(ManagedEvent::RawStderr(chunk)) => yield ManagedEvent::RawStderr(chunk),
+                    Some(ManagedEvent::ReplayGap(gap)) => yield ManagedEvent::ReplayGap(gap),
+                    Some(ManagedEvent::ProcessDone(done)) => yield ManagedEvent::ProcessDone(done),
+                    None => break,
                 }
             }
 
-            let status = process
-                .handle
-                .wait_for_completion(options.wait_timeout)
-                .or_terminate(shutdown)
-                .await?;
-            let status = match status.into_completed() {
-                Some(status) => status,
-                None => Err(anyhow::anyhow!(
-                    "process exceeded {:?} and was terminated",
-                    options.wait_timeout,
-                ))?,
-            };
-            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
+            yield ManagedEvent::ProcessDone(wait_for_process_done(&mut process).await?);
         }
     }
 }
@@ -378,13 +391,11 @@ impl TerminateOnDropProcess {
             };
             let mut stderr = inner.handle.stderr().try_subscribe()?;
             while let Some(event) = stderr.next_event().await {
-                match event {
-                    StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
-                    }
-                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
-                    StreamEvent::Eof => break,
-                    StreamEvent::ReadError(err) => Err(err)?,
+                match managed_event_from_stream_event(event)? {
+                    Some(ManagedEvent::RawStderr(chunk)) => yield ManagedEvent::RawStderr(chunk),
+                    Some(ManagedEvent::ReplayGap(gap)) => yield ManagedEvent::ReplayGap(gap),
+                    Some(ManagedEvent::ProcessDone(done)) => yield ManagedEvent::ProcessDone(done),
+                    None => break,
                 }
             }
 
@@ -392,22 +403,9 @@ impl TerminateOnDropProcess {
             let Some(inner) = process.0.as_mut() else {
                 return;
             };
-            let options = inner.options;
-            let shutdown = ManagedProcess::graceful_shutdown_for(options);
-            let status = inner
-                .handle
-                .wait_for_completion(options.wait_timeout)
-                .or_terminate(shutdown)
-                .await?;
-            let status = match status.into_completed() {
-                Some(status) => status,
-                None => Err(anyhow::anyhow!(
-                    "process exceeded {:?} and was terminated",
-                    options.wait_timeout,
-                ))?,
-            };
+            let done = wait_for_process_done(inner).await?;
             drop(process.0.take());
-            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
+            yield ManagedEvent::ProcessDone(done);
         }
     }
 }
