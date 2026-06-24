@@ -264,13 +264,15 @@ impl Stream for FfmpegOutStream {
             match this.events.poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(item)) => match item {
-                    Ok(ManagedEvent::Stderr(chunk)) => {
-                        self.chunks.push(&chunk);
+                    Ok(ManagedEvent::RawStderr(chunk)) => {
+                        self.chunks.push(chunk.as_bytes());
                         if let Some(out) = FfmpegOut::try_parse(self.chunks.last_line()) {
                             return Poll::Ready(Some(Ok(out)));
                         }
                     }
-                    Ok(ManagedEvent::Done(status)) => {
+                    Ok(ManagedEvent::ReplayGap(_)) => {}
+                    Ok(ManagedEvent::ProcessDone(done)) => {
+                        let status = done.status();
                         self.done = Some(status);
                         if let Err(err) =
                             exit_ok_stderr(self.name, Ok(status), &self.cmd_str, &self.chunks)

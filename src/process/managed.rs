@@ -62,12 +62,67 @@ pub struct ManagedProcess {
 pub struct ManagedOutput {
     pub status: ExitStatus,
     pub stderr: Vec<u8>,
-    pub stderr_truncated: bool,
+    pub stderr_truncation: OutputTruncation,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputTruncation {
+    Complete,
+    Truncated,
+}
+
+impl OutputTruncation {
+    fn from_truncated(truncated: bool) -> Self {
+        if truncated {
+            Self::Truncated
+        } else {
+            Self::Complete
+        }
+    }
+
+    pub fn is_truncated(self) -> bool {
+        matches!(self, Self::Truncated)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawOutputChunk(Vec<u8>);
+
+impl RawOutputChunk {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessDone(ExitStatus);
+
+impl ProcessDone {
+    fn new(status: ExitStatus) -> Self {
+        Self(status)
+    }
+
+    pub fn status(self) -> ExitStatus {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputReplayGap;
+
+#[derive(Debug)]
 pub enum ManagedEvent {
-    Stderr(Vec<u8>),
-    Done(ExitStatus),
+    RawStderr(RawOutputChunk),
+    ReplayGap(OutputReplayGap),
+    ProcessDone(ProcessDone),
 }
 
 impl ManagedProcess {
@@ -140,7 +195,7 @@ impl ManagedProcess {
         Ok(ManagedOutput {
             status: output.status,
             stderr: output.stderr.bytes,
-            stderr_truncated: output.stderr.truncated,
+            stderr_truncation: OutputTruncation::from_truncated(output.stderr.truncated),
         })
     }
 
@@ -177,9 +232,9 @@ impl ManagedProcess {
             while let Some(event) = stderr.next_event().await {
                 match event {
                     StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::Stderr(chunk.as_ref().to_vec());
+                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
                     }
-                    StreamEvent::Gap => {}
+                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
                     StreamEvent::Eof => break,
                     StreamEvent::ReadError(err) => Err(err)?,
                 }
@@ -197,7 +252,7 @@ impl ManagedProcess {
                     options.wait_timeout,
                 ))?,
             };
-            yield ManagedEvent::Done(status);
+            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
         }
     }
 
@@ -231,9 +286,9 @@ impl ManagedProcess {
             while let Some(event) = stderr.next_event().await {
                 match event {
                     StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::Stderr(chunk.as_ref().to_vec());
+                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
                     }
-                    StreamEvent::Gap => {}
+                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
                     StreamEvent::Eof => break,
                     StreamEvent::ReadError(err) => Err(err)?,
                 }
@@ -260,7 +315,7 @@ impl ManagedProcess {
                 }
             };
             drop(process.0.take());
-            yield ManagedEvent::Done(status);
+            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
         }
     }
 
@@ -333,6 +388,25 @@ mod tests {
     }
 
     #[test]
+    fn raw_output_chunk_exposes_borrowed_bytes_for_parsers() {
+        let chunk = RawOutputChunk::new(b"progress".to_vec());
+        assert_eq!(chunk.as_bytes(), b"progress");
+        assert_eq!(chunk.into_bytes(), b"progress");
+    }
+
+    #[test]
+    fn output_truncation_is_an_explicit_terminal_collection_state() {
+        assert_eq!(
+            OutputTruncation::from_truncated(false),
+            OutputTruncation::Complete
+        );
+        assert_eq!(
+            OutputTruncation::from_truncated(true),
+            OutputTruncation::Truncated
+        );
+    }
+
+    #[test]
     fn managed_process_fixture_child() {
         let Ok(fixture) = env::var(FIXTURE_ENV) else {
             return;
@@ -398,13 +472,16 @@ mod tests {
 
         while let Some(event) = events.next().await {
             match event.expect("managed event") {
-                ManagedEvent::Stderr(chunk) => {
-                    if String::from_utf8_lossy(&chunk).contains(done_marker) {
+                ManagedEvent::RawStderr(chunk) => {
+                    if String::from_utf8_lossy(chunk.as_bytes()).contains(done_marker) {
                         parsed_logical_done = true;
                         break;
                     }
                 }
-                ManagedEvent::Done(_) => panic!("test must stop polling before ManagedEvent::Done"),
+                ManagedEvent::ReplayGap(_) => {}
+                ManagedEvent::ProcessDone(_) => {
+                    panic!("test must stop polling before ManagedEvent::ProcessDone")
+                }
             }
         }
 
@@ -489,7 +566,8 @@ mod tests {
 
         assert!(output.status.success());
         assert_eq!(output.stderr, b"1234567890");
-        assert!(!output.stderr_truncated);
+        assert_eq!(output.stderr_truncation, OutputTruncation::Complete);
+        assert!(!output.stderr_truncation.is_truncated());
     }
 
     #[tokio::test]
@@ -505,7 +583,8 @@ mod tests {
 
         assert!(output.status.success());
         assert_eq!(output.stderr, b"7890");
-        assert!(output.stderr_truncated);
+        assert_eq!(output.stderr_truncation, OutputTruncation::Truncated);
+        assert!(output.stderr_truncation.is_truncated());
     }
 
     #[tokio::test]
@@ -548,8 +627,9 @@ mod tests {
         let mut status = None;
         while let Some(event) = events.next().await {
             match event.expect("managed event") {
-                ManagedEvent::Stderr(chunk) => stderr.extend(chunk),
-                ManagedEvent::Done(done) => status = Some(done),
+                ManagedEvent::RawStderr(chunk) => stderr.extend(chunk.into_bytes()),
+                ManagedEvent::ReplayGap(_) => {}
+                ManagedEvent::ProcessDone(done) => status = Some(done.status()),
             }
         }
 
@@ -570,8 +650,9 @@ mod tests {
         let mut stderr = Vec::new();
         while let Some(event) = events.next().await {
             match event.expect("managed event") {
-                ManagedEvent::Stderr(chunk) => stderr.extend(chunk),
-                ManagedEvent::Done(_) => break,
+                ManagedEvent::RawStderr(chunk) => stderr.extend(chunk.into_bytes()),
+                ManagedEvent::ReplayGap(_) => {}
+                ManagedEvent::ProcessDone(_) => break,
             }
         }
 

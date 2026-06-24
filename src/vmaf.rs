@@ -49,15 +49,17 @@ pub fn run(
         tokio::pin!(vmaf);
         while let Some(next) = vmaf.next().await {
             match next {
-                Ok(ManagedEvent::Stderr(chunk)) => {
-                    if let Some(out) = VmafOut::try_from_chunk(&chunk, &mut chunks) {
+                Ok(ManagedEvent::RawStderr(chunk)) => {
+                    if let Some(out) = VmafOut::try_from_chunk(chunk.as_bytes(), &mut chunks) {
                         if matches!(out, VmafOut::Done(_)) {
                             parsed_done = true;
                         }
                         yield out;
                     }
                 }
-                Ok(ManagedEvent::Done(status)) => {
+                Ok(ManagedEvent::ReplayGap(_)) => {}
+                Ok(ManagedEvent::ProcessDone(done)) => {
+                    let status = done.status();
                     if let Err(err) = exit_ok_stderr("ffmpeg vmaf", Ok(status), &cmd_str, &chunks) {
                         yield VmafOut::Err(err);
                     }

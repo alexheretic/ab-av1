@@ -45,15 +45,17 @@ pub fn run(
         tokio::pin!(xpsnr);
         while let Some(next) = xpsnr.next().await {
             match next {
-                Ok(ManagedEvent::Stderr(chunk)) => {
-                    if let Some(out) = XpsnrOut::try_from_chunk(&chunk, &mut chunks) {
+                Ok(ManagedEvent::RawStderr(chunk)) => {
+                    if let Some(out) = XpsnrOut::try_from_chunk(chunk.as_bytes(), &mut chunks) {
                         if matches!(out, XpsnrOut::Done(_)) {
                             parsed_done = true;
                         }
                         yield out;
                     }
                 }
-                Ok(ManagedEvent::Done(status)) => {
+                Ok(ManagedEvent::ReplayGap(_)) => {}
+                Ok(ManagedEvent::ProcessDone(done)) => {
+                    let status = done.status();
                     if let Err(err) = exit_ok_stderr("ffmpeg xpsnr", Ok(status), &cmd_str, &chunks) {
                         yield XpsnrOut::Err(err);
                     }
