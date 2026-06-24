@@ -239,23 +239,27 @@ impl ManagedProcess {
                 }
             }
 
-            let Some(mut inner) = process.0.take() else {
-                return;
+            drop(stderr);
+            let status = {
+                let Some(inner) = process.0.as_mut() else {
+                    return;
+                };
+                let options = inner.options;
+                let shutdown = Self::graceful_shutdown_for(options);
+                let status = inner
+                    .handle
+                    .wait_for_completion(options.wait_timeout)
+                    .or_terminate(shutdown)
+                    .await?;
+                match status.into_completed() {
+                    Some(status) => status,
+                    None => Err(anyhow::anyhow!(
+                        "process exceeded {:?} and was terminated",
+                        options.wait_timeout,
+                    ))?,
+                }
             };
-            let options = inner.options;
-            let shutdown = Self::graceful_shutdown_for(options);
-            let status = inner
-                .handle
-                .wait_for_completion(options.wait_timeout)
-                .or_terminate(shutdown)
-                .await?;
-            let status = match status.into_completed() {
-                Some(status) => status,
-                None => Err(anyhow::anyhow!(
-                    "process exceeded {:?} and was terminated",
-                    options.wait_timeout,
-                ))?,
-            };
+            drop(process.0.take());
             yield ManagedEvent::Done(status);
         }
     }
@@ -528,7 +532,7 @@ mod tests {
                 .expect("seen chunks lock")
                 .windows(b"onetwo".len())
                 .any(|window| window == b"onetwo"),
-            "stdout observer should include fixture output"
+            "stderr observer should include fixture output"
         );
     }
 
