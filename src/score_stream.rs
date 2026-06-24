@@ -49,7 +49,7 @@ pub fn run_score_stream<Out>(
     into_out: fn(ScoreStreamParse) -> Out,
     into_err: fn(anyhow::Error) -> Out,
 ) -> impl Stream<Item = Out> {
-    let events = process.stderr_events_terminate_on_drop();
+    let events = process.terminate_on_drop().stderr_events();
 
     async_stream::stream! {
         let mut chunks = Chunks::default();

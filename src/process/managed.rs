@@ -58,6 +58,26 @@ pub struct ManagedProcess {
     options: ManagedProcessOptions,
 }
 
+pub struct MustCompleteProcess(ManagedProcess);
+
+pub struct TerminateOnDropProcess(Option<ManagedProcess>);
+
+impl Drop for TerminateOnDropProcess {
+    fn drop(&mut self) {
+        let Some(process) = self.0.take() else {
+            return;
+        };
+
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+
+        handle.spawn(async move {
+            let _ = process.terminate_after(Duration::ZERO).await;
+        });
+    }
+}
+
 #[derive(Debug)]
 pub struct ManagedOutput {
     pub status: ExitStatus,
@@ -224,99 +244,12 @@ impl ManagedProcess {
         Ok(status)
     }
 
-    pub fn stderr_events(mut self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
-        async_stream::try_stream! {
-            let options = self.options;
-            let shutdown = Self::graceful_shutdown_for(options);
-            let mut stderr = self.handle.stderr().try_subscribe()?;
-            while let Some(event) = stderr.next_event().await {
-                match event {
-                    StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
-                    }
-                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
-                    StreamEvent::Eof => break,
-                    StreamEvent::ReadError(err) => Err(err)?,
-                }
-            }
-
-            let status = self
-                .handle
-                .wait_for_completion(options.wait_timeout)
-                .or_terminate(shutdown)
-                .await?;
-            let status = match status.into_completed() {
-                Some(status) => status,
-                None => Err(anyhow::anyhow!(
-                    "process exceeded {:?} and was terminated",
-                    options.wait_timeout,
-                ))?,
-            };
-            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
-        }
+    pub fn must_complete(self) -> MustCompleteProcess {
+        MustCompleteProcess(self)
     }
 
-    pub fn stderr_events_terminate_on_drop(
-        self,
-    ) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
-        struct TerminateOnDrop(Option<ManagedProcess>);
-
-        impl Drop for TerminateOnDrop {
-            fn drop(&mut self) {
-                let Some(process) = self.0.take() else {
-                    return;
-                };
-
-                let Ok(handle) = tokio::runtime::Handle::try_current() else {
-                    return;
-                };
-
-                handle.spawn(async move {
-                    let _ = process.terminate_after(Duration::ZERO).await;
-                });
-            }
-        }
-
-        async_stream::try_stream! {
-            let mut process = TerminateOnDrop(Some(self));
-            let Some(inner) = process.0.as_mut() else {
-                return;
-            };
-            let mut stderr = inner.handle.stderr().try_subscribe()?;
-            while let Some(event) = stderr.next_event().await {
-                match event {
-                    StreamEvent::Chunk(chunk) => {
-                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
-                    }
-                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
-                    StreamEvent::Eof => break,
-                    StreamEvent::ReadError(err) => Err(err)?,
-                }
-            }
-
-            drop(stderr);
-            let status = {
-                let Some(inner) = process.0.as_mut() else {
-                    return;
-                };
-                let options = inner.options;
-                let shutdown = Self::graceful_shutdown_for(options);
-                let status = inner
-                    .handle
-                    .wait_for_completion(options.wait_timeout)
-                    .or_terminate(shutdown)
-                    .await?;
-                match status.into_completed() {
-                    Some(status) => status,
-                    None => Err(anyhow::anyhow!(
-                        "process exceeded {:?} and was terminated",
-                        options.wait_timeout,
-                    ))?,
-                }
-            };
-            drop(process.0.take());
-            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
-        }
+    pub fn terminate_on_drop(self) -> TerminateOnDropProcess {
+        TerminateOnDropProcess(Some(self))
     }
 
     pub async fn observe_stdout_chunks(
@@ -360,6 +293,84 @@ impl ManagedProcess {
             )
             .await?
             .into_result())
+    }
+}
+
+impl MustCompleteProcess {
+    pub fn stderr_events(self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
+        async_stream::try_stream! {
+            let mut process = self.0;
+            let options = process.options;
+            let shutdown = ManagedProcess::graceful_shutdown_for(options);
+            let mut stderr = process.handle.stderr().try_subscribe()?;
+            while let Some(event) = stderr.next_event().await {
+                match event {
+                    StreamEvent::Chunk(chunk) => {
+                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
+                    }
+                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
+                    StreamEvent::Eof => break,
+                    StreamEvent::ReadError(err) => Err(err)?,
+                }
+            }
+
+            let status = process
+                .handle
+                .wait_for_completion(options.wait_timeout)
+                .or_terminate(shutdown)
+                .await?;
+            let status = match status.into_completed() {
+                Some(status) => status,
+                None => Err(anyhow::anyhow!(
+                    "process exceeded {:?} and was terminated",
+                    options.wait_timeout,
+                ))?,
+            };
+            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
+        }
+    }
+}
+
+impl TerminateOnDropProcess {
+    pub fn stderr_events(mut self) -> impl Stream<Item = anyhow::Result<ManagedEvent>> {
+        async_stream::try_stream! {
+            let mut process = TerminateOnDropProcess(self.0.take());
+            let Some(inner) = process.0.as_mut() else {
+                return;
+            };
+            let mut stderr = inner.handle.stderr().try_subscribe()?;
+            while let Some(event) = stderr.next_event().await {
+                match event {
+                    StreamEvent::Chunk(chunk) => {
+                        yield ManagedEvent::RawStderr(RawOutputChunk::new(chunk.as_ref().to_vec()));
+                    }
+                    StreamEvent::Gap => yield ManagedEvent::ReplayGap(OutputReplayGap),
+                    StreamEvent::Eof => break,
+                    StreamEvent::ReadError(err) => Err(err)?,
+                }
+            }
+
+            drop(stderr);
+            let Some(inner) = process.0.as_mut() else {
+                return;
+            };
+            let options = inner.options;
+            let shutdown = ManagedProcess::graceful_shutdown_for(options);
+            let status = inner
+                .handle
+                .wait_for_completion(options.wait_timeout)
+                .or_terminate(shutdown)
+                .await?;
+            let status = match status.into_completed() {
+                Some(status) => status,
+                None => Err(anyhow::anyhow!(
+                    "process exceeded {:?} and was terminated",
+                    options.wait_timeout,
+                ))?,
+            };
+            drop(process.0.take());
+            yield ManagedEvent::ProcessDone(ProcessDone::new(status));
+        }
     }
 }
 
@@ -541,7 +552,7 @@ mod tests {
         let process =
             ManagedProcess::spawn("score-like stderr fixture", cmd).expect("spawn shell fixture");
         assert!(process.id().is_some(), "process id");
-        let mut events = Box::pin(process.stderr_events_terminate_on_drop());
+        let mut events = Box::pin(process.terminate_on_drop().stderr_events());
         let mut parsed_logical_done = false;
 
         while let Some(event) = events.next().await {
@@ -560,6 +571,37 @@ mod tests {
         }
 
         assert!(parsed_logical_done, "fixture should emit a parseable score");
+        drop(events);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    async fn assert_terminate_on_drop_stream_terminates_when_dropped_during_stderr(
+        fixture: &str,
+        chunk_marker: &str,
+    ) {
+        let cmd = fixture_command(fixture);
+        let process =
+            ManagedProcess::spawn("terminate-on-drop fixture", cmd).expect("spawn fixture");
+        assert!(process.id().is_some(), "process id");
+        let mut events = Box::pin(process.terminate_on_drop().stderr_events());
+        let mut saw_chunk = false;
+
+        while let Some(event) = events.next().await {
+            match event.expect("managed event") {
+                ManagedEvent::RawStderr(chunk) => {
+                    if String::from_utf8_lossy(chunk.as_bytes()).contains(chunk_marker) {
+                        saw_chunk = true;
+                        break;
+                    }
+                }
+                ManagedEvent::ReplayGap(_) => {}
+                ManagedEvent::ProcessDone(_) => {
+                    panic!("test must stop polling before ManagedEvent::ProcessDone")
+                }
+            }
+        }
+
+        assert!(saw_chunk, "fixture should emit stderr before sleeping");
         drop(events);
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -612,6 +654,30 @@ mod tests {
             !status.success(),
             "terminated process should not exit successfully"
         );
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn dropping_must_complete_process_is_loud() {
+        let cmd = fixture_command("sleep-long");
+
+        let process = ManagedProcess::spawn("must-complete fixture", cmd)
+            .expect("spawn must-complete fixture")
+            .must_complete();
+
+        drop(process);
+    }
+
+    #[tokio::test]
+    async fn dropping_terminate_on_drop_process_terminates_instead_of_panicking() {
+        let cmd = fixture_command("sleep-long");
+
+        let process = ManagedProcess::spawn("terminate-on-drop fixture", cmd)
+            .expect("spawn terminate-on-drop fixture")
+            .terminate_on_drop();
+
+        drop(process);
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     #[tokio::test]
@@ -694,6 +760,7 @@ mod tests {
         let cmd = fixture_command("stderr-onetwo");
         let events = ManagedProcess::spawn("stderr events fixture", cmd)
             .expect("spawn shell fixture")
+            .must_complete()
             .stderr_events();
         tokio::pin!(events);
 
@@ -718,7 +785,7 @@ mod tests {
             ManagedProcess::spawn("stderr replay fixture", cmd).expect("spawn shell fixture");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let events = process.stderr_events();
+        let events = process.must_complete().stderr_events();
         tokio::pin!(events);
 
         let mut stderr = Vec::new();
@@ -743,6 +810,15 @@ mod tests {
         assert_score_like_stream_terminates_when_dropped_after_logical_done(
             "xpsnr-score-then-sleep",
             "XPSNR",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn terminate_on_drop_stderr_event_stream_terminates_when_dropped_during_stderr() {
+        assert_terminate_on_drop_stream_terminates_when_dropped_during_stderr(
+            "stderr-one-sleep-two",
+            "one",
         )
         .await;
     }

@@ -108,7 +108,7 @@ impl FfmpegOut {
 
     pub fn stream(process: ManagedProcess, name: &'static str, cmd_str: String) -> FfmpegOutStream {
         FfmpegOutStream {
-            events: Box::pin(process.stderr_events()),
+            events: Box::pin(process.must_complete().stderr_events()),
             chunks: <_>::default(),
             name,
             cmd_str,
