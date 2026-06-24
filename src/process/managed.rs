@@ -465,11 +465,69 @@ mod tests {
                 eprintln!("VMAF score: 97.500000");
                 thread::sleep(Duration::from_secs(30));
             }
+            "vmaf-progress-score" => {
+                eprint!(
+                    "frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \r"
+                );
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprintln!("VMAF score: 97.500000");
+            }
+            "vmaf-no-score" => {
+                eprintln!("frame=  1 fps=  1 q=-0.0 size=N/A time=00:00:00.10 bitrate=N/A speed=1x")
+            }
+            "vmaf-score-exit-7" => {
+                eprintln!("VMAF score: 97.500000");
+                eprintln!("vmaf badness");
+                std::process::exit(7);
+            }
+            "stdout-noise-vmaf-progress-score" => {
+                print!("stdout-noise");
+                io::stdout().flush().expect("flush stdout");
+                eprint!(
+                    "frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \r"
+                );
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprintln!("VMAF score: 98.000000");
+            }
             "xpsnr-score-then-sleep" => {
                 eprintln!(
                     "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)"
                 );
                 thread::sleep(Duration::from_secs(30));
+            }
+            "xpsnr-progress-score" => {
+                eprint!(
+                    "frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \r"
+                );
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprintln!(
+                    "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)"
+                );
+            }
+            "xpsnr-no-score" => {
+                eprintln!("frame=  1 fps=  1 q=-0.0 size=N/A time=00:00:00.10 bitrate=N/A speed=1x")
+            }
+            "xpsnr-score-exit-7" => {
+                eprintln!(
+                    "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 33.6547 u: 41.8741 v: 42.2571 (minimum: 33.6547)"
+                );
+                eprintln!("xpsnr badness");
+                std::process::exit(7);
+            }
+            "stdout-noise-xpsnr-progress-score" => {
+                print!("stdout-noise");
+                io::stdout().flush().expect("flush stdout");
+                eprint!(
+                    "frame=  3 fps= 30 q=-0.0 size=N/A time=00:00:00.25 bitrate=N/A speed=1x    \r"
+                );
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprintln!(
+                    "[Parsed_xpsnr_0 @ 0x1] XPSNR y: 34.0000 u: 41.8741 v: 42.2571 (minimum: 34.0000)"
+                );
             }
             other => panic!("unknown process fixture {other}"),
         }

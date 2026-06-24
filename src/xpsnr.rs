@@ -1,13 +1,11 @@
 //! xpsnr logic
-use crate::process::{
-    Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr,
-    managed::{ManagedEvent, ManagedProcess},
-};
+use crate::process::{Chunks, CommandExt, FfmpegOut, managed::ManagedProcess};
+use crate::score_stream::{Score, ScoreStreamParse, run_score_stream};
 use anyhow::Context;
 use log::{debug, info};
 use std::path::Path;
 use tokio::process::Command;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 
 /// Calculate XPSNR score using ffmpeg.
 // TODO: fix progress update to account for fps
@@ -35,42 +33,19 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let xpsnr = ManagedProcess::spawn("ffmpeg xpsnr", cmd)
-        .context("ffmpeg xpsnr")?
-        .stderr_events_terminate_on_drop();
+    let xpsnr = ManagedProcess::spawn("ffmpeg xpsnr", cmd).context("ffmpeg xpsnr")?;
+    Ok(stream_process(xpsnr, cmd_str))
+}
 
-    Ok(async_stream::stream! {
-        let mut chunks = Chunks::default();
-        let mut parsed_done = false;
-        tokio::pin!(xpsnr);
-        while let Some(next) = xpsnr.next().await {
-            match next {
-                Ok(ManagedEvent::RawStderr(chunk)) => {
-                    if let Some(out) = XpsnrOut::try_from_chunk(chunk.as_bytes(), &mut chunks) {
-                        if matches!(out, XpsnrOut::Done(_)) {
-                            parsed_done = true;
-                        }
-                        yield out;
-                    }
-                }
-                Ok(ManagedEvent::ReplayGap(_)) => {}
-                Ok(ManagedEvent::ProcessDone(done)) => {
-                    let status = done.status();
-                    if let Err(err) = exit_ok_stderr("ffmpeg xpsnr", Ok(status), &cmd_str, &chunks) {
-                        yield XpsnrOut::Err(err);
-                    }
-                }
-                Err(err) => yield XpsnrOut::Err(err),
-            }
-        }
-        if !parsed_done {
-            yield XpsnrOut::Err(cmd_err(
-                "could not parse ffmpeg xpsnr score",
-                &cmd_str,
-                &chunks,
-            ));
-        }
-    })
+fn stream_process(process: ManagedProcess, cmd_str: String) -> impl Stream<Item = XpsnrOut> {
+    run_score_stream(
+        process,
+        "ffmpeg xpsnr",
+        cmd_str,
+        XpsnrOut::try_parse_chunk,
+        XpsnrOut::from_parse,
+        XpsnrOut::Err,
+    )
 }
 
 #[derive(Debug)]
@@ -81,6 +56,21 @@ pub enum XpsnrOut {
 }
 
 impl XpsnrOut {
+    fn from_parse(event: ScoreStreamParse) -> Self {
+        match event {
+            ScoreStreamParse::Progress(progress) => Self::Progress(progress),
+            ScoreStreamParse::LogicalDone(score) => Self::Done(score.get()),
+        }
+    }
+
+    fn try_parse_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<ScoreStreamParse> {
+        Self::try_from_chunk(chunk, chunks).map(|out| match out {
+            Self::Progress(progress) => ScoreStreamParse::Progress(progress),
+            Self::Done(score) => ScoreStreamParse::LogicalDone(Score::new(score)),
+            Self::Err(err) => unreachable!("pure XPSNR parser returned error event: {err}"),
+        })
+    }
+
     fn try_from_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<Self> {
         chunks.push(chunk);
 
@@ -119,6 +109,115 @@ fn score_from_line(line: &str) -> Option<f32> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::env;
+    use std::pin::Pin;
+    use tokio::process::Command;
+    use tokio_stream::StreamExt;
+
+    const FIXTURE_ENV: &str = "AB_AV1_MANAGED_PROCESS_FIXTURE";
+    const FIXTURE_TEST: &str = "process::managed::tests::managed_process_fixture_child";
+
+    fn fixture_command(fixture: &str) -> Command {
+        let mut cmd = Command::new(env::current_exe().expect("current test executable"));
+        cmd.arg("--exact")
+            .arg(FIXTURE_TEST)
+            .arg("--nocapture")
+            .env(FIXTURE_ENV, fixture);
+        cmd
+    }
+
+    fn fixture_stream(fixture: &str) -> Pin<Box<dyn Stream<Item = XpsnrOut>>> {
+        let process = ManagedProcess::spawn("ffmpeg xpsnr", fixture_command(fixture))
+            .expect("spawn XPSNR fixture");
+        Box::pin(stream_process(process, format!("fixture {fixture}")))
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_yields_progress_then_logical_done() {
+        let mut stream = fixture_stream("xpsnr-progress-score");
+
+        match stream.next().await.expect("progress") {
+            XpsnrOut::Progress(FfmpegOut::Progress { frame, fps, time }) => {
+                assert_eq!(frame, 12);
+                assert_eq!(fps, 24.0);
+                assert_eq!(time, std::time::Duration::new(1, 500_000_000));
+            }
+            other => panic!("expected XPSNR progress, got {other:?}"),
+        }
+        match stream.next().await.expect("score") {
+            XpsnrOut::Done(score) => assert_eq!(score, 33.6547),
+            other => panic!("expected XPSNR score, got {other:?}"),
+        }
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_reports_missing_logical_done_with_stderr_context() {
+        let mut stream = fixture_stream("xpsnr-no-score");
+        let mut err = None;
+        while let Some(out) = stream.next().await {
+            if let XpsnrOut::Err(next) = out {
+                err = Some(next.to_string());
+            }
+        }
+
+        let err = err.expect("missing score error");
+        assert!(err.contains("could not parse ffmpeg xpsnr score"));
+        assert!(err.contains("fixture xpsnr-no-score"));
+        assert!(err.contains("frame="));
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_reports_child_failure_after_logical_done() {
+        let mut stream = fixture_stream("xpsnr-score-exit-7");
+        assert!(matches!(stream.next().await, Some(XpsnrOut::Done(33.6547))));
+
+        match stream.next().await.expect("failure") {
+            XpsnrOut::Err(err) => {
+                let err = err.to_string();
+                assert!(err.contains("ffmpeg xpsnr exit code 7"));
+                assert!(err.contains("xpsnr badness"));
+            }
+            other => panic!("expected XPSNR process error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_ignores_stdout_noise() {
+        let mut stream = fixture_stream("stdout-noise-xpsnr-progress-score");
+        assert!(matches!(
+            stream.next().await,
+            Some(XpsnrOut::Progress(FfmpegOut::Progress { frame: 3, .. }))
+        ));
+        assert!(matches!(stream.next().await, Some(XpsnrOut::Done(34.0))));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_replays_score_emitted_before_subscription() {
+        let process =
+            ManagedProcess::spawn("ffmpeg xpsnr", fixture_command("xpsnr-progress-score"))
+                .expect("spawn XPSNR fixture");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let mut stream = Box::pin(stream_process(process, "delayed xpsnr fixture".into()));
+
+        let mut score = None;
+        while let Some(out) = stream.next().await {
+            if let XpsnrOut::Done(next) = out {
+                score = Some(next);
+            }
+        }
+
+        assert_eq!(score, Some(33.6547));
+    }
+
+    #[tokio::test]
+    async fn xpsnr_stream_terminates_when_dropped_after_logical_done() {
+        let mut stream = fixture_stream("xpsnr-score-then-sleep");
+        assert!(matches!(stream.next().await, Some(XpsnrOut::Done(33.6547))));
+        drop(stream);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     #[test]
     fn parse_rgb_line() {

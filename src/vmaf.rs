@@ -1,13 +1,11 @@
 //! vmaf logic
-use crate::process::{
-    Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr,
-    managed::{ManagedEvent, ManagedProcess},
-};
+use crate::process::{Chunks, CommandExt, FfmpegOut, managed::ManagedProcess};
+use crate::score_stream::{Score, ScoreStreamParse, run_score_stream};
 use anyhow::Context;
 use log::{debug, info};
 use std::path::Path;
 use tokio::process::Command;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 
 /// Calculate VMAF score using ffmpeg.
 pub fn run(
@@ -39,42 +37,19 @@ pub fn run(
 
     let cmd_str = cmd.to_cmd_str();
     debug!("cmd `{cmd_str}`");
-    let vmaf = ManagedProcess::spawn("ffmpeg vmaf", cmd)
-        .context("ffmpeg vmaf")?
-        .stderr_events_terminate_on_drop();
+    let vmaf = ManagedProcess::spawn("ffmpeg vmaf", cmd).context("ffmpeg vmaf")?;
+    Ok(stream_process(vmaf, cmd_str))
+}
 
-    Ok(async_stream::stream! {
-        let mut chunks = Chunks::default();
-        let mut parsed_done = false;
-        tokio::pin!(vmaf);
-        while let Some(next) = vmaf.next().await {
-            match next {
-                Ok(ManagedEvent::RawStderr(chunk)) => {
-                    if let Some(out) = VmafOut::try_from_chunk(chunk.as_bytes(), &mut chunks) {
-                        if matches!(out, VmafOut::Done(_)) {
-                            parsed_done = true;
-                        }
-                        yield out;
-                    }
-                }
-                Ok(ManagedEvent::ReplayGap(_)) => {}
-                Ok(ManagedEvent::ProcessDone(done)) => {
-                    let status = done.status();
-                    if let Err(err) = exit_ok_stderr("ffmpeg vmaf", Ok(status), &cmd_str, &chunks) {
-                        yield VmafOut::Err(err);
-                    }
-                }
-                Err(err) => yield VmafOut::Err(err),
-            }
-        }
-        if !parsed_done {
-            yield VmafOut::Err(cmd_err(
-                "could not parse ffmpeg vmaf score",
-                &cmd_str,
-                &chunks,
-            ));
-        }
-    })
+fn stream_process(process: ManagedProcess, cmd_str: String) -> impl Stream<Item = VmafOut> {
+    run_score_stream(
+        process,
+        "ffmpeg vmaf",
+        cmd_str,
+        VmafOut::try_parse_chunk,
+        VmafOut::from_parse,
+        VmafOut::Err,
+    )
 }
 
 #[derive(Debug)]
@@ -85,6 +60,21 @@ pub enum VmafOut {
 }
 
 impl VmafOut {
+    fn from_parse(event: ScoreStreamParse) -> Self {
+        match event {
+            ScoreStreamParse::Progress(progress) => Self::Progress(progress),
+            ScoreStreamParse::LogicalDone(score) => Self::Done(score.get()),
+        }
+    }
+
+    fn try_parse_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<ScoreStreamParse> {
+        Self::try_from_chunk(chunk, chunks).map(|out| match out {
+            Self::Progress(progress) => ScoreStreamParse::Progress(progress),
+            Self::Done(score) => ScoreStreamParse::LogicalDone(Score::new(score)),
+            Self::Err(err) => unreachable!("pure VMAF parser returned error event: {err}"),
+        })
+    }
+
     fn try_from_chunk(chunk: &[u8], chunks: &mut Chunks) -> Option<Self> {
         const SCORE_PREFIX: &str = "VMAF score: ";
 
@@ -106,6 +96,114 @@ impl VmafOut {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::env;
+    use std::pin::Pin;
+    use tokio::process::Command;
+    use tokio_stream::StreamExt;
+
+    const FIXTURE_ENV: &str = "AB_AV1_MANAGED_PROCESS_FIXTURE";
+    const FIXTURE_TEST: &str = "process::managed::tests::managed_process_fixture_child";
+
+    fn fixture_command(fixture: &str) -> Command {
+        let mut cmd = Command::new(env::current_exe().expect("current test executable"));
+        cmd.arg("--exact")
+            .arg(FIXTURE_TEST)
+            .arg("--nocapture")
+            .env(FIXTURE_ENV, fixture);
+        cmd
+    }
+
+    fn fixture_stream(fixture: &str) -> Pin<Box<dyn Stream<Item = VmafOut>>> {
+        let process = ManagedProcess::spawn("ffmpeg vmaf", fixture_command(fixture))
+            .expect("spawn VMAF fixture");
+        Box::pin(stream_process(process, format!("fixture {fixture}")))
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_yields_progress_then_logical_done() {
+        let mut stream = fixture_stream("vmaf-progress-score");
+
+        match stream.next().await.expect("progress") {
+            VmafOut::Progress(FfmpegOut::Progress { frame, fps, time }) => {
+                assert_eq!(frame, 12);
+                assert_eq!(fps, 24.0);
+                assert_eq!(time, std::time::Duration::new(1, 500_000_000));
+            }
+            other => panic!("expected VMAF progress, got {other:?}"),
+        }
+        match stream.next().await.expect("score") {
+            VmafOut::Done(score) => assert_eq!(score, 97.5),
+            other => panic!("expected VMAF score, got {other:?}"),
+        }
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_reports_missing_logical_done_with_stderr_context() {
+        let mut stream = fixture_stream("vmaf-no-score");
+        let mut err = None;
+        while let Some(out) = stream.next().await {
+            if let VmafOut::Err(next) = out {
+                err = Some(next.to_string());
+            }
+        }
+
+        let err = err.expect("missing score error");
+        assert!(err.contains("could not parse ffmpeg vmaf score"));
+        assert!(err.contains("fixture vmaf-no-score"));
+        assert!(err.contains("frame="));
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_reports_child_failure_after_logical_done() {
+        let mut stream = fixture_stream("vmaf-score-exit-7");
+        assert!(matches!(stream.next().await, Some(VmafOut::Done(97.5))));
+
+        match stream.next().await.expect("failure") {
+            VmafOut::Err(err) => {
+                let err = err.to_string();
+                assert!(err.contains("ffmpeg vmaf exit code 7"));
+                assert!(err.contains("vmaf badness"));
+            }
+            other => panic!("expected VMAF process error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_ignores_stdout_noise() {
+        let mut stream = fixture_stream("stdout-noise-vmaf-progress-score");
+        assert!(matches!(
+            stream.next().await,
+            Some(VmafOut::Progress(FfmpegOut::Progress { frame: 3, .. }))
+        ));
+        assert!(matches!(stream.next().await, Some(VmafOut::Done(98.0))));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_replays_score_emitted_before_subscription() {
+        let process = ManagedProcess::spawn("ffmpeg vmaf", fixture_command("vmaf-progress-score"))
+            .expect("spawn VMAF fixture");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let mut stream = Box::pin(stream_process(process, "delayed vmaf fixture".into()));
+
+        let mut score = None;
+        while let Some(out) = stream.next().await {
+            if let VmafOut::Done(next) = out {
+                score = Some(next);
+            }
+        }
+
+        assert_eq!(score, Some(97.5));
+    }
+
+    #[tokio::test]
+    async fn vmaf_stream_terminates_when_dropped_after_logical_done() {
+        let mut stream = fixture_stream("vmaf-score-then-sleep");
+        assert!(matches!(stream.next().await, Some(VmafOut::Done(97.5))));
+        drop(stream);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     #[test]
     fn parse_vmaf_score_207() {

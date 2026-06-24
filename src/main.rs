@@ -6,6 +6,7 @@ mod float;
 mod log;
 mod process;
 mod sample;
+mod score_stream;
 mod temporary;
 mod vmaf;
 mod xpsnr;
