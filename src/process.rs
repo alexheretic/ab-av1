@@ -112,7 +112,7 @@ impl FfmpegOut {
             chunks: <_>::default(),
             name,
             cmd_str,
-            done: None,
+            completion: FfmpegProcessCompletion::Pending,
         }
     }
 }
@@ -233,20 +233,48 @@ pin_project_lite::pin_project! {
         name: &'static str,
         cmd_str: String,
         chunks: Chunks,
-        done: Option<ExitStatus>,
+        completion: FfmpegProcessCompletion,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FfmpegProcessCompletion {
+    Pending,
+    Done(FfmpegProcessDone),
+}
+
+impl FfmpegProcessCompletion {
+    fn status(self) -> Option<ExitStatus> {
+        match self {
+            Self::Pending => None,
+            Self::Done(done) => Some(done.status()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FfmpegProcessDone(ExitStatus);
+
+impl FfmpegProcessDone {
+    fn new(status: ExitStatus) -> Self {
+        Self(status)
+    }
+
+    fn status(self) -> ExitStatus {
+        self.0
     }
 }
 
 impl FfmpegOutStream {
-    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        while self.done.is_none() {
+    pub async fn wait(mut self) -> io::Result<ExitStatus> {
+        while self.completion.status().is_none() {
             match self.next().await {
                 Some(Ok(_)) => {}
                 Some(Err(err)) => return Err(io::Error::other(err)),
                 None => break,
             }
         }
-        self.done.ok_or_else(|| {
+        self.completion.status().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "ffmpeg event stream ended before process completion",
@@ -273,7 +301,8 @@ impl Stream for FfmpegOutStream {
                     Ok(ManagedEvent::ReplayGap(_)) => {}
                     Ok(ManagedEvent::ProcessDone(done)) => {
                         let status = done.status();
-                        self.done = Some(status);
+                        self.completion =
+                            FfmpegProcessCompletion::Done(FfmpegProcessDone::new(status));
                         if let Err(err) =
                             exit_ok_stderr(self.name, Ok(status), &self.cmd_str, &self.chunks)
                         {
@@ -390,6 +419,67 @@ mod stream_tests {
     }
 
     #[tokio::test]
+    async fn ffmpeg_out_stream_supports_long_running_periodic_progress() {
+        let child = ManagedProcess::spawn(
+            "periodic progress fixture",
+            fixture_command("stderr-ffmpeg-progress-twice"),
+        )
+        .expect("spawn periodic progress fixture");
+        let mut stream = FfmpegOut::stream(
+            child,
+            "periodic progress fixture",
+            "periodic progress fixture".into(),
+        );
+
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("first progress item")
+                .expect("first progress parse"),
+            FfmpegOut::Progress {
+                frame: 12,
+                fps: 24.0,
+                time: Duration::new(1, 500_000_000),
+            }
+        );
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .expect("second progress item")
+                .expect("second progress parse"),
+            FfmpegOut::Progress {
+                frame: 24,
+                fps: 24.0,
+                time: Duration::new(3, 0),
+            }
+        );
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait periodic progress fixture")
+                .success()
+        );
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_wait_succeeds_for_process_done_without_progress() {
+        let child = ManagedProcess::spawn("no-progress fixture", fixture_command("stderr-warning"))
+            .expect("spawn no-progress fixture");
+        let stream = FfmpegOut::stream(child, "no-progress fixture", "no-progress fixture".into());
+
+        assert!(
+            stream
+                .wait()
+                .await
+                .expect("wait no-progress fixture")
+                .success()
+        );
+    }
+
+    #[tokio::test]
     async fn ffmpeg_out_stream_reports_failure_with_stderr_context() {
         let child =
             ManagedProcess::spawn("failure fixture", fixture_command("stderr-badness-exit-7"))
@@ -406,6 +496,32 @@ mod stream_tests {
         assert!(err.contains("failure fixture exit code 7"));
         assert!(err.contains("----cmd-----\nfailure fixture"));
         assert!(err.contains("---stderr---\nbadness"));
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_out_stream_failure_context_keeps_recent_bounded_stderr() {
+        let child = ManagedProcess::spawn(
+            "bounded failure fixture",
+            fixture_command("stderr-many-lines-exit-7"),
+        )
+        .expect("spawn bounded failure fixture");
+        let mut stream = FfmpegOut::stream(
+            child,
+            "bounded failure fixture",
+            "bounded failure fixture".into(),
+        );
+
+        let err = stream
+            .next()
+            .await
+            .expect("failure item")
+            .expect_err("non-zero exit should surface as stream error")
+            .to_string();
+
+        assert!(err.contains("bounded failure fixture exit code 7"));
+        assert!(err.contains("line-4999"));
+        assert!(!err.contains("line-0000"));
+        assert!(err.len() < 34_000, "stderr context should stay bounded");
     }
 
     #[tokio::test]

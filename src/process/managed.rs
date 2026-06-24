@@ -428,8 +428,24 @@ mod tests {
                     "frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \r"
                 );
             }
+            "stderr-ffmpeg-progress-twice" => {
+                eprint!(
+                    "frame=  12 fps= 24 q=-0.0 size=N/A time=00:00:01.50 bitrate=N/A speed=1x    \r"
+                );
+                io::stderr().flush().expect("flush stderr");
+                thread::sleep(Duration::from_millis(10));
+                eprint!(
+                    "frame=  24 fps= 24 q=-0.0 size=N/A time=00:00:03.00 bitrate=N/A speed=1x    \r"
+                );
+            }
             "stderr-badness-exit-7" => {
                 eprint!("badness");
+                std::process::exit(7);
+            }
+            "stderr-many-lines-exit-7" => {
+                for n in 0..5000 {
+                    eprintln!("line-{n:04}");
+                }
                 std::process::exit(7);
             }
             "stdout-noise-stderr-ffmpeg-progress" => {
