@@ -1,4 +1,4 @@
-# Unreleased (0.11.4)
+# v0.11.4
 * Fix "sample x/n ..." log formatting.
 * Fix graceful shutdown of ffmpeg child processes.
 
