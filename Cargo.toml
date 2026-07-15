@@ -27,7 +27,7 @@ ffprobe = "0.4"
 futures-util = "0.3.19"
 humantime = "2.1"
 indicatif = "0.18"
-infer = { version = "0.19", default-features = false }
+infer = { version = "0.22", default-features = false }
 log = "0.4.21"
 pin-project-lite = "0.2.16"
 same-file = "1.0.6"
