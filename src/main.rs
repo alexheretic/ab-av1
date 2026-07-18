@@ -83,7 +83,7 @@ impl Command {
     fn keep_temp_files(&self) -> bool {
         match self {
             Self::SampleEncode(args) => args.sample.keep,
-            Self::CrfSearch(args) => args.sample.keep,
+            Self::CrfSearch(args) => args.search.sample.keep,
             Self::AutoEncode(args) => args.search.sample.keep,
             _ => false,
         }

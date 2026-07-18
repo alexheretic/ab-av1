@@ -37,6 +37,14 @@ const DEFAULT_MIN_VMAF: f32 = 95.0;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
+    pub search: SearchArgs,
+}
+
+/// Search args shared with auto-encode.
+#[derive(Parser)]
+#[group(skip)]
+pub struct SearchArgs {
+    #[clap(flatten)]
     pub args: args::Encode,
 
     /// Desired min VMAF score to deliver.
@@ -112,7 +120,7 @@ pub struct Args {
     pub verbose: clap_verbosity_flag::Verbosity,
 }
 
-impl Args {
+impl SearchArgs {
     pub fn min_score(&self) -> f32 {
         self.min_vmaf.or(self.min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF)
     }
@@ -131,8 +139,8 @@ impl Args {
     }
 }
 
-pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
-    args.validate()?;
+pub async fn crf_search(Args { mut search }: Args) -> anyhow::Result<()> {
+    search.validate()?;
 
     let bar = ProgressBar::new(BAR_LEN).with_style(
         ProgressStyle::default_bar()
@@ -141,18 +149,19 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
     );
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    let probe = ffprobe::probe(&args.args.input);
+    let probe = ffprobe::probe(&search.args.input);
     let input_is_image = probe.is_image;
-    args.sample
-        .set_extension_from_input(&args.args.input, &args.args.encoder, &probe);
+    search
+        .sample
+        .set_extension_from_input(&search.args.input, &search.args.encoder, &probe);
 
-    let min_score = args.min_score();
-    let max_encoded_percent = args.max_encoded_percent;
-    let thorough = args.thorough;
-    let enc_args = args.args.clone();
-    let verbose = args.verbose;
+    let min_score = search.min_score();
+    let max_encoded_percent = search.max_encoded_percent;
+    let thorough = search.thorough;
+    let enc_args = search.args.clone();
+    let verbose = search.verbose;
 
-    let mut run = pin!(run(args, probe.into()));
+    let mut run = pin!(run(search, probe.into()));
     while let Some(update) = run.next().await {
         let update = update.inspect_err(|e| {
             if let Error::NoGoodCrf { last } = e {
@@ -209,7 +218,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(best.crf)).dim().italic(),
                     );
                 }
-                StdoutFormat::Human.print_result(&best, input_is_image);
+                best.print_result_human(input_is_image);
                 return Ok(());
             }
         }
@@ -218,7 +227,7 @@ pub async fn crf_search(mut args: Args) -> anyhow::Result<()> {
 }
 
 pub fn run(
-    Args {
+    SearchArgs {
         args,
         min_vmaf,
         min_xpsnr,
@@ -234,7 +243,7 @@ pub fn run(
         score,
         xpsnr,
         verbose: _,
-    }: Args,
+    }: SearchArgs,
     input_probe: Arc<Ffprobe>,
 ) -> impl Stream<Item = Result<Update, Error>> {
     async_stream::try_stream! {
@@ -427,33 +436,22 @@ impl Sample {
             "{crf_label} {crf} {score_label} {score:.2} {open}{percent}{close}{cache_msg}"
         ));
     }
-}
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum StdoutFormat {
-    Human,
-}
-
-impl StdoutFormat {
-    fn print_result(self, sample: &Sample, image: bool) {
-        match self {
-            Self::Human => {
-                let crf = style(TerseF32(sample.crf)).bold().green();
-                let enc = &sample.enc;
-                let score = style(enc.single_score()).bold().green();
-                let score_kind = enc.single_score_kind();
-                let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
-                let percent = style!("{}%", enc.encode_percent.round()).bold().green();
-                let time = style(HumanDuration(enc.predicted_encode_time)).bold();
-                let enc_description = match image {
-                    true => "image",
-                    false => "video stream",
-                };
-                println!(
-                    "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
-                );
-            }
-        }
+    pub fn print_result_human(&self, image: bool) {
+        let crf = style(TerseF32(self.crf)).bold().green();
+        let enc = &self.enc;
+        let score = style(enc.single_score()).bold().green();
+        let score_kind = enc.single_score_kind();
+        let size = style(HumanBytes(enc.predicted_encode_size)).bold().green();
+        let percent = style!("{}%", enc.encode_percent.round()).bold().green();
+        let time = style(HumanDuration(enc.predicted_encode_time)).bold();
+        let enc_description = match image {
+            true => "image",
+            false => "video stream",
+        };
+        println!(
+            "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
+        );
     }
 }
 

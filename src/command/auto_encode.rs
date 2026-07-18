@@ -32,7 +32,7 @@ const BAR_LEN: u64 = 1024 * 1024 * 1024;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub search: crf_search::Args,
+    pub search: crf_search::SearchArgs,
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
