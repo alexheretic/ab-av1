@@ -5,7 +5,7 @@ pub use err::Error;
 use crate::{
     command::{
         PROGRESS_CHARS, args,
-        sample_encode::{self, Work},
+        sample_encode::{self, StdoutFormat, Work},
     },
     console_ext::style,
     ffprobe::{self, Ffprobe},
@@ -38,6 +38,12 @@ const DEFAULT_MIN_VMAF: f32 = 95.0;
 pub struct Args {
     #[clap(flatten)]
     pub search: SearchArgs,
+
+    /// Stdout message format `human` or `json`.
+    ///
+    /// See <https://github.com/alexheretic/ab-av1/blob/main/stdout-format-json.md>
+    #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
+    pub stdout_format: StdoutFormat,
 }
 
 /// Search args shared with auto-encode.
@@ -139,7 +145,12 @@ impl SearchArgs {
     }
 }
 
-pub async fn crf_search(Args { mut search }: Args) -> anyhow::Result<()> {
+pub async fn crf_search(
+    Args {
+        mut search,
+        stdout_format,
+    }: Args,
+) -> anyhow::Result<()> {
     search.validate()?;
 
     let bar = ProgressBar::new(BAR_LEN).with_style(
@@ -166,6 +177,10 @@ pub async fn crf_search(Args { mut search }: Args) -> anyhow::Result<()> {
         let update = update.inspect_err(|e| {
             if let Error::NoGoodCrf { last } = e {
                 last.print_attempt(&bar, min_score, max_encoded_percent);
+                if let StdoutFormat::Json = stdout_format {
+                    println!("{}", last.attempt_json());
+                    println!("{}", error_json(e));
+                }
             }
         })?;
         match update {
@@ -207,7 +222,17 @@ pub async fn crf_search(Args { mut search }: Args) -> anyhow::Result<()> {
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
-            Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
+            Update::SampleEncoded(sample) => {
+                if let StdoutFormat::Json = stdout_format {
+                    println!("{}", sample.enc.sample_encode_done_json(sample.crf));
+                }
+            }
+            Update::RunResult(result) => {
+                result.print_attempt(&bar, min_score, max_encoded_percent);
+                if let StdoutFormat::Json = stdout_format {
+                    println!("{}", result.attempt_json());
+                }
+            }
             Update::Done(best) => {
                 info!("crf {} successful", best.crf);
                 bar.finish_with_message("");
@@ -218,7 +243,10 @@ pub async fn crf_search(Args { mut search }: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(best.crf)).dim().italic(),
                     );
                 }
-                best.print_result_human(input_is_image);
+                match stdout_format {
+                    StdoutFormat::Human => best.print_result_human(input_is_image),
+                    StdoutFormat::Json => println!("{}", best.done_json()),
+                }
                 return Ok(());
             }
         }
@@ -323,6 +351,7 @@ pub fn run(
             };
             let score = sample.enc.single_score();
             crf_attempts.push(sample.clone());
+            yield Update::SampleEncoded(sample.clone());
             let sample_small_enough = sample.enc.encode_percent <= max_encoded_percent as _;
 
             if score > min_score {
@@ -453,6 +482,87 @@ impl Sample {
             "crf {crf} {score_kind} {score:.2} predicted {enc_description} size {size} ({percent}) taking {time}"
         );
     }
+
+    /// `crf-search-attempt` json message, see _stdout-format-json.md_.
+    pub fn attempt_json(&self) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "type": "crf-search-attempt",
+            "crf": self.crf,
+            "from_cache": self.enc.from_cache,
+            "predicted_encode_percent": self.enc.encode_percent,
+        });
+        if let Some(score) = self.enc.vmaf_score {
+            json["vmaf"] = score.into();
+        }
+        if let Some(score) = self.enc.xpsnr_score {
+            json["xpsnr"] = score.into();
+        }
+        json
+    }
+
+    /// `crf-search-done` json message, see _stdout-format-json.md_.
+    pub fn done_json(&self) -> serde_json::Value {
+        let mut json = self.enc.sample_encode_done_json(self.crf);
+        json["type"] = "crf-search-done".into();
+        json
+    }
+}
+
+/// `crf-search-error` json message, see _stdout-format-json.md_.
+fn error_json(err: &Error) -> serde_json::Value {
+    serde_json::json!({
+        "type": "crf-search-error",
+        "message": err.to_string(),
+    })
+}
+
+#[cfg(test)]
+fn test_sample() -> Sample {
+    Sample {
+        enc: sample_encode::Output {
+            vmaf_score: Some(95.5),
+            xpsnr_score: None,
+            predicted_encode_size: 38889644,
+            encode_percent: 41.25,
+            predicted_encode_time: Duration::from_secs(1560),
+            from_cache: false,
+        },
+        crf: 34.0,
+        q: 34,
+    }
+}
+
+#[test]
+fn attempt_json_message() {
+    assert_eq!(
+        test_sample().attempt_json().to_string(),
+        r#"{"crf":34.0,"from_cache":false,"predicted_encode_percent":41.25,"type":"crf-search-attempt","vmaf":95.5}"#
+    );
+}
+
+#[test]
+fn done_json_message() {
+    assert_eq!(
+        test_sample().done_json().to_string(),
+        r#"{"crf":34.0,"from_cache":false,"predicted_encode_percent":41.25,"predicted_encode_seconds":1560.0,"predicted_encode_size":38889644,"type":"crf-search-done","vmaf":95.5}"#
+    );
+}
+
+#[test]
+fn error_json_message() {
+    let err = Error::NoGoodCrf {
+        last: test_sample(),
+    };
+    assert_eq!(
+        error_json(&err).to_string(),
+        r#"{"message":"Failed to find a suitable crf","type":"crf-search-error"}"#
+    );
+}
+
+#[test]
+fn parse_stdout_format() {
+    Args::try_parse_from(["crf-search", "-i", "vid.mkv", "--stdout-format", "json"])
+        .expect("--stdout-format json should parse");
 }
 
 /// Produce a q value between given samples using vmaf score linear interpolation
@@ -586,6 +696,8 @@ pub enum Update {
         sample: u64,
         result: sample_encode::EncodeResult,
     },
+    /// Sample encode of a crf attempt completed, emitted for every attempt.
+    SampleEncoded(Sample),
     /// Run result (excludes successful final runs)
     RunResult(Sample),
     Done(Sample),
