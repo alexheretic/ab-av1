@@ -145,7 +145,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
-            Ok(crf_search::Update::SampleEncoded(_)) => {}
+            Ok(crf_search::Update::SampleEncodeDone(_)) => {}
             Ok(crf_search::Update::RunResult(result)) => {
                 if verbose
                     .log_level()

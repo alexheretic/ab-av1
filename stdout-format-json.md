@@ -89,7 +89,7 @@ A single `sample-encode-done`.
 
 Guarantees:
 * Exactly one `sample-encode-done` per crf attempted.
-* The final line is a `crf-search-done` or `crf-search-error`. Other errors (e.g. invalid input) end the stream with no json message: stderr `Error:` line & non-zero exit only.
+* The final line is a `crf-search-done` or `crf-search-error`. Other errors (e.g. invalid input) end the stream with no final json message: stderr `Error:` line & non-zero exit only.
 
 ### Example: successful search
 ```json

@@ -222,7 +222,7 @@ pub async fn crf_search(
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
-            Update::SampleEncoded(sample) => {
+            Update::SampleEncodeDone(sample) => {
                 if let StdoutFormat::Json = stdout_format {
                     println!("{}", sample.enc.sample_encode_done_json(sample.crf));
                 }
@@ -351,7 +351,7 @@ pub fn run(
             };
             let score = sample.enc.single_score();
             crf_attempts.push(sample.clone());
-            yield Update::SampleEncoded(sample.clone());
+            yield Update::SampleEncodeDone(sample.clone());
             let sample_small_enough = sample.enc.encode_percent <= max_encoded_percent as _;
 
             if score > min_score {
@@ -697,7 +697,7 @@ pub enum Update {
         result: sample_encode::EncodeResult,
     },
     /// Sample encode of a crf attempt completed, emitted for every attempt.
-    SampleEncoded(Sample),
+    SampleEncodeDone(Sample),
     /// Run result (excludes successful final runs)
     RunResult(Sample),
     Done(Sample),
