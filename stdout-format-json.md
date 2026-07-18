@@ -95,20 +95,12 @@ Guarantees:
 ```json
 {"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"predicted_encode_seconds":9.0,"predicted_encode_size":19469845,"type":"sample-encode-done","vmaf":90.38392639160156}
 {"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"type":"crf-search-attempt","vmaf":90.38392639160156}
-{"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"predicted_encode_seconds":16.0,"predicted_encode_size":289016681,"type":"sample-encode-done","vmaf":98.99139404296875}
-{"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"type":"crf-search-attempt","vmaf":98.99139404296875}
-{"crf":27.0,"from_cache":false,"predicted_encode_percent":20.79908059385195,"predicted_encode_seconds":13.0,"predicted_encode_size":103424776,"type":"sample-encode-done","vmaf":96.34620666503906}
-{"crf":27.0,"from_cache":false,"predicted_encode_percent":20.79908059385195,"type":"crf-search-attempt","vmaf":96.34620666503906}
-{"crf":29.25,"from_cache":false,"predicted_encode_percent":14.819840772420237,"predicted_encode_seconds":12.0,"predicted_encode_size":73692619,"type":"sample-encode-done","vmaf":95.37376403808594}
-{"crf":29.25,"from_cache":false,"predicted_encode_percent":14.819840772420237,"type":"crf-search-attempt","vmaf":95.37376403808594}
 {"crf":29.75,"from_cache":false,"predicted_encode_percent":13.785497397240093,"predicted_encode_seconds":13.0,"predicted_encode_size":68549279,"type":"sample-encode-done","vmaf":95.16242980957031}
 {"crf":29.75,"from_cache":false,"predicted_encode_percent":13.785497397240093,"predicted_encode_seconds":13.0,"predicted_encode_size":68549279,"type":"crf-search-done","vmaf":95.16242980957031}
 ```
 
 ### Example: failed search
 ```json
-{"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"predicted_encode_seconds":10.0,"predicted_encode_size":19469845,"type":"sample-encode-done","vmaf":90.38392639160156}
-{"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"type":"crf-search-attempt","vmaf":90.38392639160156}
 {"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"predicted_encode_seconds":18.0,"predicted_encode_size":289016681,"type":"sample-encode-done","vmaf":98.99139404296875}
 {"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"type":"crf-search-attempt","vmaf":98.99139404296875}
 {"message":"Failed to find a suitable crf","type":"crf-search-error"}
