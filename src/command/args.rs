@@ -77,7 +77,7 @@ pub struct Sample {
     pub keep: bool,
 
     /// Directory to store temporary sample data in.
-    /// Defaults to using the input's directory.
+    /// Defaults to the current working directory.
     #[arg(long, env = "AB_AV1_TEMP_DIR", value_hint = ValueHint::DirPath)]
     pub temp_dir: Option<PathBuf>,
 
