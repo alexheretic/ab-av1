@@ -92,7 +92,9 @@ pub fn encode_sample(
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
         .args(output_args.iter().map(|a| &**a))
-        .arg2(vcodec.crf_arg(), crf)
+        // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
+        .arg2("-fps_mode", "passthrough")
+        .arg2(vcodec.crf_arg(), vcodec.crf(crf))
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -168,7 +170,7 @@ pub fn encode(
         .arg2("-c:a", audio_codec)
         .arg2("-c:s", "copy")
         .args(output_args.iter().map(|a| &**a))
-        .arg2(vcodec.crf_arg(), crf)
+        .arg2(vcodec.crf_arg(), vcodec.crf(crf))
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -203,6 +205,8 @@ trait VCodecSpecific {
     fn preset_arg(&self) -> &str;
     /// Arg to use crf values with, normally `-crf`.
     fn crf_arg(&self) -> &str;
+    /// crf value to pass to ffmpeg.
+    fn crf(&self, crf: f32) -> f32;
 }
 impl VCodecSpecific for Arc<str> {
     fn preset_arg(&self) -> &str {
@@ -220,6 +224,7 @@ impl VCodecSpecific for Arc<str> {
             // https://github.com/fraunhoferhhi/vvenc/wiki/FFmpeg-Integration#fix-qp-mode-constant-quality-mode
             "librav1e" | "libvvenc" => "-qp",
             "mpeg2video" => "-q",
+            "hevc_videotoolbox" => "-q:v",
             // https://ffmpeg.org//ffmpeg-codecs.html#VAAPI-encoders
             e if e.ends_with("_vaapi") => "-q",
             e if e.ends_with("_vulkan") => "-qp",
@@ -229,4 +234,27 @@ impl VCodecSpecific for Arc<str> {
             _ => "-crf",
         }
     }
+
+    fn crf(&self, crf: f32) -> f32 {
+        match &**self {
+            // ffmpeg svt-av1 crf above 63 don't work, but up to 70 does work in -svtav1-params
+            "libsvtav1" => crf.min(63.0),
+            _ => crf,
+        }
+    }
+}
+
+pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
+    let mut retain_next = true;
+    args.retain(|a| {
+        if **a == arg {
+            retain_next = false;
+            false
+        } else if !retain_next {
+            retain_next = true;
+            false
+        } else {
+            true
+        }
+    });
 }

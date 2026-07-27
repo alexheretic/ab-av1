@@ -14,6 +14,7 @@ use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use log::info;
+use same_file::is_same_file;
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -30,7 +31,7 @@ pub struct Args {
     #[clap(flatten)]
     pub args: args::Encode,
 
-    /// Encoder constant rate factor (1-63). Lower means better quality.
+    /// Encoder constant rate factor (e.g. 1-63 for svt-av1). Lower means better quality.
     #[arg(long)]
     pub crf: f32,
 
@@ -60,15 +61,22 @@ pub async fn run(
                 audio_codec,
                 downmix_to_stereo,
                 video_only,
+                overwrite_input,
             },
     }: Args,
     probe: Arc<Ffprobe>,
     bar: &ProgressBar,
 ) -> anyhow::Result<()> {
     let defaulting_output = output.is_none();
-    // let probe = ffprobe::probe(&args.input);
     let output =
         output.unwrap_or_else(|| default_output_name(&args.input, &args.encoder, probe.is_image));
+
+    anyhow::ensure!(
+        overwrite_input || !is_same_file(&output, &args.input).unwrap_or(false),
+        "Input and Output are specified as the same file. Not proceeding. \
+         Pass in `--overwrite-input` to allow this."
+    );
+
     // output is temporary until encoding has completed successfully
     temporary::add(&output, TempKind::NotKeepable);
 
@@ -78,7 +86,7 @@ pub async fn run(
     }
     bar.set_message("encoding, ");
 
-    let mut enc_args = args.to_encoder_args(crf, &probe)?;
+    let mut enc_args = args.to_ffmpeg_args(crf, &probe)?;
     enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
     if let Ok(d) = &probe.duration {

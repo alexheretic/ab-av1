@@ -1,3 +1,46 @@
+# Unreleased
+* Add crf-search `--stdout-format json` outputting newline delimited json messages,
+  see [stdout-format-json.md](stdout-format-json.md).
+* Add `type`, `crf` & `from_cache` keys to the sample-encode `--stdout-format json` output.
+
+# v0.11.4
+* Fix "sample x/n ..." log formatting.
+* Fix graceful shutdown of ffmpeg child processes.
+
+# v0.11.3
+* Add sample-encode support for computing both XPSNR **and** VMAF using `--xpsnr --and-vmaf`.
+* Add error & hint when mistakenly using `--vmaf NUMBER` without using `--min-vmaf` arg.
+
+# v0.11.2
+* Add arg `--xpsnr-pix-format` for setting an explicit pixel format to use in XPSNR analysis.
+  This can be used to workaround some issues with 10-bit video, by setting `--xpsnr-pix-format yuv420p`.
+
+# v0.11.1
+* Support parsing negative XPSNR scores.
+
+# v0.11.0
+* svt-av1: Support crf quarter steps. Default `--crf-increment` to 0.25 for this encoder.
+  This requires svt-av1 >= [v4.0.0](https://gitlab.com/AOMediaCodec/SVT-AV1/-/blob/master/CHANGELOG.md#400---2026-01-13), 
+  if using an older version you may want to use crf-search with `--crf-increment 1`.
+* svt-av1: Widen default crf search range [10, 55] -> [5, 70].
+
+# v0.10.4
+* Use ffmpeg `-fps_mode passthrough` for all sample encodes. This improves VMAF scores in some cases.
+* Use explicit pixel format in xpsnr calls, use highest quality format of the ref & distorted streams.
+  This can improve scores in some cases.
+* Wait for vmaf/xpsnr processes to finish e.g. to allow custom logging to flush.
+* Update sample-encode json output to use float `predicted_encode_seconds`.
+
+# v0.10.3
+* Fix higher crf-search VMAF tolerance than expected when using `--crf-increment` values above 1.
+
+# v0.10.2
+* Disallow having `--input` the same as `--output` as this can lead to unintended data loss.
+  This may be explicitly overridden by passing `--overwrite-input`.
+* Add crf-search,auto-encode arg `--high-crf-means-hq` for use with encoders where high 
+  crf means _higher_ quality.
+* Encoder hevc_videotoolbox: Default `--high-crf-means-hq`, map `--crf` to `-q:v`.
+
 # v0.10.1
 * Support setting `--enc-input hwaccel=none --enc-input hwaccel_output_format=none` to omit defaults
   for *_vaapi, *_vulkan vcodecs introduced in v0.9.4.

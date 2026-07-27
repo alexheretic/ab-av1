@@ -41,6 +41,11 @@ pub struct EncodeToOutput {
     /// The output will be a single video stream.
     #[arg(long)]
     pub video_only: bool,
+
+    /// By default input files will not be overwritten to prevent accidental data loss.
+    /// Setting this option overrides that allowing input overwrites.
+    #[arg(long)]
+    pub overwrite_input: bool,
 }
 
 /// Sampling arguments.
@@ -72,7 +77,7 @@ pub struct Sample {
     pub keep: bool,
 
     /// Directory to store temporary sample data in.
-    /// Defaults to using the input's directory.
+    /// Defaults to the current working directory.
     #[arg(long, env = "AB_AV1_TEMP_DIR", value_hint = ValueHint::DirPath)]
     pub temp_dir: Option<PathBuf>,
 
@@ -124,6 +129,10 @@ pub struct Xpsnr {
     /// Setting to 0 disables use.
     #[arg(long, default_value_t = 60.0)]
     pub xpsnr_fps: f32,
+
+    /// Pixel format used in xpsnr analysis only. By default this is inferred from sources.
+    #[arg(value_enum, long)]
+    pub xpsnr_pix_format: Option<PixelFormat>,
 }
 
 impl Xpsnr {

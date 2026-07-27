@@ -14,6 +14,7 @@ use clap::Parser;
 use console::style;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use same_file::is_same_file;
 use std::{pin::pin, sync::Arc, time::Duration};
 
 const BAR_LEN: u64 = 1024 * 1024 * 1024;
@@ -31,7 +32,7 @@ const BAR_LEN: u64 = 1024 * 1024 * 1024;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub search: crf_search::Args,
+    pub search: crf_search::SearchArgs,
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
@@ -52,7 +53,15 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
             input_probe.is_image,
         )
     });
+
+    anyhow::ensure!(
+        encode.overwrite_input || !is_same_file(&output, &search.args.input).unwrap_or(false),
+        "Input and Output are specified as the same file. Not proceeding. \
+         Pass in `--overwrite-input` to allow this."
+    );
+
     search.sample.set_extension_from_output(&output);
+    search.validate()?;
 
     let bar = ProgressBar::new(BAR_LEN).with_style(
         ProgressStyle::default_bar()
@@ -84,15 +93,15 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                             .template(SPINNER_FINISHED)?
                             .progress_chars(PROGRESS_CHARS),
                     );
-                    let mut vmaf = style(last.enc.score);
-                    if last.enc.score < min_score {
+                    let mut vmaf = style(last.enc.single_score());
+                    if last.enc.single_score() < min_score {
                         vmaf = vmaf.red();
                     }
                     let mut percent = style!("{:.0}%", last.enc.encode_percent);
                     if last.enc.encode_percent > max_encoded_percent as _ {
                         percent = percent.red();
                     }
-                    let score_kind = last.enc.score_kind;
+                    let score_kind = last.enc.single_score_kind();
                     bar.finish_with_message(format!("{score_kind} {vmaf:.2}, size {percent}"));
                 }
                 bar.finish();
@@ -136,6 +145,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
+            Ok(crf_search::Update::SampleEncodeDone(_)) => {}
             Ok(crf_search::Update::RunResult(result)) => {
                 if verbose
                     .log_level()
@@ -156,8 +166,8 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     );
     bar.finish_with_message(format!(
         "{} {:.2}, size {}",
-        best.enc.score_kind,
-        style(best.enc.score).green(),
+        best.enc.single_score_kind(),
+        style(best.enc.single_score()).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
     temporary::clean_all().await;
@@ -173,7 +183,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     encode::run(
         encode::Args {
             args: enc_args,
-            crf: best.crf(),
+            crf: best.crf,
             encode: args::EncodeToOutput {
                 output: Some(output),
                 ..encode
@@ -183,4 +193,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         &bar,
     )
     .await
+}
+
+/// crf-search json output is not currently available in auto-encode.
+#[test]
+fn stdout_format_unsupported() {
+    assert!(
+        Args::try_parse_from(["auto-encode", "-i", "vid.mkv", "--stdout-format", "json"]).is_err()
+    );
+    assert!(Args::try_parse_from(["auto-encode", "-i", "vid.mkv"]).is_ok());
 }

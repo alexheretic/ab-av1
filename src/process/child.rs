@@ -20,9 +20,9 @@ pub fn add(mut child: ProcessChunkStream) {
     let mut running = RUNNING.lock().unwrap();
 
     // remove any that have exited already
-    running.retain_mut(|c| c.child_mut().is_some_and(|c| c.try_wait().is_err()));
+    running.retain_mut(|c| !c.exited());
 
-    if child.child_mut().is_some_and(|c| c.try_wait().is_err()) {
+    if !child.exited() {
         running.push(child);
     }
 }
@@ -96,5 +96,19 @@ impl Deref for AddOnDropChunkStream {
 impl DerefMut for AddOnDropChunkStream {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.as_mut().unwrap() // only none after drop
+    }
+}
+
+trait Exited {
+    /// Returns true if the child process has exited.
+    fn exited(&mut self) -> bool;
+}
+
+impl Exited for ProcessChunkStream {
+    fn exited(&mut self) -> bool {
+        let Some(child) = self.child_mut() else {
+            return true; // no child process
+        };
+        child.try_wait().is_ok_and(|s| s.is_some())
     }
 }

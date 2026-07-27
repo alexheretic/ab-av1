@@ -1,5 +1,8 @@
 use crate::{
-    command::{PROGRESS_CHARS, args},
+    command::{
+        PROGRESS_CHARS,
+        args::{self, PixelFormat},
+    },
     ffprobe,
     log::ProgressLogger,
     process::FfmpegOut,
@@ -9,10 +12,9 @@ use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
-    borrow::Cow,
+    fmt::Write,
     path::PathBuf,
     pin::pin,
-    sync::LazyLock,
     time::{Duration, Instant},
 };
 use tokio_stream::StreamExt;
@@ -55,12 +57,9 @@ pub async fn xpsnr(
     bar.set_message("xpsnr running, ");
 
     let dprobe = ffprobe::probe(&distorted);
-    let rprobe = LazyLock::new(|| ffprobe::probe(&reference));
+    let rprobe = ffprobe::probe(&reference);
     let nframes = dprobe.nframes().or_else(|_| rprobe.nframes());
-    let duration = dprobe
-        .duration
-        .as_ref()
-        .or_else(|_| rprobe.duration.as_ref());
+    let duration = dprobe.duration.as_ref().or(rprobe.duration.as_ref());
     if let Ok(nframes) = nframes {
         bar.set_length(nframes);
     }
@@ -68,7 +67,12 @@ pub async fn xpsnr(
     let mut xpsnr_out = pin!(xpsnr::run(
         &reference,
         &distorted,
-        &lavfi(score.reference_vfilter.as_deref()),
+        &lavfi(
+            score.reference_vfilter.as_deref(),
+            xpsnr
+                .xpsnr_pix_format
+                .or_else(|| PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format())),
+        ),
         xpsnr.fps(),
     )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
@@ -77,7 +81,6 @@ pub async fn xpsnr(
         match next {
             XpsnrOut::Done(s) => {
                 score = Some(s);
-                break;
             }
             XpsnrOut::Progress(FfmpegOut::Progress {
                 frame, fps, time, ..
@@ -102,23 +105,75 @@ pub async fn xpsnr(
     Ok(())
 }
 
-pub fn lavfi(ref_vfilter: Option<&str>) -> Cow<'static, str> {
-    match ref_vfilter {
-        None => "xpsnr=stats_file=-".into(),
-        Some(vf) => format!("[0:v]{vf}[ref];[ref][1:v]xpsnr=stats_file=-").into(),
+pub fn lavfi(ref_vfilter: Option<&str>, pix_fmt: Option<PixelFormat>) -> String {
+    /// Add filter to `lavfi`, if necessary. If no filter added return `old_name`.
+    /// Otherwise return `new_name`.
+    fn add_filter(
+        lavfi: &mut String,
+        old_name: &'static str,
+        new_name: &'static str,
+        vfilter: Option<&str>,
+        pix_fmt: Option<PixelFormat>,
+    ) -> &'static str {
+        if vfilter.is_none() && pix_fmt.is_none() {
+            return old_name;
+        }
+
+        lavfi.push_str(old_name);
+        if let Some(pix_fmt) = pix_fmt {
+            _ = write!(lavfi, "format={pix_fmt}");
+        }
+        if let Some(vf) = vfilter {
+            if pix_fmt.is_some() {
+                lavfi.push(',');
+            }
+            lavfi.push_str(vf);
+        }
+        lavfi.push_str(new_name);
+        lavfi.push(';');
+        new_name
     }
+
+    let mut lavfi = String::new();
+
+    let ref_stream = add_filter(&mut lavfi, "[0:v]", "[ref]", ref_vfilter, pix_fmt);
+    let dis_stream = add_filter(&mut lavfi, "[1:v]", "[dis]", None, pix_fmt);
+    lavfi.push_str(ref_stream);
+    lavfi.push_str(dis_stream);
+    lavfi.push_str("xpsnr");
+    lavfi
 }
 
 #[test]
 fn test_lavfi_default() {
-    assert_eq!(lavfi(None), "xpsnr=stats_file=-");
+    assert_eq!(lavfi(None, None), "[0:v][1:v]xpsnr");
 }
 
 #[test]
 fn test_lavfi_ref_vfilter() {
     assert_eq!(
-        lavfi(Some("scale=1280:-1")),
+        lavfi(Some("scale=1280:-1"), None),
         "[0:v]scale=1280:-1[ref];\
-         [ref][1:v]xpsnr=stats_file=-"
+         [ref][1:v]xpsnr"
+    );
+}
+
+#[test]
+fn test_lavfi_pixel_format() {
+    assert_eq!(
+        lavfi(None, Some(PixelFormat::Yuv420p10le)),
+        "[0:v]format=yuv420p10le[ref];\
+         [1:v]format=yuv420p10le[dis];\
+         [ref][dis]xpsnr"
+    );
+}
+
+#[test]
+fn test_lavfi_all() {
+    assert_eq!(
+        lavfi(Some("scale=640:-1"), Some(PixelFormat::Yuv420p10le)),
+        "[0:v]format=yuv420p10le,scale=640:-1[ref];\
+         [1:v]format=yuv420p10le[dis];\
+         [ref][dis]xpsnr"
     );
 }

@@ -128,14 +128,6 @@ fn parse_enc_arg(arg: &str) -> anyhow::Result<String> {
 }
 
 impl Encode {
-    pub fn to_encoder_args(
-        &self,
-        crf: f32,
-        probe: &Ffprobe,
-    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
-        self.to_ffmpeg_args(crf, probe)
-    }
-
     pub fn encode_hint(&self, crf: f32) -> String {
         let Self {
             encoder,
@@ -190,7 +182,11 @@ impl Encode {
         hint
     }
 
-    fn to_ffmpeg_args(&self, crf: f32, probe: &Ffprobe) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
+    pub fn to_ffmpeg_args(
+        &self,
+        crf: f32,
+        probe: &Ffprobe,
+    ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
         let vcodec = &self.encoder.0;
         let svtav1 = vcodec.as_ref() == "libsvtav1";
         ensure!(
@@ -213,6 +209,8 @@ impl Encode {
                 _ => 0,
             };
             svtav1_params.push(format!("scd={scd}"));
+            // include crf in svtav1-params to support quarter-steps
+            svtav1_params.push(format!("crf={crf}"));
             // add all --svt args
             svtav1_params.extend(self.svt_args.iter().map(|a| a.to_string()));
         }
@@ -224,12 +222,12 @@ impl Encode {
                 if let Some((opt, val)) = arg.split_once('=') {
                     if opt == "svtav1-params" {
                         svtav1_params.push(arg.clone());
-                        vec![].into_iter()
+                        vec![]
                     } else {
-                        vec![opt.to_owned().into(), val.to_owned().into()].into_iter()
+                        vec![opt.to_owned().into(), val.to_owned().into()]
                     }
                 } else {
-                    vec![arg.clone().into()].into_iter()
+                    vec![arg.clone().into()]
                 }
             })
             .collect();
@@ -369,12 +367,20 @@ impl Encoder {
         &self.0
     }
 
+    /// Returns:
+    /// * `true`: Higher crf values mean higher quality.
+    /// * `false`: Higher crf values mean lower quality.
+    pub fn high_crf_means_hq(&self) -> bool {
+        self.as_str() == "hevc_videotoolbox"
+    }
+
     /// Returns default crf-increment.
     ///
     /// Generally 0.1 if codec supports decimal crf.
     pub fn default_crf_increment(&self) -> f32 {
         match self.as_str() {
             "libx264" | "libx265" => 0.1,
+            "libsvtav1" => 0.25,
             _ => 1.0,
         }
     }
@@ -382,6 +388,7 @@ impl Encoder {
     pub fn default_min_crf(&self) -> f32 {
         match self.as_str() {
             "mpeg2video" => 2.0,
+            "libsvtav1" => 5.0,
             _ => 10.0,
         }
     }
@@ -391,7 +398,8 @@ impl Encoder {
             "librav1e" | "av1_vaapi" => 255.0,
             "libx264" | "libx265" => 46.0,
             "mpeg2video" => 30.0,
-            // Works well for svt-av1
+            "hevc_videotoolbox" => 100.0,
+            "libsvtav1" => 70.0,
             _ => 55.0,
         }
     }
@@ -645,7 +653,7 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=1:film-grain=30");
+    assert_eq!(svtargs, "scd=1:crf=32:film-grain=30");
     assert!(input_args.is_empty());
 }
 
@@ -706,6 +714,6 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         .get(svtargs_idx + 1)
         .expect("missing -svtav1-params value")
         .as_str();
-    assert_eq!(svtargs, "scd=0");
+    assert_eq!(svtargs, "scd=0:crf=32");
     assert!(input_args.is_empty());
 }
