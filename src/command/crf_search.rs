@@ -178,7 +178,6 @@ pub async fn crf_search(
             if let Error::NoGoodCrf { last } = e {
                 last.print_attempt(&bar, min_score, max_encoded_percent);
                 if let StdoutFormat::Json = stdout_format {
-                    println!("{}", last.attempt_json());
                     println!("{}", error_json(e));
                 }
             }
@@ -227,12 +226,7 @@ pub async fn crf_search(
                     println!("{}", sample.enc.sample_encode_done_json(sample.crf));
                 }
             }
-            Update::RunResult(result) => {
-                result.print_attempt(&bar, min_score, max_encoded_percent);
-                if let StdoutFormat::Json = stdout_format {
-                    println!("{}", result.attempt_json());
-                }
-            }
+            Update::RunResult(result) => result.print_attempt(&bar, min_score, max_encoded_percent),
             Update::Done(best) => {
                 info!("crf {} successful", best.crf);
                 bar.finish_with_message("");
@@ -483,23 +477,6 @@ impl Sample {
         );
     }
 
-    /// `crf-search-attempt` json message, see _stdout-format-json.md_.
-    pub fn attempt_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({
-            "type": "crf-search-attempt",
-            "crf": self.crf,
-            "from_cache": self.enc.from_cache,
-            "predicted_encode_percent": self.enc.encode_percent,
-        });
-        if let Some(score) = self.enc.vmaf_score {
-            json["vmaf"] = score.into();
-        }
-        if let Some(score) = self.enc.xpsnr_score {
-            json["xpsnr"] = score.into();
-        }
-        json
-    }
-
     /// `crf-search-done` json message, see _stdout-format-json.md_.
     pub fn done_json(&self) -> serde_json::Value {
         let mut json = self.enc.sample_encode_done_json(self.crf);
@@ -530,14 +507,6 @@ fn test_sample() -> Sample {
         crf: 34.0,
         q: 34,
     }
-}
-
-#[test]
-fn attempt_json_message() {
-    assert_eq!(
-        test_sample().attempt_json().to_string(),
-        r#"{"crf":34.0,"from_cache":false,"predicted_encode_percent":41.25,"type":"crf-search-attempt","vmaf":95.5}"#
-    );
 }
 
 #[test]

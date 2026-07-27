@@ -30,25 +30,8 @@ Field | Description | Type/Units
 
 Note: In ≤ v0.11.4 `sample-encode` emitted this object without the `type`, `crf` & `from_cache` keys.
 
-## `crf-search-attempt`
-Emitted after each crf attempt that did not successfully end the search, like the human `- crf 34 VMAF 95.13 (41%)` line. Follows the attempt's `sample-encode-done`, which carries the full predictions.
-
-Field | Description | Type/Units
----|---|---
-`type` | `"crf-search-attempt"` | string
-`crf` | Attempted crf | float
-`from_cache` | All sample results were read from the cache | bool
-`predicted_encode_percent` | Predicted output encode size percentage vs input | float
-`vmaf` | Mean sample VMAF score (present when requested (default)) | float
-`xpsnr` | Mean sample XPSNR score (present when requested) | float
-
-### Example
-```json
-{"crf":29.25,"from_cache":false,"predicted_encode_percent":14.819840772420237,"type":"crf-search-attempt","vmaf":95.37376403808594}
-```
-
 ## `crf-search-done`
-Emitted when the search ends successfully, like the final human result line. A successful final attempt gets no `crf-search-attempt`.
+Emitted when the search ends successfully, like the final human result line.
 
 Note: The best crf may have been decided by an earlier attempt, in which case this message repeats that attempt's values and is not adjacent to its `sample-encode-done`.
 
@@ -69,7 +52,7 @@ Field | Description | Type/Units
 ```
 
 ## `crf-search-error`
-Emitted when the search fails to find a crf satisfying the min score & max encoded percent. Follows the failing attempt's `sample-encode-done` & `crf-search-attempt`. As in human mode, `Error: Failed to find a suitable crf` goes to stderr and the exit code is non-zero.
+Emitted when the search fails to find a crf satisfying the min score & max encoded percent. Follows the failing attempt's `sample-encode-done`, which carries that attempt's crf & scores. As in human mode, `Error: Failed to find a suitable crf` goes to stderr and the exit code is non-zero.
 
 Field | Description | Type/Units
 ---|---|---
@@ -85,16 +68,16 @@ Field | Description | Type/Units
 A single `sample-encode-done`.
 
 ## `crf-search` output
-`sample-encode-done` + `crf-search-attempt` per unsuccessful attempt, ending with `crf-search-done` (exit 0) or `crf-search-error` (non-zero exit).
+A `sample-encode-done` per crf attempted, ending with `crf-search-done` (exit 0) or `crf-search-error` (non-zero exit).
 
 Guarantees:
 * Exactly one `sample-encode-done` per crf attempted.
 * The final line is a `crf-search-done` or `crf-search-error`. Other errors (e.g. invalid input) end the stream with no final json message: stderr `Error:` line & non-zero exit only.
+* A `crf-search-error` is immediately preceded by the failing attempt's `sample-encode-done`.
 
 ### Example: successful search
 ```json
 {"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"predicted_encode_seconds":9.0,"predicted_encode_size":19469845,"type":"sample-encode-done","vmaf":90.38392639160156}
-{"crf":37.5,"from_cache":false,"predicted_encode_percent":3.9154531401777755,"type":"crf-search-attempt","vmaf":90.38392639160156}
 {"crf":29.75,"from_cache":false,"predicted_encode_percent":13.785497397240093,"predicted_encode_seconds":13.0,"predicted_encode_size":68549279,"type":"sample-encode-done","vmaf":95.16242980957031}
 {"crf":29.75,"from_cache":false,"predicted_encode_percent":13.785497397240093,"predicted_encode_seconds":13.0,"predicted_encode_size":68549279,"type":"crf-search-done","vmaf":95.16242980957031}
 ```
@@ -102,6 +85,5 @@ Guarantees:
 ### Example: failed search
 ```json
 {"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"predicted_encode_seconds":18.0,"predicted_encode_size":289016681,"type":"sample-encode-done","vmaf":98.99139404296875}
-{"crf":18.0,"from_cache":false,"predicted_encode_percent":58.12225504159517,"type":"crf-search-attempt","vmaf":98.99139404296875}
 {"message":"Failed to find a suitable crf","type":"crf-search-error"}
 ```
