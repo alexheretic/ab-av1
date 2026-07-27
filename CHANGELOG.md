@@ -1,3 +1,8 @@
+# Unreleased
+* Add crf-search `--stdout-format json` outputting newline delimited json messages,
+  see [stdout-format-json.md](stdout-format-json.md).
+* Add `type`, `crf` & `from_cache` keys to the sample-encode `--stdout-format json` output.
+
 # v0.11.4
 * Fix "sample x/n ..." log formatting.
 * Fix graceful shutdown of ffmpeg child processes.

@@ -32,7 +32,7 @@ const BAR_LEN: u64 = 1024 * 1024 * 1024;
 #[group(skip)]
 pub struct Args {
     #[clap(flatten)]
-    pub search: crf_search::Args,
+    pub search: crf_search::SearchArgs,
 
     #[clap(flatten)]
     pub encode: args::EncodeToOutput,
@@ -145,6 +145,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
                     result.print_attempt(&bar, sample, Some(crf))
                 }
             }
+            Ok(crf_search::Update::SampleEncodeDone(_)) => {}
             Ok(crf_search::Update::RunResult(result)) => {
                 if verbose
                     .log_level()
@@ -192,4 +193,13 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         &bar,
     )
     .await
+}
+
+/// crf-search json output is not currently available in auto-encode.
+#[test]
+fn stdout_format_unsupported() {
+    assert!(
+        Args::try_parse_from(["auto-encode", "-i", "vid.mkv", "--stdout-format", "json"]).is_err()
+    );
+    assert!(Args::try_parse_from(["auto-encode", "-i", "vid.mkv"]).is_ok());
 }

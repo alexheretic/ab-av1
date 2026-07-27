@@ -62,6 +62,8 @@ pub struct Args {
     pub cache: bool,
 
     /// Stdout message format `human` or `json`.
+    ///
+    /// See <https://github.com/alexheretic/ab-av1/blob/main/stdout-format-json.md>
     #[arg(long, value_enum, default_value_t = StdoutFormat::Human)]
     pub stdout_format: StdoutFormat,
 
@@ -132,7 +134,7 @@ pub async fn sample_encode(mut args: Args) -> anyhow::Result<()> {
                         style(enc_args.encode_hint(crf)).dim().italic(),
                     );
                 }
-                stdout_fmt.print_result(&output, input_is_image);
+                stdout_fmt.print_result(&output, crf, input_is_image);
             }
         }
     }
@@ -696,20 +698,17 @@ pub enum StdoutFormat {
 }
 
 impl StdoutFormat {
-    fn print_result(
-        self,
-        Output {
-            vmaf_score,
-            xpsnr_score,
-            predicted_encode_size,
-            encode_percent,
-            predicted_encode_time,
-            from_cache: _,
-        }: &Output,
-        image: bool,
-    ) {
+    fn print_result(self, output: &Output, crf: f32, image: bool) {
         match self {
             Self::Human => {
+                let Output {
+                    vmaf_score,
+                    xpsnr_score,
+                    predicted_encode_size,
+                    encode_percent,
+                    predicted_encode_time,
+                    from_cache: _,
+                } = output;
                 let vmaf_fmt = match *vmaf_score {
                     None => format_args!(""),
                     Some(s) => match s {
@@ -742,20 +741,7 @@ impl StdoutFormat {
                     "{vmaf_fmt}{xpsnr_fmt}predicted {enc_description} size {size} ({percent}) taking {time}"
                 );
             }
-            Self::Json => {
-                let mut json = serde_json::json!({
-                    "predicted_encode_size": predicted_encode_size,
-                    "predicted_encode_percent": encode_percent,
-                    "predicted_encode_seconds": predicted_encode_time.as_secs_f64(),
-                });
-                if let Some(score) = *vmaf_score {
-                    json["vmaf"] = score.into();
-                }
-                if let Some(score) = *xpsnr_score {
-                    json["xpsnr"] = score.into();
-                }
-                println!("{json}");
-            }
+            Self::Json => println!("{}", output.sample_encode_done_json(crf)),
         }
     }
 }
@@ -794,6 +780,55 @@ impl Output {
             _ => ScoreKind::Xpsnr,
         }
     }
+
+    /// `sample-encode-done` json message, see _stdout-format-json.md_.
+    pub fn sample_encode_done_json(&self, crf: f32) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "type": "sample-encode-done",
+            "crf": crf,
+            "from_cache": self.from_cache,
+            "predicted_encode_size": self.predicted_encode_size,
+            "predicted_encode_percent": self.encode_percent,
+            "predicted_encode_seconds": self.predicted_encode_time.as_secs_f64(),
+        });
+        if let Some(score) = self.vmaf_score {
+            json["vmaf"] = score.into();
+        }
+        if let Some(score) = self.xpsnr_score {
+            json["xpsnr"] = score.into();
+        }
+        json
+    }
+}
+
+#[test]
+fn sample_encode_done_json_message() {
+    let mut output = Output {
+        vmaf_score: Some(95.5),
+        xpsnr_score: None,
+        predicted_encode_size: 38889644,
+        encode_percent: 41.25,
+        predicted_encode_time: Duration::from_secs(1560),
+        from_cache: false,
+    };
+    assert_eq!(
+        output.sample_encode_done_json(34.0).to_string(),
+        r#"{"crf":34.0,"from_cache":false,"predicted_encode_percent":41.25,"predicted_encode_seconds":1560.0,"predicted_encode_size":38889644,"type":"sample-encode-done","vmaf":95.5}"#
+    );
+
+    output.vmaf_score = None;
+    output.xpsnr_score = Some(41.5);
+    output.from_cache = true;
+    assert_eq!(
+        output.sample_encode_done_json(28.25).to_string(),
+        r#"{"crf":28.25,"from_cache":true,"predicted_encode_percent":41.25,"predicted_encode_seconds":1560.0,"predicted_encode_size":38889644,"type":"sample-encode-done","xpsnr":41.5}"#
+    );
+
+    output.vmaf_score = Some(95.5);
+    assert_eq!(
+        output.sample_encode_done_json(28.25).to_string(),
+        r#"{"crf":28.25,"from_cache":true,"predicted_encode_percent":41.25,"predicted_encode_seconds":1560.0,"predicted_encode_size":38889644,"type":"sample-encode-done","vmaf":95.5,"xpsnr":41.5}"#
+    );
 }
 
 /// Kinds of sample-encode work.
