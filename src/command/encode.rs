@@ -10,12 +10,14 @@ use crate::{
     process::FfmpegOut,
     temporary::{self, TempKind},
 };
+use anyhow::Context;
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use log::info;
 use same_file::is_same_file;
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -76,9 +78,6 @@ pub async fn run(
          Pass in `--overwrite-input` to allow this."
     );
 
-    // output is temporary until encoding has completed successfully
-    temporary::add(&output, TempKind::NotKeepable);
-
     if defaulting_output {
         let out = shell_escape::escape(output.display().to_string().into());
         bar.println(style!("Encoding {out}").dim().to_string());
@@ -104,7 +103,16 @@ pub async fn run(
         output.file_name().and_then(|n| n.to_str()).unwrap_or("")
     );
 
-    let mut enc = ffmpeg::encode(enc_args, &output, has_audio, audio_codec, stereo_downmix)?;
+    let tmp_output = tmp_output_name(&output)?;
+    temporary::add(&tmp_output, TempKind::NotKeepable);
+
+    let mut enc = ffmpeg::encode(
+        enc_args,
+        &tmp_output,
+        has_audio,
+        audio_codec,
+        stereo_downmix,
+    )?;
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut stream_sizes = None;
     while let Some(progress) = enc.next().await {
@@ -129,8 +137,8 @@ pub async fn run(
     enc.wait().await?; // ensure process has exited
     bar.finish();
 
-    // successful encode, so don't delete it!
-    temporary::unadd(&output);
+    std::fs::rename(&tmp_output, &output)?;
+    temporary::unadd(&tmp_output);
 
     // print output info
     let output_size = fs::metadata(&output).await?.len();
@@ -180,4 +188,12 @@ pub fn default_output_name(input: &Path, encoder: &Encoder, is_image: bool) -> P
     let pre = ffmpeg::pre_extension_name(encoder.as_str());
     let ext = default_output_ext(input, encoder, is_image);
     input.with_extension(format!("{pre}.{ext}"))
+}
+
+pub fn tmp_output_name(output: &Path) -> anyhow::Result<PathBuf> {
+    let mut tmp_prefix = OsString::from(".tmp.ab-av1-encoding.");
+    tmp_prefix.push(output.file_name().context("no output file name")?);
+    let mut output = output.to_path_buf();
+    output.set_file_name(tmp_prefix);
+    Ok(output)
 }
