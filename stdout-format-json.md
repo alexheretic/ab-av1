@@ -5,7 +5,6 @@ Commands supporting `--stdout-format json` write newline-delimited JSON ([NDJSON
 Supported by: `sample-encode`, `crf-search`.
 
 Notes:
-* Key order is not significant (currently alphabetical, so `type` is typically last).
 * Later versions may add keys & message kinds, consumers should ignore unknown ones.
 * Failures print an `Error: ...` line to stderr and exit non-zero, in json mode too. The only failure also reported as json is a failed crf-search, see [`crf-search-error`](#crf-search-error).
 
