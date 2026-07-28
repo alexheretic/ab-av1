@@ -14,7 +14,7 @@ use crate::{
     vmaf::{self, VmafOut},
     xpsnr::{self, XpsnrOut},
 };
-use anyhow::ensure;
+use anyhow::{Context, ensure};
 use clap::{ArgAction, Parser};
 use console::style;
 use futures_util::Stream;
@@ -201,7 +201,7 @@ pub fn run(
         let (tx, mut sample_tasks) = tokio::sync::mpsc::unbounded_channel();
         let sample_temp = temp_dir.clone();
         let sample_in = input.clone();
-        tokio::task::spawn_local(async move {
+        let sample_task = tokio::task::spawn_local(async move {
             if full_pass {
                 // Use the entire video as a single sample
                 let _ = tx.send((0, Ok((sample_in.clone(), input_len))));
@@ -435,6 +435,9 @@ pub fn run(
             results.push(result.clone());
             yield Update::SampleResult { sample: sample_n, result };
         }
+        // The channel also closes if the sample task panicked, which would otherwise
+        // leave `results` empty & be reported as a successful zero-size prediction.
+        sample_task.await.context("sample copy task")?;
 
         let output = Output {
             vmaf_score: results.mean_vmaf_score(),
