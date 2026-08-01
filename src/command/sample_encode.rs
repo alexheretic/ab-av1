@@ -435,8 +435,7 @@ pub fn run(
             results.push(result.clone());
             yield Update::SampleResult { sample: sample_n, result };
         }
-        // The channel also closes if the sample task panicked, which would otherwise
-        // leave `results` empty & be reported as a successful zero-size prediction.
+        // ensure sample_task completed
         sample_task.await.context("sample copy task")?;
 
         let output = Output {

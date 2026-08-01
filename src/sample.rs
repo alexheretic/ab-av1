@@ -26,7 +26,7 @@ pub async fn copy(
         sample_start_s = sample_start_s.floor();
     }
 
-    let mut dest = temporary::process_dir(temp_dir);
+    let mut dest = temporary::process_dir(temp_dir)?;
     // Always using mkv for the samples works better than, e.g. using mp4 for mp4s
     // see https://github.com/alexheretic/ab-av1/issues/82#issuecomment-1337306325
     dest.push(
