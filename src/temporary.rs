@@ -1,4 +1,5 @@
 //! temp file logic
+use anyhow::Context;
 use std::{
     collections::HashMap,
     env, iter,
@@ -73,21 +74,23 @@ async fn clean_non_keepables() {
 /// Return a temporary directory that is distinct per process/run.
 ///
 /// Configured --temp-dir is used as a parent or, if not set, the current working dir.
-pub fn process_dir(conf_parent: Option<PathBuf>) -> PathBuf {
+pub fn process_dir(conf_parent: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     static SUBDIR: LazyLock<String> = LazyLock::new(|| {
         let mut subdir = String::from(".ab-av1-");
         subdir.extend(iter::repeat_with(fastrand::alphanumeric).take(12));
         subdir
     });
 
-    let mut temp_dir =
-        conf_parent.unwrap_or_else(|| env::current_dir().expect("current working directory"));
+    let mut temp_dir = match conf_parent {
+        Some(d) => d,
+        None => env::current_dir().context("current working directory")?,
+    };
     temp_dir.push(&*SUBDIR);
 
     if !temp_dir.exists() {
         add(&temp_dir, TempKind::Keepable);
-        std::fs::create_dir_all(&temp_dir).expect("failed to create temp-dir");
+        std::fs::create_dir_all(&temp_dir).context("failed to create temp-dir")?;
     }
 
-    temp_dir
+    Ok(temp_dir)
 }
