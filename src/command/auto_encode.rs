@@ -80,6 +80,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     let enc_args = search.args.clone();
     let thorough = search.thorough;
     let verbose = search.verbose;
+    let keep = search.sample.keep;
 
     let mut crf_search = pin!(crf_search::run(search, input_probe.clone()));
     let mut best = None;
@@ -170,7 +171,7 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
         style(best.enc.single_score()).green(),
         style(format!("{:.0}%", best.enc.encode_percent)).green(),
     ));
-    temporary::clean_all().await;
+    temporary::clean(keep).await;
 
     let bar = ProgressBar::new(12).with_style(
         ProgressStyle::default_bar()
