@@ -1,5 +1,6 @@
 # Unreleased
 * Encode to a temporary file before renaming to the final destination to ensure atomicity and prevent partially encoded files.
+* Fix auto-encode `--keep` function.
 * Add crf-search `--stdout-format json` outputting newline delimited json messages,
   see [stdout-format-json.md](stdout-format-json.md).
 * Add `type`, `crf` & `from_cache` keys to the sample-encode `--stdout-format json` output.
