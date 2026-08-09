@@ -729,7 +729,7 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
 
 #[test]
 fn libx265_default_hvc1_mp4_mov() {
-    let enc = Encode {
+    let mut enc = Encode {
         encoder: Encoder("libx265".into()),
         input: "vid.mp4".into(),
         vfilter: None,
@@ -779,32 +779,9 @@ fn libx265_default_hvc1_mp4_mov() {
         !output_args.windows(2).any(|w| w[0].as_str() == "-tag:v"),
         "mkv: expected no -tag:v in {output_args:?}"
     );
-}
 
-#[test]
-fn libx265_explicit_tagv_mp4() {
-    let enc = Encode {
-        encoder: Encoder("libx265".into()),
-        input: "vid.mp4".into(),
-        vfilter: None,
-        preset: None,
-        pix_format: None,
-        keyint: None,
-        scd: None,
-        svt_args: <_>::default(),
-        enc_args: vec!["-tag:v=hev1".into()],
-        enc_input_args: <_>::default(),
-    };
-
-    let probe = Ffprobe {
-        duration: Ok(Duration::from_secs(300)),
-        has_audio: true,
-        max_audio_channels: None,
-        fps: Ok(30.0),
-        resolution: Some((1280, 720)),
-        is_image: false,
-        pix_fmt: None,
-    };
+    // don't when explicitly set by user
+    enc.enc_args.push("-tag:v=hev1".into());
 
     let FfmpegEncodeArgs { output_args, .. } = enc
         .to_ffmpeg_args(32.0, &probe, "mp4")
