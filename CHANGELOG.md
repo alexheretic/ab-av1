@@ -1,3 +1,6 @@
+# Unreleased (0.11.6)
+* libx265: Default `--enc tag:v=hvc1` for better compatibilty. The ffmpeg default can be explicitly set with `--enc tag:v=hev1`.
+
 # v0.11.5
 * Encode to a temporary file before renaming to the final destination to ensure atomicity and prevent partially encoded files.
 * Fix auto-encode `--keep` function.

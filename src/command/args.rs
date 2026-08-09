@@ -81,7 +81,7 @@ pub struct Sample {
     #[arg(long, env = "AB_AV1_TEMP_DIR", value_hint = ValueHint::DirPath)]
     pub temp_dir: Option<PathBuf>,
 
-    /// Extension preference for encoded samples (ffmpeg encoder only).
+    /// Extension preference for encoded samples.
     #[arg(skip)]
     pub extension: Option<Arc<str>>,
 }

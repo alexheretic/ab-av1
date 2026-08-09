@@ -160,7 +160,8 @@ pub fn run(
         let input_pix_fmt = input_probe.pixel_format();
         let input_is_image = input_probe.is_image;
         let input_len = fs::metadata(&*input).await?.len();
-        let mut enc_args = args.to_ffmpeg_args(crf, &input_probe)?;
+        let sample_out_ext = sample_args.extension.as_deref().unwrap_or("mkv");
+        let mut enc_args = args.to_ffmpeg_args(crf, &input_probe, sample_out_ext)?;
         // ignore user -fps_mode for sample encoding, as we always use passthrough
         remove_arg(&mut enc_args.output_args, "-fps_mode");
         remove_arg(&mut enc_args.output_args, "-vsync");
@@ -170,11 +171,6 @@ pub fn run(
         let samples = sample_args.sample_count(duration).max(1);
         let keep = sample_args.keep;
         let temp_dir = sample_args.temp_dir;
-        // let scoring = ScoringInfo {
-        //     args: &score,
-        //     vmaf: &vmaf,
-        //     xpsnr: &xpsnr,
-        // };
 
         let (samples, sample_duration, full_pass) = {
             if input_is_image {
@@ -271,7 +267,7 @@ pub fn run(
                             ..enc_args.clone()
                         },
                         temp_dir.clone(),
-                        sample_args.extension.as_deref().unwrap_or("mkv"),
+                        sample_out_ext,
                     )?;
                     while let Some(enc_progress) = output.next().await {
                         if let FfmpegOut::Progress { time, fps, .. } = enc_progress? {
