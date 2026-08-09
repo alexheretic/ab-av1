@@ -186,6 +186,7 @@ impl Encode {
         &self,
         crf: f32,
         probe: &Ffprobe,
+        output_ext: &str,
     ) -> anyhow::Result<FfmpegEncodeArgs<'_>> {
         let vcodec = &self.encoder.0;
         let svtav1 = vcodec.as_ref() == "libsvtav1";
@@ -245,7 +246,7 @@ impl Encode {
             args.push(keyint.to_string().into());
         }
 
-        for (name, val) in self.encoder.default_ffmpeg_args() {
+        for (name, val) in self.encoder.default_ffmpeg_args(output_ext) {
             if !args.iter().any(|arg| &**arg == name) {
                 args.push(name.to_string().into());
                 args.push(val.to_string().into());
@@ -415,11 +416,15 @@ impl Encoder {
         }
     }
 
-    /// Additional encoder specific ffmpeg arg defaults.
-    fn default_ffmpeg_args(&self) -> &[(&'static str, &'static str)] {
+    /// Additional encoder specific ffmpeg output arg defaults.
+    fn default_ffmpeg_args(&self, ext: &str) -> &[(&'static str, &'static str)] {
         match self.as_str() {
             // add `-b:v 0` for aom & vp9 to use "constant quality" mode
             "libaom-av1" | "libvpx-vp9" => &[("-b:v", "0")],
+            // apple compat for hevc
+            "libx265" if ext.eq_ignore_ascii_case("mp4") || ext.eq_ignore_ascii_case("mov") => {
+                &[("-tag:v", "hvc1")]
+            }
             // enable lookahead mode for qsv encoders
             "av1_qsv" | "hevc_qsv" | "h264_qsv" => &[
                 ("-look_ahead", "1"),
@@ -629,7 +634,9 @@ fn svtav1_to_ffmpeg_args_default_over_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
+    } = enc
+        .to_ffmpeg_args(32.0, &probe, "mkv")
+        .expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
@@ -692,7 +699,9 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         output_args,
         input_args,
         video_only,
-    } = enc.to_ffmpeg_args(32.0, &probe).expect("to_ffmpeg_args");
+    } = enc
+        .to_ffmpeg_args(32.0, &probe, "mkv")
+        .expect("to_ffmpeg_args");
 
     assert_eq!(&*vcodec, "libsvtav1");
     assert_eq!(input, enc.input);
@@ -716,4 +725,77 @@ fn svtav1_to_ffmpeg_args_default_under_3m() {
         .as_str();
     assert_eq!(svtargs, "scd=0:crf=32");
     assert!(input_args.is_empty());
+}
+
+#[test]
+fn libx265_default_hvc1_mp4_mov() {
+    let mut enc = Encode {
+        encoder: Encoder("libx265".into()),
+        input: "vid.mp4".into(),
+        vfilter: None,
+        preset: None,
+        pix_format: None,
+        keyint: None,
+        scd: None,
+        svt_args: <_>::default(),
+        enc_args: <_>::default(),
+        enc_input_args: <_>::default(),
+    };
+
+    let probe = Ffprobe {
+        duration: Ok(Duration::from_secs(300)),
+        has_audio: true,
+        max_audio_channels: None,
+        fps: Ok(30.0),
+        resolution: Some((1280, 720)),
+        is_image: false,
+        pix_fmt: None,
+    };
+
+    let FfmpegEncodeArgs { output_args, .. } = enc
+        .to_ffmpeg_args(32.0, &probe, "mp4")
+        .expect("to_ffmpeg_args");
+    assert!(
+        output_args
+            .windows(2)
+            .any(|w| w[0].as_str() == "-tag:v" && w[1].as_str() == "hvc1"),
+        "mp4: expected -tag:v hvc1 in {output_args:?}"
+    );
+
+    let FfmpegEncodeArgs { output_args, .. } = enc
+        .to_ffmpeg_args(32.0, &probe, "mov")
+        .expect("to_ffmpeg_args");
+    assert!(
+        output_args
+            .windows(2)
+            .any(|w| w[0].as_str() == "-tag:v" && w[1].as_str() == "hvc1"),
+        "mov: expected -tag:v hvc1 in {output_args:?}"
+    );
+
+    let FfmpegEncodeArgs { output_args, .. } = enc
+        .to_ffmpeg_args(32.0, &probe, "mkv")
+        .expect("to_ffmpeg_args");
+    assert!(
+        !output_args.windows(2).any(|w| w[0].as_str() == "-tag:v"),
+        "mkv: expected no -tag:v in {output_args:?}"
+    );
+
+    // don't when explicitly set by user
+    enc.enc_args.push("-tag:v=hev1".into());
+
+    let FfmpegEncodeArgs { output_args, .. } = enc
+        .to_ffmpeg_args(32.0, &probe, "mp4")
+        .expect("to_ffmpeg_args");
+    assert!(
+        output_args
+            .windows(2)
+            .any(|w| w[0].as_str() == "-tag:v" && w[1].as_str() == "hev1"),
+        "mp4: expected -tag:v hev1 in {output_args:?}"
+    );
+    assert!(
+        !output_args
+            .windows(2)
+            .any(|w| w[0].as_str() == "-tag:v" && w[1].as_str() == "hcv1"),
+        "mp4: unexpected -tag:v hcv1 in {output_args:?}"
+    );
 }
