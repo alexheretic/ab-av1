@@ -1,4 +1,10 @@
 # Unreleased (0.11.7)
+* Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
+  or a duration mismatch with the input. ffmpeg can otherwise exit successfully having written
+  a result that is damaged or cut short, e.g. from a truncated input. The checks can be enabled
+  separately with `--verify-decode` & `--verify-duration`.
+* Add encode & auto-encode `--fail-fast` to stop the final encode at the first ffmpeg reported
+  error, which catches input decode errors that may leave no trace in the result.
 * Use ffmpeg (instead of SvtAv1EncApp) to find svt-av1 version for caching validity logic.
 * Add auto-scaling support for (plus "hfr" variants)
   - `--vmaf model=version=vmaf_v1.0.16_3d0h` -> 1080p

@@ -9,6 +9,7 @@ use crate::{
     log::ProgressLogger,
     process::FfmpegOut,
     temporary::{self, TempKind},
+    verify,
 };
 use anyhow::Context;
 use clap::Parser;
@@ -63,6 +64,8 @@ pub async fn run(
                 downmix_to_stereo,
                 video_only,
                 overwrite_input,
+                verify,
+                fail_fast,
             },
     }: Args,
     probe: Arc<Ffprobe>,
@@ -119,6 +122,7 @@ pub async fn run(
         has_audio,
         audio_codec,
         stereo_downmix,
+        fail_fast,
     )?;
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
     let mut stream_sizes = None;
@@ -142,6 +146,35 @@ pub async fn run(
         }
     }
     enc.wait().await?; // ensure process has exited
+
+    if verify {
+        // verified before moving into place, so a failed check leaves no output behind
+        bar.set_position(0);
+        bar.set_message("verifying, ");
+        let as_input = matches_input(&args, audio_codec, video_only);
+        let expect_duration = probe
+            .duration
+            .as_ref()
+            .ok()
+            .copied()
+            // zero means the input declares no duration, e.g. images & raw streams
+            .filter(|d| !d.is_zero())
+            .filter(|_| as_input);
+        let expect_audio = has_audio && as_input;
+
+        verify::verify(&tmp_output, expect_duration, expect_audio, |progress| {
+            if let FfmpegOut::Progress { fps, time, .. } = progress {
+                match fps > 0.0 {
+                    true => bar.set_message(format!("verifying {fps} fps, ")),
+                    false => bar.set_message("verifying, "),
+                }
+                if probe.duration.is_ok() {
+                    bar.set_position(time.as_micros_u64());
+                }
+            }
+        })
+        .await?;
+    }
     bar.finish();
 
     std::fs::rename(&tmp_output, &output)?;
@@ -177,6 +210,16 @@ pub async fn run(
     Ok(())
 }
 
+/// Whether the result is expected to match the input, so that it can be compared
+/// against it. Customised encodes may legitimately trim, re-time or drop streams.
+fn matches_input(args: &args::Encode, audio_codec: Option<&str>, video_only: bool) -> bool {
+    args.vfilter.is_none()
+        && args.enc_args.is_empty()
+        && args.enc_input_args.is_empty()
+        && audio_codec.is_none()
+        && !video_only
+}
+
 /// * vid.mp4 -> "mp4"
 /// * vid.??? -> "mkv"
 /// * image.??? -> "avif"
@@ -203,4 +246,27 @@ pub fn tmp_output_name(output: &Path) -> anyhow::Result<PathBuf> {
     let mut output = output.to_path_buf();
     output.set_file_name(tmp_prefix);
     Ok(output)
+}
+
+#[test]
+fn test_matches_input() {
+    let encode = |extra: &[&str]| {
+        args::Encode::try_parse_from([&["encode", "-i", "vid.mkv"][..], extra].concat()).unwrap()
+    };
+
+    assert!(matches_input(&encode(&[]), None, false));
+
+    assert!(!matches_input(&encode(&[]), Some("libopus"), false));
+    assert!(!matches_input(&encode(&[]), None, true));
+    assert!(!matches_input(
+        &encode(&["--vfilter", "scale=1280:-1"]),
+        None,
+        false
+    ));
+    assert!(!matches_input(&encode(&["--enc", "t=2"]), None, false));
+    assert!(!matches_input(
+        &encode(&["--enc-input", "r=1"]),
+        None,
+        false
+    ));
 }

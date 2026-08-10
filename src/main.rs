@@ -7,6 +7,7 @@ mod log;
 mod process;
 mod sample;
 mod temporary;
+mod verify;
 mod vmaf;
 mod xpsnr;
 

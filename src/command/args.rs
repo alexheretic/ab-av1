@@ -46,6 +46,30 @@ pub struct EncodeToOutput {
     /// Setting this option overrides that allowing input overwrites.
     #[arg(long)]
     pub overwrite_input: bool,
+
+    /// Verify the encoded result before moving it into place.
+    ///
+    /// Decodes the result in full and fails if it has decode errors, if its duration
+    /// does not match the input, or if the input had audio and the result does not.
+    /// A failed check leaves no output file.
+    ///
+    /// Catches results that are damaged or cut short even though ffmpeg exited
+    /// successfully, e.g. from a truncated input. Costs an extra full decode.
+    ///
+    /// The comparisons against the input are skipped when the encode is customised
+    /// with --vfilter, --enc, --enc-input, --acodec or --video-only, as the result is
+    /// then not expected to match the input.
+    #[arg(long)]
+    pub verify: bool,
+
+    /// Stop the encode as soon as ffmpeg reports an error, instead of finishing with
+    /// a damaged result. Maps to ffmpeg `-xerror`.
+    ///
+    /// Unlike --verify this needs no second pass and catches errors decoding the
+    /// input, which may leave no trace in the result. Applies to the final encode
+    /// only, not to sample encodes.
+    #[arg(long)]
+    pub fail_fast: bool,
 }
 
 /// Sampling arguments.

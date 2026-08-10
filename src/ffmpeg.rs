@@ -129,6 +129,7 @@ pub fn encode(
     has_audio: bool,
     audio_codec: Option<&str>,
     downmix_to_stereo: bool,
+    fail_fast: bool,
 ) -> anyhow::Result<FfmpegOutStream> {
     let oargs: HashSet<_> = output_args.iter().map(|a| a.as_str()).collect();
     let output_ext = output.extension().and_then(|e| e.to_str());
@@ -162,6 +163,7 @@ pub fn encode(
     cmd.kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
+        .arg_if(fail_fast, "-xerror")
         .arg2("-i", input)
         .arg2("-map", map)
         .arg2("-c:v", "copy")
