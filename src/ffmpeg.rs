@@ -85,13 +85,16 @@ pub fn encode_sample(
 
     temporary::add(&dest, TempKind::Keepable);
 
+    let mut sample_output_args = output_args.to_vec();
+    remove_arg(&mut sample_output_args, "-map");
+
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
-        .args(output_args.iter().map(|a| &**a))
+        .args(sample_output_args.iter().map(|a| &**a))
         // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
         .arg2("-fps_mode", "passthrough")
         .arg2(vcodec.crf_arg(), vcodec.crf(crf))
@@ -145,10 +148,7 @@ pub fn encode(
 
     let set_ba_128k = audio_codec == "libopus" && !oargs.contains("-b:a");
     let downmix_to_stereo = downmix_to_stereo && !oargs.contains("-ac");
-    let map = match video_only {
-        true => "0:v:0",
-        false => "0",
-    };
+    let map = default_map_arg(&output_args, video_only);
     // This doesn't seem to work on .mp4 files
     let mut metadata = format!(
         "AB_AV1_FFMPEG_ARGS=-c:v {vcodec} {} {crf}",
@@ -163,7 +163,7 @@ pub fn encode(
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
         .arg2("-i", input)
-        .arg2("-map", map)
+        .arg2_opt("-map", map)
         .arg2("-c:v", "copy")
         .arg2("-c:v:0", &*vcodec)
         .arg2("-metadata", metadata)
@@ -244,6 +244,21 @@ impl VCodecSpecific for Arc<str> {
     }
 }
 
+fn has_map_arg(args: &[Arc<String>]) -> bool {
+    args.iter()
+        .any(|arg| arg.as_str() == "-map" || arg.starts_with("-map="))
+}
+
+fn default_map_arg(args: &[Arc<String>], video_only: bool) -> Option<&'static str> {
+    if has_map_arg(args) {
+        None
+    } else if video_only {
+        Some("0:v:0")
+    } else {
+        Some("0")
+    }
+}
+
 pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
     let mut retain_next = true;
     args.retain(|a| {
@@ -257,4 +272,26 @@ pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
             true
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_map_arg;
+    use std::sync::Arc;
+
+    fn args(args: &[&str]) -> Vec<Arc<String>> {
+        args.iter().map(|arg| Arc::new((*arg).to_owned())).collect()
+    }
+
+    #[test]
+    fn custom_map_replaces_default_map() {
+        assert_eq!(default_map_arg(&args(&["-crf", "32"]), false), Some("0"));
+        assert_eq!(default_map_arg(&args(&["-crf", "32"]), true), Some("0:v:0"));
+        assert_eq!(default_map_arg(&args(&["-map", "0:v:0"]), false), None);
+        assert_eq!(default_map_arg(&args(&["-map=0:v:0"]), false), None);
+        assert_eq!(
+            default_map_arg(&args(&["-map_metadata", "-1"]), false),
+            Some("0")
+        );
+    }
 }
