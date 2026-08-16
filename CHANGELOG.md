@@ -1,4 +1,4 @@
-# Unreleased (0.11.6)
+# v0.11.6
 * libx265: Default `--enc tag:v=hvc1` for better compatibilty. The ffmpeg default can be explicitly set with `--enc tag:v=hev1`.
 
 # v0.11.5
