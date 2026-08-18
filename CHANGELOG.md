@@ -1,3 +1,6 @@
+# Unreleased (0.11.7)
+* Use ffmpeg (instead of SvtAv1EncApp) to find svt-av1 version for caching validity logic.
+
 # v0.11.6
 * libx265: Default `--enc tag:v=hvc1` for better compatibilty. The ffmpeg default can be explicitly set with `--enc tag:v=hev1`.
 

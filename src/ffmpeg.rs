@@ -6,11 +6,13 @@ use crate::{
     temporary::{self, TempKind},
 };
 use anyhow::Context;
+use bstr::ByteSlice;
 use log::debug;
 use std::{
     collections::HashSet,
     fmt::Write,
     hash::{Hash, Hasher},
+    io::Read,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, LazyLock},
@@ -33,11 +35,9 @@ pub struct FfmpegEncodeArgs<'a> {
 
 impl FfmpegEncodeArgs<'_> {
     pub fn sample_encode_hash(&self, state: &mut impl Hasher) {
-        static SVT_AV1_V: LazyLock<Vec<u8>> = LazyLock::new(|| {
-            std::process::Command::new("SvtAv1EncApp")
-                .arg("--version")
-                .output()
-                .map(|o| o.stdout)
+        static SVT_AV1_V: LazyLock<String> = LazyLock::new(|| {
+            ffmpeg_svtav1_version()
+                .inspect_err(|e| debug!("read_ffmpeg_svtav1_version: {e}"))
                 .unwrap_or_default()
         });
 
@@ -257,4 +257,65 @@ pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
             true
         }
     });
+}
+
+fn ffmpeg_svtav1_version() -> anyhow::Result<String> {
+    let mut ffmpeg = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-f",
+            "lavfi",
+            "-i",
+            "color",
+            "-frames:v",
+            "1",
+            "-c:v",
+            "libsvtav1",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // buffer at least 2x the size of the expected prefix + version
+    // as we'll lose the first half once we start running out of space
+    // Example: "SVT-AV1 Encoder Lib v123.456.678"
+    const BUF_QUARTER_LEN: usize = 64;
+
+    let mut buf = [0; 4 * BUF_QUARTER_LEN];
+    let mut read_up_to = 0;
+    let mut stderr = ffmpeg.stderr.take().context("stderr")?;
+
+    std::thread::spawn(move || _ = ffmpeg.wait());
+
+    loop {
+        let n = stderr.read(&mut buf[read_up_to..])?;
+        anyhow::ensure!(n != 0, "EOF: No version string found");
+
+        read_up_to += n;
+
+        if let Some(idx) = buf[..read_up_to].find_iter("SVT-AV1 Encoder Lib v").next()
+                        && let Some(last_byte) = buf[..read_up_to].last()
+                        // the last byte should be past of the version bytes
+                        && !matches!(*last_byte, b'0'..=b'9' | b'.' | b'v')
+        {
+            let ver: Vec<_> = buf[idx + "SVT-AV1 Encoder Lib v".len()..read_up_to]
+                .iter()
+                .copied()
+                .take_while(|b| matches!(b, b'0'..=b'9' | b'.'))
+                .collect();
+
+            return Ok(String::try_from(ver)?);
+        }
+
+        if read_up_to > 3 * BUF_QUARTER_LEN {
+            buf.rotate_left(2 * BUF_QUARTER_LEN);
+            read_up_to -= 2 * BUF_QUARTER_LEN;
+        }
+    }
 }
