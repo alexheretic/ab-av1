@@ -300,9 +300,9 @@ fn ffmpeg_svtav1_version() -> anyhow::Result<String> {
         read_up_to += n;
 
         if let Some(idx) = buf[..read_up_to].find_iter("SVT-AV1 Encoder Lib v").next()
-                        && let Some(last_byte) = buf[..read_up_to].last()
-                        // the last byte should be past of the version bytes
-                        && !matches!(*last_byte, b'0'..=b'9' | b'.' | b'v')
+            && let Some(last_byte) = buf[..read_up_to].last()
+            // the last byte should be past of the version bytes
+            && !matches!(*last_byte, b'0'..=b'9' | b'.' | b'v')
         {
             let ver: Vec<_> = buf[idx + "SVT-AV1 Encoder Lib v".len()..read_up_to]
                 .iter()
