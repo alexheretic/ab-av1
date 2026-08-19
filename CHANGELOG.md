@@ -1,5 +1,10 @@
 # Unreleased (0.11.7)
 * Use ffmpeg (instead of SvtAv1EncApp) to find svt-av1 version for caching validity logic.
+* Add auto-scaling support for (plus "hfr" variants)
+  - `--vmaf model=version=vmaf_v1.0.16_3d0h` -> 1080p
+  - `--vmaf model=version=vmaf_v1.0.16_5d0h` -> 1080p
+  - `--vmaf model=version=vmaf_v1.0.16_1d5h_2160` -> 2160p
+  - `--vmaf model=version=vmaf_v1.0.16_3d0h_2160` -> 2160p
 
 # v0.11.6
 * libx265: Default `--enc tag:v=hvc1` for better compatibilty. The ffmpeg default can be explicitly set with `--enc tag:v=hev1`.
