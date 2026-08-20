@@ -2,12 +2,12 @@
 use crate::{
     command::args::PixelFormat,
     float::TerseF32,
-    process::{CommandExt, FfmpegOut, FfmpegOutStream},
+    process::{Chunks, CommandExt, FfmpegOut, FfmpegOutStream, exit_ok_stderr},
     temporary::{self, TempKind},
 };
 use anyhow::Context;
 use bstr::ByteSlice;
-use log::debug;
+use log::{debug, info};
 use std::{
     collections::HashSet,
     fmt::Write,
@@ -18,6 +18,8 @@ use std::{
     sync::{Arc, LazyLock},
 };
 use tokio::process::Command;
+use tokio_process_stream::{Item, ProcessChunkStream};
+use tokio_stream::StreamExt;
 
 /// Exposed ffmpeg encoding args.
 #[derive(Debug, Clone)]
@@ -320,4 +322,58 @@ fn ffmpeg_svtav1_version() -> anyhow::Result<String> {
             read_up_to -= 2 * BUF_QUARTER_LEN;
         }
     }
+}
+
+/// Decode all video & audio streams of `file`, failing on the first decode error.
+///
+/// ffmpeg can exit successfully having written a damaged or short result, usually
+/// because the input itself is damaged. Neither the exit code nor sample based VMAF
+/// notices this, since the samples may all land on healthy parts of the file.
+///
+/// `on_progress` is called with the decode progress, so callers can keep a progress
+/// bar moving during what is a full pass over the file.
+pub async fn decode(file: &Path, mut on_progress: impl FnMut(FfmpegOut)) -> anyhow::Result<()> {
+    info!(
+        "verifying {}",
+        file.file_name().and_then(|n| n.to_str()).unwrap_or("")
+    );
+
+    let mut cmd = Command::new("ffmpeg");
+    cmd.kill_on_drop(true)
+        // Only errors are of interest, `-stats` keeps the progress output that the
+        // "error" log level would otherwise hide.
+        .arg2("-v", "error")
+        .arg("-stats")
+        .arg("-xerror")
+        .arg2("-i", file)
+        // Decode all video & audio streams, not just the ones ffmpeg would select by
+        // default. Subtitles, attachments & data are skipped as the null muxer has no
+        // encoder for them, and the encode copies them through unchanged anyway.
+        .arg2("-map", "0:v?")
+        .arg2("-map", "0:a?")
+        .arg2("-f", "null")
+        .arg("-")
+        .stdin(Stdio::null());
+
+    let cmd_str = cmd.to_cmd_str();
+    debug!("cmd `{cmd_str}`");
+    let mut dec = crate::process::child::AddOnDropChunkStream::from(
+        ProcessChunkStream::try_from(cmd).context("ffmpeg verify")?,
+    );
+
+    let mut chunks = Chunks::default();
+    while let Some(next) = dec.next().await {
+        match next {
+            Item::Stderr(chunk) => {
+                chunks.push(&chunk);
+                if let Some(out) = FfmpegOut::try_parse(chunks.last_line()) {
+                    on_progress(out);
+                }
+            }
+            Item::Stdout(_) => {}
+            Item::Done(code) => exit_ok_stderr("ffmpeg verify", code, &cmd_str, &chunks)?,
+        }
+    }
+
+    Ok(())
 }

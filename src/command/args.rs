@@ -47,20 +47,25 @@ pub struct EncodeToOutput {
     #[arg(long)]
     pub overwrite_input: bool,
 
-    /// Verify the encoded result before moving it into place.
-    ///
-    /// Decodes the result in full and fails if it has decode errors, if its duration
-    /// does not match the input, or if the input had audio and the result does not.
-    /// A failed check leaves no output file.
+    /// Verify the encoded result before moving it into place. Enables all
+    /// `--verify-*` checks. A failed check leaves no output file.
     ///
     /// Catches results that are damaged or cut short even though ffmpeg exited
-    /// successfully, e.g. from a truncated input. Costs an extra full decode.
-    ///
-    /// The comparisons against the input are skipped when the encode is customised
-    /// with --vfilter, --enc, --enc-input, --acodec or --video-only, as the result is
-    /// then not expected to match the input.
+    /// successfully, e.g. from a truncated input.
     #[arg(long)]
     pub verify: bool,
+
+    /// Verify the encoded result decodes without errors. Costs an extra full decode.
+    #[arg(long)]
+    pub verify_decode: bool,
+
+    /// Verify the encoded result duration matches the input duration, within 2s.
+    ///
+    /// Skipped when the input has no duration, e.g. images.
+    /// Not suitable for encodes that intentionally change the duration,
+    /// e.g. trimming with --enc or --vfilter; use --verify-decode alone for those.
+    #[arg(long)]
+    pub verify_duration: bool,
 
     /// Stop the encode as soon as ffmpeg reports an error, instead of finishing with
     /// a damaged result. Maps to ffmpeg `-xerror`.

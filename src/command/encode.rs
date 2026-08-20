@@ -9,9 +9,8 @@ use crate::{
     log::ProgressLogger,
     process::FfmpegOut,
     temporary::{self, TempKind},
-    verify,
 };
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use clap::Parser;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -25,6 +24,15 @@ use std::{
 };
 use tokio::fs;
 use tokio_stream::StreamExt;
+
+/// Allowed difference between the input duration & the output duration.
+///
+/// Encoders may round the final frame duration, so an exact match shouldn't be required.
+const DURATION_TOLERANCE: Duration = Duration::from_secs(2);
+
+/// Share of the progress bar taken by `--verify-decode`, as a divisor of the encode
+/// length. Decoding is expected to be faster than encoding, so it gets the last 1/3.
+const VERIFY_BAR_DIVISOR: u64 = 2;
 
 /// Invoke ffmpeg to encode a video or image.
 #[derive(Parser)]
@@ -65,6 +73,8 @@ pub async fn run(
                 video_only,
                 overwrite_input,
                 verify,
+                verify_decode,
+                verify_duration,
                 fail_fast,
             },
     }: Args,
@@ -97,8 +107,15 @@ pub async fn run(
     )?;
     enc_args.video_only = video_only;
     let has_audio = probe.has_audio;
+    let verify_decode = verify || verify_decode;
+    let verify_duration = verify || verify_duration;
     if let Ok(d) = &probe.duration {
-        bar.set_length(d.as_micros_u64().max(1));
+        let mut len = d.as_micros_u64();
+        if verify_decode {
+            // verify decode is a last part of the bar, expected to be faster than encoding
+            len += len / VERIFY_BAR_DIVISOR;
+        }
+        bar.set_length(len.max(1));
     }
 
     // only downmix if achannels > 3
@@ -147,33 +164,35 @@ pub async fn run(
     }
     enc.wait().await?; // ensure process has exited
 
-    if verify {
-        // verified before moving into place, so a failed check leaves no output behind
-        bar.set_position(0);
+    // verified before moving into place, so a failed check leaves no output behind
+    if verify_decode {
         bar.set_message("verifying, ");
-        let as_input = matches_input(&args, audio_codec, video_only);
-        let expect_duration = probe
-            .duration
-            .as_ref()
-            .ok()
-            .copied()
-            // zero means the input declares no duration, e.g. images & raw streams
-            .filter(|d| !d.is_zero())
-            .filter(|_| as_input);
-        let expect_audio = has_audio && as_input;
-
-        verify::verify(&tmp_output, expect_duration, expect_audio, |progress| {
+        let encode_len = probe.duration.as_ref().ok().map(|d| d.as_micros_u64());
+        ffmpeg::decode(&tmp_output, |progress| {
             if let FfmpegOut::Progress { fps, time, .. } = progress {
                 match fps > 0.0 {
                     true => bar.set_message(format!("verifying {fps} fps, ")),
                     false => bar.set_message("verifying, "),
                 }
-                if probe.duration.is_ok() {
-                    bar.set_position(time.as_micros_u64());
+                if let Some(len) = encode_len {
+                    bar.set_position(len + time.as_micros_u64() / VERIFY_BAR_DIVISOR);
                 }
             }
         })
         .await?;
+    }
+    if verify_duration
+        && let Ok(expected) = &probe.duration
+        // zero means no declared duration, e.g. images & raw streams
+        && !expected.is_zero()
+    {
+        let actual = ffprobe::probe(&tmp_output).duration?;
+        ensure!(
+            expected.abs_diff(actual) <= DURATION_TOLERANCE,
+            "verify: output duration {} does not match input duration {}",
+            humantime::format_duration(floor_ms(actual)),
+            humantime::format_duration(floor_ms(*expected)),
+        );
     }
     bar.finish();
 
@@ -210,16 +229,6 @@ pub async fn run(
     Ok(())
 }
 
-/// Whether the result is expected to match the input, so that it can be compared
-/// against it. Customised encodes may legitimately trim, re-time or drop streams.
-fn matches_input(args: &args::Encode, audio_codec: Option<&str>, video_only: bool) -> bool {
-    args.vfilter.is_none()
-        && args.enc_args.is_empty()
-        && args.enc_input_args.is_empty()
-        && audio_codec.is_none()
-        && !video_only
-}
-
 /// * vid.mp4 -> "mp4"
 /// * vid.??? -> "mkv"
 /// * image.??? -> "avif"
@@ -248,25 +257,7 @@ pub fn tmp_output_name(output: &Path) -> anyhow::Result<PathBuf> {
     Ok(output)
 }
 
-#[test]
-fn test_matches_input() {
-    let encode = |extra: &[&str]| {
-        args::Encode::try_parse_from([&["encode", "-i", "vid.mkv"][..], extra].concat()).unwrap()
-    };
-
-    assert!(matches_input(&encode(&[]), None, false));
-
-    assert!(!matches_input(&encode(&[]), Some("libopus"), false));
-    assert!(!matches_input(&encode(&[]), None, true));
-    assert!(!matches_input(
-        &encode(&["--vfilter", "scale=1280:-1"]),
-        None,
-        false
-    ));
-    assert!(!matches_input(&encode(&["--enc", "t=2"]), None, false));
-    assert!(!matches_input(
-        &encode(&["--enc-input", "r=1"]),
-        None,
-        false
-    ));
+/// Drop sub-millisecond parts so durations print readably.
+fn floor_ms(duration: Duration) -> Duration {
+    Duration::from_millis(duration.as_millis().try_into().unwrap_or(u64::MAX))
 }
