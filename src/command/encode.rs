@@ -25,10 +25,10 @@ use std::{
 use tokio::fs;
 use tokio_stream::StreamExt;
 
-/// Allowed difference between the input duration & the output duration.
+/// Allowed difference between the input duration & the output duration for `--verify-duration`.
 ///
 /// Encoders may round the final frame duration, so an exact match shouldn't be required.
-const DURATION_TOLERANCE: Duration = Duration::from_secs(2);
+const VERIFY_DURATION_TOLERANCE: Duration = Duration::from_secs(2);
 
 /// Share of the progress bar taken by `--verify-decode`, as a divisor of the encode
 /// length. Decoding is expected to be faster than encoding, so it gets the last 1/3.
@@ -188,7 +188,7 @@ pub async fn run(
     {
         let actual = ffprobe::probe(&tmp_output).duration?;
         ensure!(
-            expected.abs_diff(actual) <= DURATION_TOLERANCE,
+            expected.abs_diff(actual) <= VERIFY_DURATION_TOLERANCE,
             "verify: output duration {} does not match input duration {}",
             humantime::format_duration(floor_ms(actual)),
             humantime::format_duration(floor_ms(*expected)),
