@@ -1,4 +1,4 @@
-# Unreleased (0.11.7)
+# v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
   or a duration mismatch with the input. ffmpeg can otherwise exit successfully having written
   a result that is damaged or cut short, e.g. from a truncated input. The checks can be enabled
