@@ -57,6 +57,16 @@ Invoke ffmpeg to encode a video or image.
 ab-av1 encode [OPTIONS] -i <INPUT> --crf <CRF> --preset <PRESET>
 ```
 
+#### Notable options
+These also apply to [auto-encode](#command-auto-encode).
+* `--verify` checks the finished encode before it is moved into place: decodes it in full
+  failing on decode errors (`--verify-decode`) & fails if its duration does not match the
+  input within 2s (`--verify-duration`). Either check can be enabled on its own.
+  The encoder can otherwise exit successfully having written a damaged or cut short result,
+  e.g. from a truncated input.
+* `--fail-fast` stops the encode at the first ffmpeg reported error instead of writing a
+  damaged result.
+
 ### Command: vmaf
 Full VMAF score calculation, distorted file vs reference file.
 Works with videos and images.
