@@ -696,12 +696,8 @@ async fn estimate_encode_size_by_file_percent(
     Ok((fs::metadata(input).await?.len() as f64 * encode_proportion).round() as _)
 }
 
-/// Return estimated encoded **video stream** size by applying the sample percentage
+/// Return estimated encoded video stream size by applying the sample percentage
 /// change to the input's video stream size.
-///
-/// The video stream size is approximated by sampling the non-video (audio + subtitle)
-/// streams of the input with stream-copy, extrapolating to the full duration, and
-/// subtracting that from the whole input file size.
 async fn estimate_encode_size_by_vstream_percent(
     results: &Vec<EncodeResult>,
     input: &Path,
@@ -717,7 +713,6 @@ async fn estimate_encode_size_by_vstream_percent(
     }
     let encode_proportion = results.encoded_percent_size() / 100.0;
 
-    // sample start of the first sample, mirroring `sample()`
     let sample_start =
         duration.saturating_sub(sample_duration * results.len() as _) / (results.len() as u32 + 1);
     let non_video_sample_size = sample::non_video_size(

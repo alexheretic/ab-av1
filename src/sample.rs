@@ -11,12 +11,7 @@ use std::{
 };
 use tokio::process::Command;
 
-/// Create a sample of the non-video (audio + subtitle) streams from `sample_start`
-/// for `sample_duration`, returning its file size.
-///
-/// `-c copy` makes this cheap. The size is used to approximate the input's non-video
-/// stream size, so the predicted encode size can be based on the video stream size
-/// rather than the whole file size.
+/// Create a non-video (audio + subtitle) sample from `sample_start` for `sample_duration`, returning its size.
 pub async fn non_video_size(
     input: &Path,
     sample_start: Duration,
@@ -60,7 +55,7 @@ pub async fn non_video_size(
     Ok(size)
 }
 
-/// Copy a sample from `sample_start` + `frames`.
+/// Create a sample from `sample_start` + `frames`.
 ///
 /// Fast as this uses `-c:v copy`.
 pub async fn copy(
