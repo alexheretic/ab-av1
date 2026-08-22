@@ -159,9 +159,7 @@ fn encode_key(
     scoring: impl Hash,
 ) -> Key {
     Key(hash_encode(
-        // hashing the sample file name (which includes input name, frames & start)
-        // + input duration, extension & size should be reasonably unique for an input.
-        // and is much faster than hashing the entire file.
+        // hash the sample file name + metadata instead of the whole file
         (
             sample.file_name(),
             input_duration,
