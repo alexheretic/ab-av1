@@ -10,6 +10,7 @@ use crate::{
     console_ext::style,
     ffprobe::{self, Ffprobe},
     float::TerseF32,
+    sample,
 };
 use anyhow::Context;
 use clap::{ArgAction, Parser};
@@ -300,6 +301,30 @@ pub fn run(
         assert!(min_q < max_q);
         let mut q = (min_q + max_q) / 2;
 
+        // Seed the initial search point from previously cached sample-encode results for
+        // this input & encoder, if any exist. This lets a re-run (e.g. with adjusted or
+        // default crf bounds) start from where a prior search already landed instead of
+        // always from the midpoint of the range. Best-effort: any probe failure just
+        // leaves the search starting from the midpoint.
+        if let Ok(Some(seeded_q)) = seed_q_from_cache(
+            cache,
+            &args,
+            &input_probe,
+            min_crf,
+            max_crf,
+            crf_increment,
+            &q_conv,
+            &sample,
+            min_score,
+            &score,
+            &vmaf,
+            &xpsnr,
+        )
+        .await
+        {
+            q = seeded_q;
+        }
+
         let mut args = sample_encode::Args {
             args: args.clone(),
             crf: 0.0,
@@ -409,6 +434,100 @@ pub fn run(
         }
         unreachable!();
     }
+}
+
+/// Probe the sample-encode cache for prior results at the search's first sample position,
+/// returning the `q` of the cached result closest below (better than) the target score.
+///
+/// Returns `None` when there's nothing useful cached, or when the probe can't run
+/// (e.g. no cached sample, invalid duration). Best-effort: callers fall back to the
+/// default midpoint start.
+#[allow(clippy::too_many_arguments)]
+async fn seed_q_from_cache(
+    cache: bool,
+    args: &args::Encode,
+    input_probe: &Ffprobe,
+    min_crf: f32,
+    max_crf: f32,
+    crf_increment: f32,
+    q_conv: &QualityConverter,
+    sample: &args::Sample,
+    min_score: f32,
+    score: &args::ScoreArgs,
+    vmaf: &args::Vmaf,
+    xpsnr: &args::Xpsnr,
+) -> anyhow::Result<Option<i64>> {
+    if !cache {
+        return Ok(None);
+    }
+
+    let input_len = tokio::fs::metadata(&*args.input).await?.len();
+    let duration = input_probe.duration.clone()?;
+    let input_fps = input_probe.fps.clone().unwrap_or_default();
+    let is_image = input_probe.is_image;
+    let samples = sample.sample_count(duration).max(1);
+    let full_pass = is_image
+        || sample.sample_duration.is_zero()
+        || sample.sample_duration * samples as _ >= duration.mul_f64(0.85);
+    if full_pass {
+        return Ok(None);
+    }
+
+    // Compute the first sample file name, mirroring sample_encode::sample() idx 0 &
+    // sample::copy naming, so the same cache keys are probed.
+    let sample_duration = if input_fps > 0.0 {
+        sample
+            .sample_duration
+            .max(Duration::from_secs_f64(1.0 / input_fps))
+    } else {
+        sample.sample_duration
+    };
+    let sample_start =
+        duration.saturating_sub(sample_duration * samples as _) / (samples as u32 + 1);
+    let sample_frames = ((sample_duration.as_secs_f64() * input_fps).round() as u32).max(1);
+    let sample_name = std::path::Path::new(&args.input).with_file_name(sample::sample_file_name(
+        &args.input,
+        sample_start,
+        sample_duration >= Duration::from_secs(2),
+        sample_frames,
+    ));
+
+    // Probe a modest grid of crf values across the search range.
+    let step = ((max_crf - min_crf) / 20.0).max(crf_increment);
+    let mut crf_values = Vec::new();
+    let mut crf = min_crf;
+    while crf <= max_crf {
+        crf_values.push((crf, q_conv.q(crf)));
+        crf += step;
+    }
+    crf_values.push((max_crf, q_conv.q(max_crf)));
+
+    // The crf set here is a placeholder; cached_crfs overrides it per candidate.
+    let enc_args = args.to_ffmpeg_args(min_crf, input_probe, "mkv")?;
+    let cached = sample_encode::cache::cached_crfs(
+        true,
+        &sample_name,
+        duration,
+        args.input.extension(),
+        input_len,
+        false,
+        &enc_args,
+        (score, vmaf, xpsnr),
+        &crf_values,
+    )
+    .await;
+
+    // Choose the cached result closest below (higher quality than) the target score.
+    Ok(cached
+        .iter()
+        .filter(|(_, _, r)| r.vmaf_score.or(r.xpsnr_score).unwrap_or_default() < min_score)
+        .max_by(|a, b| {
+            a.2.vmaf_score
+                .or(a.2.xpsnr_score)
+                .unwrap_or_default()
+                .total_cmp(&b.2.vmaf_score.or(b.2.xpsnr_score).unwrap_or_default())
+        })
+        .map(|(_, q, _)| *q))
 }
 
 #[derive(Debug, Clone)]

@@ -24,22 +24,15 @@ pub async fn cached_encode(
         return (None, None);
     }
 
-    let hash = hash_encode(
-        // hashing the sample file name (which includes input name, frames & start)
-        // + input duration, extension & size should be reasonably unique for an input.
-        // and is much faster than hashing the entire file.
-        (
-            sample.file_name(),
-            input_duration,
-            input_extension,
-            input_size,
-            full_pass,
-        ),
+    let key = encode_key(
+        sample,
+        input_duration,
+        input_extension,
+        input_size,
+        full_pass,
         enc_args,
         scoring,
     );
-
-    let key = Key(hash);
 
     let cached = tokio::task::spawn_blocking::<_, anyhow::Result<_>>(move || {
         let db = open_db()?;
@@ -61,6 +54,66 @@ pub async fn cached_encode(
         Err(err) => {
             eprintln!("cache error: {err}");
             (None, None)
+        }
+    }
+}
+
+/// Look up previously cached sample-encode results for a set of crf values, sharing the
+/// same input sample & encoder args. Returns the (crf, result) pairs that are cached.
+///
+/// Used to seed a new crf-search from the results of a prior run that used the same
+/// input & encoder, instead of always starting from the midpoint of the crf range.
+#[allow(clippy::too_many_arguments)]
+pub async fn cached_crfs(
+    cache: bool,
+    sample: &Path,
+    input_duration: Duration,
+    input_extension: Option<&OsStr>,
+    input_size: u64,
+    full_pass: bool,
+    enc_args: &FfmpegEncodeArgs<'_>,
+    scoring: impl Hash + Clone,
+    crf_values: &[(f32, i64)], // (crf, q)
+) -> Vec<(f32, i64, super::EncodeResult)> {
+    if !cache {
+        return Vec::new();
+    }
+
+    let mut keys = Vec::with_capacity(crf_values.len());
+    for (crf, q) in crf_values {
+        let mut args = enc_args.clone();
+        args.crf = *crf;
+        let key = encode_key(
+            sample,
+            input_duration,
+            input_extension,
+            input_size,
+            full_pass,
+            &args,
+            scoring.clone(),
+        );
+        keys.push((*crf, *q, key));
+    }
+
+    match tokio::task::spawn_blocking(move || {
+        let db = open_db()?;
+        let mut results = Vec::new();
+        for (crf, q, key) in &keys {
+            if let Some(data) = db.get(key.0.to_hex().as_bytes())?
+                && let Ok(mut result) = serde_json::from_slice::<super::EncodeResult>(&data)
+            {
+                result.from_cache = true;
+                results.push((*crf, *q, result));
+            }
+        }
+        Ok::<_, anyhow::Error>(results)
+    })
+    .await
+    {
+        Ok(Ok(results)) => results,
+        _ => {
+            eprintln!("cache error reading cached crf results");
+            Vec::new()
         }
     }
 }
@@ -99,6 +152,31 @@ fn open_db() -> sled::Result<sled::Db> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Key(blake3::Hash);
+
+fn encode_key(
+    sample: &Path,
+    input_duration: Duration,
+    input_extension: Option<&OsStr>,
+    input_size: u64,
+    full_pass: bool,
+    enc_args: &FfmpegEncodeArgs<'_>,
+    scoring: impl Hash,
+) -> Key {
+    Key(hash_encode(
+        // hashing the sample file name (which includes input name, frames & start)
+        // + input duration, extension & size should be reasonably unique for an input.
+        // and is much faster than hashing the entire file.
+        (
+            sample.file_name(),
+            input_duration,
+            input_extension,
+            input_size,
+            full_pass,
+        ),
+        enc_args,
+        scoring,
+    ))
+}
 
 fn hash_encode(
     input_info: impl Hash,
