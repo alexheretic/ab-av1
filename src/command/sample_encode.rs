@@ -434,6 +434,12 @@ pub fn run(
         // ensure sample_task completed
         sample_task.await.context("sample copy task")?;
 
+        let estimate_by_vstream = if full_pass {
+            results[0].encoded_size
+        } else {
+            estimate_encode_size_by_vstream_percent(&results, &input, duration, sample_duration, temp_dir.as_deref()).await
+        };
+
         let output = Output {
             vmaf_score: results.mean_vmaf_score(),
             xpsnr_score: results.mean_xpsnr_score(),
@@ -441,7 +447,8 @@ pub fn run(
             // than the duration estimation it may turn out to be more accurate.
             predicted_encode_size: results
                 .estimate_encode_size_by_duration(duration, full_pass)
-                .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?),
+                .min(estimate_encode_size_by_file_percent(&results, &input, full_pass).await?)
+                .min(estimate_by_vstream),
             encode_percent: results.encoded_percent_size(),
             predicted_encode_time: results.estimate_encode_time(duration, full_pass),
             from_cache: results.iter().all(|r| r.from_cache),
@@ -687,6 +694,53 @@ async fn estimate_encode_size_by_file_percent(
     let encode_proportion = results.encoded_percent_size() / 100.0;
 
     Ok((fs::metadata(input).await?.len() as f64 * encode_proportion).round() as _)
+}
+
+/// Return estimated encoded **video stream** size by applying the sample percentage
+/// change to the input's video stream size.
+///
+/// The video stream size is approximated by sampling the non-video (audio + subtitle)
+/// streams of the input with stream-copy, extrapolating to the full duration, and
+/// subtracting that from the whole input file size.
+async fn estimate_encode_size_by_vstream_percent(
+    results: &Vec<EncodeResult>,
+    input: &Path,
+    duration: Duration,
+    sample_duration: Duration,
+    temp_dir: Option<&Path>,
+) -> u64 {
+    if results.is_empty() {
+        return 0;
+    }
+    if results.len() == 1 {
+        return results[0].encoded_size;
+    }
+    let encode_proportion = results.encoded_percent_size() / 100.0;
+
+    // sample start of the first sample, mirroring `sample()`
+    let sample_start =
+        duration.saturating_sub(sample_duration * results.len() as _) / (results.len() as u32 + 1);
+    let non_video_sample_size = sample::non_video_size(
+        input,
+        sample_start,
+        sample_duration,
+        temp_dir.map(Path::to_path_buf),
+    )
+    .await
+    .unwrap_or(0);
+    if non_video_sample_size == 0 {
+        return 0;
+    }
+    let non_video_size = (non_video_sample_size as f64 * duration.as_secs_f64()
+        / sample_duration.as_secs_f64())
+    .round() as u64;
+    let input_vstream_size = fs::metadata(input)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0)
+        .saturating_sub(non_video_size);
+
+    (input_vstream_size as f64 * encode_proportion).round() as _
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]

@@ -11,7 +11,56 @@ use std::{
 };
 use tokio::process::Command;
 
-/// Create a sample from `sample_start` + `frames`.
+/// Create a sample of the non-video (audio + subtitle) streams from `sample_start`
+/// for `sample_duration`, returning its file size.
+///
+/// `-c copy` makes this cheap. The size is used to approximate the input's non-video
+/// stream size, so the predicted encode size can be based on the video stream size
+/// rather than the whole file size.
+pub async fn non_video_size(
+    input: &Path,
+    sample_start: Duration,
+    sample_duration: Duration,
+    temp_dir: Option<PathBuf>,
+) -> anyhow::Result<u64> {
+    let mut sample_start_s = sample_start.as_secs_f32();
+    if sample_duration >= Duration::from_secs(2) {
+        sample_start_s = sample_start_s.floor();
+    }
+
+    let mut dest = temporary::process_dir(temp_dir)?;
+    dest.push(
+        input
+            .with_extension(format!(
+                "non-video-sample{sample_start_s}+{}s.mkv",
+                sample_duration.as_secs_f32()
+            ))
+            .file_name()
+            .unwrap(),
+    );
+    temporary::add(&dest, TempKind::Keepable);
+
+    let out = Command::new("ffmpeg")
+        .arg("-y")
+        .arg2("-ss", sample_start_s)
+        .arg2("-t", sample_duration.as_secs_f32())
+        .arg2("-i", input)
+        .arg2("-map", "0:a?")
+        .arg2("-map", "0:s?")
+        .arg2("-c", "copy")
+        .arg(&dest)
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("ffmpeg non-video copy")?;
+
+    ensure_success("ffmpeg non-video copy", &out)?;
+    let size = tokio::fs::metadata(&dest).await?.len();
+    let _ = tokio::fs::remove_file(&dest).await;
+    Ok(size)
+}
+
+/// Copy a sample from `sample_start` + `frames`.
 ///
 /// Fast as this uses `-c:v copy`.
 pub async fn copy(
