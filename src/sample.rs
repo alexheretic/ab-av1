@@ -11,6 +11,28 @@ use std::{
 };
 use tokio::process::Command;
 
+/// The file name used for a copy sample of `input` at `sample_start` with `frames`.
+///
+/// Mirrors the destination file name used by [`copy`], so the sample-encode cache key
+/// derived from the file name can be computed without creating the file.
+pub fn sample_file_name(
+    input: &Path,
+    sample_start: Duration,
+    floor_to_sec: bool,
+    frames: u32,
+) -> String {
+    let mut sample_start_s = sample_start.as_secs_f32();
+    if floor_to_sec {
+        sample_start_s = sample_start_s.floor();
+    }
+    input
+        .with_extension(format!("sample{sample_start_s}+{frames}f.mkv"))
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Create a sample from `sample_start` + `frames`.
 ///
 /// Fast as this uses `-c:v copy`.
@@ -29,12 +51,7 @@ pub async fn copy(
     let mut dest = temporary::process_dir(temp_dir)?;
     // Always using mkv for the samples works better than, e.g. using mp4 for mp4s
     // see https://github.com/alexheretic/ab-av1/issues/82#issuecomment-1337306325
-    dest.push(
-        input
-            .with_extension(format!("sample{sample_start_s}+{frames}f.mkv"))
-            .file_name()
-            .unwrap(),
-    );
+    dest.push(sample_file_name(input, sample_start, floor_to_sec, frames));
     if dest.exists() {
         return Ok(dest);
     }
@@ -79,4 +96,25 @@ pub async fn copy(
 
     ensure_success("ffmpeg copy", &out)?;
     Ok(dest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_file_name_uses_mkv_and_floor_when_floor_to_sec() {
+        let input = PathBuf::from("/tmp/movie.mkv");
+        let start = Duration::from_millis(15200);
+        let name = sample_file_name(&input, start, true, 120);
+        assert_eq!(name, "movie.sample15+120f.mkv");
+    }
+
+    #[test]
+    fn sample_file_name_keeps_fraction_when_not_floored() {
+        let input = PathBuf::from("/tmp/movie.mkv");
+        let start = Duration::from_millis(15200);
+        let name = sample_file_name(&input, start, false, 120);
+        assert_eq!(name, "movie.sample15.2+120f.mkv");
+    }
 }
