@@ -301,11 +301,7 @@ pub fn run(
         assert!(min_q < max_q);
         let mut q = (min_q + max_q) / 2;
 
-        // Seed the initial search point from previously cached sample-encode results for
-        // this input & encoder, if any exist. This lets a re-run (e.g. with adjusted or
-        // default crf bounds) start from where a prior search already landed instead of
-        // always from the midpoint of the range. Best-effort: any probe failure just
-        // leaves the search starting from the midpoint.
+        // Seed the search from prior cached results, if any.
         if let Ok(Some(seeded_q)) = seed_q_from_cache(
             cache,
             &args,
@@ -436,12 +432,8 @@ pub fn run(
     }
 }
 
-/// Probe the sample-encode cache for prior results at the search's first sample position,
-/// returning the `q` of the cached result closest below (better than) the target score.
-///
-/// Returns `None` when there's nothing useful cached, or when the probe can't run
-/// (e.g. no cached sample, invalid duration). Best-effort: callers fall back to the
-/// default midpoint start.
+/// Probe the cache for prior results at the search's first sample, returning the
+/// `q` of the cached result closest below the target score, if any.
 #[allow(clippy::too_many_arguments)]
 async fn seed_q_from_cache(
     cache: bool,
@@ -473,8 +465,7 @@ async fn seed_q_from_cache(
         return Ok(None);
     }
 
-    // Compute the first sample file name, mirroring sample_encode::sample() idx 0 &
-    // sample::copy naming, so the same cache keys are probed.
+    // Mirror sample_encode::sample() idx 0 naming so the same cache keys are probed.
     let sample_duration = if input_fps > 0.0 {
         sample
             .sample_duration
@@ -492,7 +483,6 @@ async fn seed_q_from_cache(
         sample_frames,
     ));
 
-    // Probe a modest grid of crf values across the search range.
     let step = ((max_crf - min_crf) / 20.0).max(crf_increment);
     let mut crf_values = Vec::new();
     let mut crf = min_crf;
@@ -502,7 +492,6 @@ async fn seed_q_from_cache(
     }
     crf_values.push((max_crf, q_conv.q(max_crf)));
 
-    // The crf set here is a placeholder; cached_crfs overrides it per candidate.
     let enc_args = args.to_ffmpeg_args(min_crf, input_probe, "mkv")?;
     let cached = sample_encode::cache::cached_crfs(
         true,
@@ -517,7 +506,6 @@ async fn seed_q_from_cache(
     )
     .await;
 
-    // Choose the cached result closest below (higher quality than) the target score.
     Ok(cached
         .iter()
         .filter(|(_, _, r)| r.vmaf_score.or(r.xpsnr_score).unwrap_or_default() < min_score)

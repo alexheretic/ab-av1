@@ -11,10 +11,7 @@ use std::{
 };
 use tokio::process::Command;
 
-/// The file name used for a copy sample of `input` at `sample_start` with `frames`.
-///
-/// Mirrors the destination file name used by [`copy`], so the sample-encode cache key
-/// derived from the file name can be computed without creating the file.
+/// Copy sample file name for `input` at `sample_start` with `frames`.
 pub fn sample_file_name(
     input: &Path,
     sample_start: Duration,

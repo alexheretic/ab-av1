@@ -58,11 +58,7 @@ pub async fn cached_encode(
     }
 }
 
-/// Look up previously cached sample-encode results for a set of crf values, sharing the
-/// same input sample & encoder args. Returns the (crf, result) pairs that are cached.
-///
-/// Used to seed a new crf-search from the results of a prior run that used the same
-/// input & encoder, instead of always starting from the midpoint of the crf range.
+/// Look up previously cached sample-encode results for a set of crf values.
 #[allow(clippy::too_many_arguments)]
 pub async fn cached_crfs(
     cache: bool,
