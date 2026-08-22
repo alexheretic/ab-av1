@@ -432,8 +432,7 @@ pub fn run(
     }
 }
 
-/// Probe the cache for prior results at the search's first sample, returning the
-/// `q` of the cached result closest below the target score, if any.
+/// Probe the cache for prior results at the first sample, returning the `q` closest below the target score.
 #[allow(clippy::too_many_arguments)]
 async fn seed_q_from_cache(
     cache: bool,
