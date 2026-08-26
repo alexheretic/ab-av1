@@ -1,3 +1,8 @@
+# Unreleased
+* Add encode & auto-encode `--min-gain` to fail the encode unless the result is at least the
+  given percent smaller than the input. Re-encoding an already efficient source can pass every
+  quality check yet produce a result no smaller, or larger, than the input.
+
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
   or a duration mismatch with the input. ffmpeg can otherwise exit successfully having written

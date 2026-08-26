@@ -66,6 +66,9 @@ These also apply to [auto-encode](#command-auto-encode).
   e.g. from a truncated input.
 * `--fail-fast` stops the encode at the first ffmpeg reported error instead of writing a
   damaged result.
+* `--min-gain` fails the encode unless the result is at least the given percent smaller than
+  the input, e.g. `--min-gain 20`. Re-encoding an already efficient source can pass every
+  quality check yet produce a result no smaller, or larger, than the input.
 
 ### Command: vmaf
 Full VMAF score calculation, distorted file vs reference file.
