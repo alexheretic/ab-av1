@@ -76,6 +76,7 @@ pub async fn run(
                 verify_decode,
                 verify_duration,
                 fail_fast,
+                min_gain,
             },
     }: Args,
     probe: Arc<Ffprobe>,
@@ -192,6 +193,17 @@ pub async fn run(
             "verify: output duration {} does not match input duration {}",
             humantime::format_duration(floor_ms(actual)),
             humantime::format_duration(floor_ms(*expected)),
+        );
+    }
+    if let Some(min_gain) = min_gain {
+        let input_size = std::fs::metadata(&args.input)?.len();
+        let output_size = std::fs::metadata(&tmp_output)?.len();
+        let max_size = input_size - input_size * u64::from(min_gain) / 100;
+        ensure!(
+            output_size <= max_size,
+            "verify: output size {} is not {min_gain}% smaller than input size {}",
+            indicatif::HumanBytes(output_size),
+            indicatif::HumanBytes(input_size),
         );
     }
     bar.finish();

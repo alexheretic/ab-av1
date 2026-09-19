@@ -75,6 +75,15 @@ pub struct EncodeToOutput {
     /// only, not to sample encodes.
     #[arg(long)]
     pub fail_fast: bool,
+
+    /// Fail unless the encoded result is at least this percent smaller than the input.
+    /// A failed check leaves no output file.
+    ///
+    /// Re-encoding already efficient sources can produce a result that passes
+    /// every quality check yet is no smaller, or even larger, than the input.
+    /// E.g. `--min-gain 20` requires the result to be at most 80% of the input size.
+    #[arg(long, value_name = "PERCENT", value_parser = clap::value_parser!(u8).range(0..=99))]
+    pub min_gain: Option<u8>,
 }
 
 /// Sampling arguments.
