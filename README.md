@@ -114,7 +114,12 @@ cargo install --git https://github.com/alexheretic/ab-av1
 ### Requirements
 **ffmpeg** newer than git-2022-02-24 with libsvtav1, libvmaf, libopus enabled. 
 
-`ffmpeg` should be in `$PATH`.
+`ffmpeg` and `ffprobe` should be in `$PATH`.
+
+#### Media executable paths
+Set `AB_AV1_FFMPEG` and `AB_AV1_FFPROBE` to select an executable name or path for each tool. Values are passed directly as executable names or paths, preserving spaces and non-ASCII characters; do not include command arguments in these variables.
+
+An unset variable uses the corresponding executable name (`ffmpeg` or `ffprobe`). An explicit selection never falls back to another executable, including when the selected value is empty or cannot run.
 
 ## Debug
 Enable debug logs by setting env var `RUST_LOG=ab_av1=debug`. This includes all ffmpeg calls.

@@ -21,7 +21,7 @@ pub fn run(
         reference.file_name().and_then(|n| n.to_str()).unwrap_or(""),
     );
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(crate::tool_paths::ffmpeg());
     cmd.kill_on_drop(true)
         .arg2_opt("-r", fps)
         .arg2("-i", reference)
