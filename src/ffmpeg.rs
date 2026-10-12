@@ -87,7 +87,7 @@ pub fn encode_sample(
 
     temporary::add(&dest, TempKind::Keepable);
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(crate::tool_paths::ffmpeg());
     cmd.kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
@@ -161,7 +161,7 @@ pub fn encode(
         write!(&mut metadata, " {} {preset}", vcodec.preset_arg()).unwrap();
     }
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(crate::tool_paths::ffmpeg());
     cmd.kill_on_drop(true)
         .args(input_args.iter().map(|a| &**a))
         .arg("-y")
@@ -264,7 +264,7 @@ pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
 }
 
 fn ffmpeg_svtav1_version() -> anyhow::Result<String> {
-    let mut ffmpeg = std::process::Command::new("ffmpeg")
+    let mut ffmpeg = std::process::Command::new(crate::tool_paths::ffmpeg())
         .args([
             "-hide_banner",
             "-loglevel",
@@ -338,7 +338,7 @@ pub async fn decode(file: &Path, mut on_progress: impl FnMut(FfmpegOut)) -> anyh
         file.file_name().and_then(|n| n.to_str()).unwrap_or("")
     );
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(crate::tool_paths::ffmpeg());
     cmd.kill_on_drop(true)
         // Only errors are of interest, `-stats` keeps the progress output that the
         // "error" log level would otherwise hide.
