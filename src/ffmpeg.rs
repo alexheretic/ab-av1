@@ -87,16 +87,19 @@ pub fn encode_sample(
 
     temporary::add(&dest, TempKind::Keepable);
 
+    let sample_fps_mode = sample_fps_mode_args(&output_args);
     let mut cmd = Command::new("ffmpeg");
     cmd.kill_on_drop(true)
         .arg("-y")
         .args(input_args.iter().map(|a| &**a))
         .arg2("-i", input)
         .arg2("-c:v", &*vcodec)
-        .args(output_args.iter().map(|a| &**a))
-        // Avoid dropping or duplicating frames as this may negatively affect input/output analysis
-        .arg2("-fps_mode", "passthrough")
-        .arg2(vcodec.crf_arg(), vcodec.crf(crf))
+        .args(output_args.iter().map(|a| &**a));
+    if let Some((arg, value)) = sample_fps_mode {
+        // Avoid dropping or duplicating frames unless the full encode explicitly requests it.
+        cmd.arg2(arg, value);
+    }
+    cmd.arg2(vcodec.crf_arg(), vcodec.crf(crf))
         .arg2_opt("-pix_fmt", pix_fmt.map(|v| v.as_str()))
         .arg2_opt(vcodec.preset_arg(), preset)
         .arg2_opt("-vf", vfilter)
@@ -248,19 +251,37 @@ impl VCodecSpecific for Arc<str> {
     }
 }
 
-pub fn remove_arg(args: &mut Vec<Arc<String>>, arg: &'static str) {
-    let mut retain_next = true;
-    args.retain(|a| {
-        if **a == arg {
-            retain_next = false;
-            false
-        } else if !retain_next {
-            retain_next = true;
-            false
-        } else {
-            true
-        }
-    });
+fn sample_fps_mode_args(args: &[Arc<String>]) -> Option<(&'static str, &'static str)> {
+    if args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "-fps_mode" | "-vsync"))
+    {
+        None
+    } else {
+        Some(("-fps_mode", "passthrough"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sample_fps_mode_args;
+    use std::sync::Arc;
+
+    #[test]
+    fn sample_fps_mode_respects_explicit_output_mode() {
+        assert_eq!(
+            sample_fps_mode_args(&[Arc::new("-fps_mode".to_owned()), Arc::new("cfr".to_owned())]),
+            None
+        );
+        assert_eq!(
+            sample_fps_mode_args(&[Arc::new("-vsync".to_owned()), Arc::new("cfr".to_owned())]),
+            None
+        );
+        assert_eq!(
+            sample_fps_mode_args(&[]),
+            Some(("-fps_mode", "passthrough"))
+        );
+    }
 }
 
 fn ffmpeg_svtav1_version() -> anyhow::Result<String> {
