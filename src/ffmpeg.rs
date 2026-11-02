@@ -52,9 +52,14 @@ impl FfmpegEncodeArgs<'_> {
         self.vcodec.hash(state);
         self.vfilter.hash(state);
         self.pix_fmt.hash(state);
-        self.crf.to_bits().hash(state);
         self.preset.hash(state);
-        self.output_args.hash(state);
+        // crf is excluded here, it's the ordered suffix of the cache key so cached results
+        // for an input+args can be enumerated by key prefix. The generated `crf=`
+        // svtav1-params token is stripped to keep this hash crf independent.
+        let crf_token = format!("crf={}", self.crf);
+        for arg in &self.output_args {
+            arg.replace(&crf_token, "").hash(state);
+        }
         self.input_args.hash(state);
     }
 }
