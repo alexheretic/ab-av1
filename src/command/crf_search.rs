@@ -88,6 +88,14 @@ pub struct SearchArgs {
     #[arg(long)]
     pub thorough: bool,
 
+    /// Accept a crf straight away if its score is less than this amount above the
+    /// min score.
+    ///
+    /// Raises the "higher vmaf tolerance" (by default 0.1, 0.2, 0.4 etc...) to at least this
+    /// value for every attempt, so the search can only finish sooner.
+    #[arg(long, conflicts_with = "thorough")]
+    pub score_tolerance: Option<f32>,
+
     /// Constant rate factor search increment precision.
     ///
     /// [default: 1.0, 0.1 for x264,x265,vp9]
@@ -259,6 +267,7 @@ pub fn run(
         crf_increment,
         high_crf_means_hq,
         thorough,
+        score_tolerance,
         sample,
         cache,
         vmaf,
@@ -315,13 +324,7 @@ pub fn run(
         let mut crf_attempts = Vec::new();
 
         for run in 1.. {
-            // how much we're prepared to go higher than the min-vmaf
-            let higher_tolerance = match thorough {
-                true => 0.05,
-                // increment 1.0 => +0.1, +0.2, +0.4, +0.8 ..
-                // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
-                _ => (crf_increment.min(1.0) * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
-            };
+            let higher_tolerance = higher_tolerance(run, crf_increment, thorough, score_tolerance);
             args.crf = q_conv.crf(q);
 
             let mut sample_enc = pin!(sample_encode::run(args.clone(), input_probe.clone()));
@@ -559,6 +562,55 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> i64 {
     let q_diff = worse_q.q - better_q.q;
     let lerp = (worse_q.q as f32 - q_diff as f32 * vmaf_factor).round() as i64;
     lerp.clamp(better_q.q + 1, worse_q.q - 1)
+}
+
+/// How much we're prepared to go higher than the min score on a given run.
+fn higher_tolerance(
+    run: usize,
+    crf_increment: f32,
+    thorough: bool,
+    score_tolerance: Option<f32>,
+) -> f32 {
+    // increment 1.0 => +0.1, +0.2, +0.4, +0.8 ..
+    // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
+    let default = (crf_increment.min(1.0) * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1);
+    match (thorough, score_tolerance) {
+        (true, _) => 0.05,
+        (_, Some(tolerance)) => tolerance.max(default),
+        _ => default,
+    }
+}
+
+#[test]
+fn higher_tolerance_default() {
+    assert_eq!(higher_tolerance(1, 1.0, false, None), 0.1);
+    assert_eq!(higher_tolerance(2, 1.0, false, None), 0.2);
+    assert_eq!(higher_tolerance(3, 1.0, false, None), 0.4);
+    assert_eq!(higher_tolerance(1, 0.1, false, None), 0.1);
+    assert_eq!(higher_tolerance(3, 1.0, true, None), 0.05);
+}
+
+#[test]
+fn higher_tolerance_score_tolerance() {
+    // raises the tolerance on early runs
+    assert_eq!(higher_tolerance(1, 1.0, false, Some(0.5)), 0.5);
+    assert_eq!(higher_tolerance(2, 1.0, false, Some(0.5)), 0.5);
+    // but never lowers it
+    assert_eq!(higher_tolerance(4, 1.0, false, Some(0.5)), 0.8);
+    assert_eq!(higher_tolerance(1, 1.0, false, Some(0.01)), 0.1);
+}
+
+#[test]
+fn score_tolerance_conflicts_with_thorough() {
+    let args = [
+        "crf-search",
+        "-i",
+        "vid.mkv",
+        "--thorough",
+        "--score-tolerance",
+        "0.5",
+    ];
+    assert!(Args::try_parse_from(args).is_err());
 }
 
 /// sample_progress: [0, 1]
