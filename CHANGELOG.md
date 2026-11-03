@@ -1,3 +1,8 @@
+# Unreleased (0.11.8)
+* Add crf-search & auto-encode `--score-tolerance`, accepting a crf as soon as its score is within
+  the given amount above `--min-vmaf` (or `--min-xpsnr`). This can save search iterations when a
+  slightly higher score than the minimum is fine.
+
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
   or a duration mismatch with the input. ffmpeg can otherwise exit successfully having written
