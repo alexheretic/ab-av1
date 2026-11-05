@@ -96,7 +96,7 @@ pub async fn xpsnr(
                 }
             }
             XpsnrOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
-            XpsnrOut::Err(e) => return Err(e),
+            XpsnrOut::Err(e) => return Err(e.into()),
         }
     }
     bar.finish();

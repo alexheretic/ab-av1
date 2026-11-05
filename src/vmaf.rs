@@ -1,5 +1,5 @@
 //! vmaf logic
-use crate::process::{Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr};
+use crate::process::{Chunks, CmdError, CommandExt, FfmpegOut, exit_ok_stderr};
 use anyhow::Context;
 use log::{debug, info};
 use std::{path::Path, process::Stdio};
@@ -64,7 +64,7 @@ pub fn run(
             }
         }
         if !parsed_done {
-            yield VmafOut::Err(cmd_err(
+            yield VmafOut::Err(CmdError::new(
                 "could not parse ffmpeg vmaf score",
                 &cmd_str,
                 &chunks,
@@ -77,7 +77,7 @@ pub fn run(
 pub enum VmafOut {
     Progress(FfmpegOut),
     Done(f32),
-    Err(anyhow::Error),
+    Err(CmdError),
 }
 
 impl VmafOut {

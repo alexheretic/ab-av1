@@ -1,3 +1,9 @@
+# Unreleased (0.12.0)
+* Use vmaf v1.0.16 models by default. 
+  Fallbacks to retrying with previous v0 model defaults if the newer models are not supported.
+  - new 1080p/general default `vmaf_v1.0.16_3d0h` replaces `vmaf_v0.6.1`.
+  - new 4k default `vmaf_v1.0.16_1d5h_2160` replaces `vmaf_4k_v0.6.1`.
+
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
   or a duration mismatch with the input. ffmpeg can otherwise exit successfully having written

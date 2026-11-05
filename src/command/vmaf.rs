@@ -5,15 +5,17 @@ use crate::{
     },
     ffprobe,
     log::ProgressLogger,
-    process::FfmpegOut,
+    process::{CmdError, FfmpegOut},
     vmaf::{self, VmafOut},
 };
 use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use log::warn;
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     pin::pin,
+    sync::atomic::Ordering,
     time::{Duration, Instant},
 };
 use tokio_stream::StreamExt;
@@ -67,18 +69,54 @@ pub async fn vmaf(
         bar.set_length(nframes);
     }
 
+    let (lavfi, v0_lavfi) = vmaf.ffmpeg_lavfi(
+        dprobe.resolution,
+        PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
+        score.reference_vfilter.as_deref(),
+    );
+    let vmaf_score =
+        match do_vmaf_progress(&reference, &distorted, &bar, &nframes, duration, &lavfi).await {
+            Ok(v) => v,
+            Err(e)
+                if let Some(v0_lavfi) = &v0_lavfi
+                    && let Some(e) = e.downcast_ref::<CmdError>()
+                    && e.could_be_caused_by_vmaf_model()
+                    && {
+                        warn!("v1 vmaf model not supported, falling back to v0");
+                        args::DEFAULT_V0_MODELS.store(true, Ordering::Relaxed);
+                        true
+                    }
+                    && let Ok(Some(score)) = do_vmaf_progress(
+                        &reference, &distorted, &bar, &nframes, duration, v0_lavfi,
+                    )
+                    .await =>
+            {
+                Some(score)
+            }
+            Err(e) => return Err(e),
+        };
+    bar.finish();
+
+    println!("{}", vmaf_score.context("no vmaf score")?);
+    Ok(())
+}
+
+async fn do_vmaf_progress(
+    reference: &Path,
+    distorted: &Path,
+    bar: &ProgressBar,
+    nframes: &Result<u64, ffprobe::ProbeError>,
+    duration: Result<&Duration, &ffprobe::ProbeError>,
+    lavfi: &args::VmafFfmpeg,
+) -> anyhow::Result<Option<f32>> {
+    let mut vmaf_score = None;
     let mut vmaf = pin!(vmaf::run(
-        &reference,
-        &distorted,
-        &vmaf.ffmpeg_lavfi(
-            dprobe.resolution,
-            PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
-            score.reference_vfilter.as_deref(),
-        ),
-        vmaf.fps(),
+        reference,
+        distorted,
+        &lavfi.filter_complex,
+        lavfi.fps,
     )?);
     let mut logger = ProgressLogger::new(module_path!(), Instant::now());
-    let mut vmaf_score = None;
     while let Some(vmaf) = vmaf.next().await {
         match vmaf {
             VmafOut::Done(score) => {
@@ -98,11 +136,8 @@ pub async fn vmaf(
                 }
             }
             VmafOut::Progress(FfmpegOut::StreamSizes { .. }) => {}
-            VmafOut::Err(e) => return Err(e),
+            VmafOut::Err(e) => return Err(e.into()),
         }
     }
-    bar.finish();
-
-    println!("{}", vmaf_score.context("no vmaf score")?);
-    Ok(())
+    Ok(vmaf_score)
 }
