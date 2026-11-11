@@ -1,5 +1,5 @@
 //! xpsnr logic
-use crate::process::{Chunks, CommandExt, FfmpegOut, cmd_err, exit_ok_stderr};
+use crate::process::{Chunks, CmdError, CommandExt, FfmpegOut, exit_ok_stderr};
 use anyhow::Context;
 use log::{debug, info};
 use std::{path::Path, process::Stdio};
@@ -60,7 +60,7 @@ pub fn run(
             }
         }
         if !parsed_done {
-            yield XpsnrOut::Err(cmd_err(
+            yield XpsnrOut::Err(CmdError::new(
                 "could not parse ffmpeg xpsnr score",
                 &cmd_str,
                 &chunks,
@@ -73,7 +73,7 @@ pub fn run(
 pub enum XpsnrOut {
     Progress(FfmpegOut),
     Done(f32),
-    Err(anyhow::Error),
+    Err(CmdError),
 }
 
 impl XpsnrOut {

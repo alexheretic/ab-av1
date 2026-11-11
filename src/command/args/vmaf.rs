@@ -1,12 +1,22 @@
 use crate::command::args::PixelFormat;
 use anyhow::Context;
 use clap::Parser;
-use std::{borrow::Cow, fmt::Display, sync::Arc, thread};
+use std::{
+    borrow::Cow,
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+};
 
-const DEFAULT_VMAF_FPS: f32 = 25.0;
+const DEFAULT_V0_VMAF_FPS: f32 = 25.0;
+
+pub static DEFAULT_V0_MODELS: AtomicBool = AtomicBool::new(false);
 
 /// Common vmaf options.
-#[derive(Debug, Parser, Clone)]
+#[derive(Debug, Default, Parser, Clone)]
 pub struct Vmaf {
     /// Set to calculate vmaf when it would otherwise not be, e.g. when calculating xpsnr.
     /// So using this allows both vmaf & xpsnr to be calculated at the same time.
@@ -43,20 +53,9 @@ pub struct Vmaf {
     /// Frame rate override used to analyse both reference & distorted videos.
     /// Maps to ffmpeg `-r` input arg.
     ///
-    /// Setting to 0 disables use.
-    #[arg(long, default_value_t = DEFAULT_VMAF_FPS)]
-    pub vmaf_fps: f32,
-}
-
-impl Default for Vmaf {
-    fn default() -> Self {
-        Self {
-            and_vmaf: None,
-            vmaf_args: <_>::default(),
-            vmaf_scale: <_>::default(),
-            vmaf_fps: DEFAULT_VMAF_FPS,
-        }
-    }
+    /// Setting to 0 disables use. Default 25 for v0 models, none for v1 models.
+    #[arg(long)]
+    pub vmaf_fps: Option<f32>,
 }
 
 impl std::hash::Hash for Vmaf {
@@ -64,7 +63,7 @@ impl std::hash::Hash for Vmaf {
         self.and_vmaf.hash(state);
         self.vmaf_args.hash(state);
         self.vmaf_scale.hash(state);
-        self.vmaf_fps.to_ne_bytes().hash(state);
+        self.vmaf_fps.map(|fps| fps.to_ne_bytes()).hash(state);
     }
 }
 
@@ -73,17 +72,33 @@ fn parse_vmaf_arg(arg: &str) -> anyhow::Result<Arc<str>> {
 }
 
 impl Vmaf {
-    pub fn fps(&self) -> Option<f32> {
-        Some(self.vmaf_fps).filter(|r| *r > 0.0)
-    }
-
-    /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf.
+    /// Returns ffmpeg `filter_complex`/`lavfi` value for calculating vmaf
+    /// and an optional v0 model fallback
     pub fn ffmpeg_lavfi(
         &self,
         distorted_res: Option<(u32, u32)>,
         pix_fmt: Option<PixelFormat>,
         ref_vfilter: Option<&str>,
-    ) -> String {
+    ) -> (VmafFfmpeg, Option<VmafFfmpeg>) {
+        if DEFAULT_V0_MODELS.load(Ordering::Relaxed) {
+            return (
+                self.ffmpeg(distorted_res, pix_fmt, ref_vfilter, false).0,
+                None,
+            );
+        }
+
+        let (ffmpeg, user_model) = self.ffmpeg(distorted_res, pix_fmt, ref_vfilter, true);
+        let v0_fallback = || self.ffmpeg(distorted_res, pix_fmt, ref_vfilter, false).0;
+        (ffmpeg, (!user_model).then(v0_fallback))
+    }
+
+    fn ffmpeg(
+        &self,
+        distorted_res: Option<(u32, u32)>,
+        pix_fmt: Option<PixelFormat>,
+        ref_vfilter: Option<&str>,
+        default_v1_model: bool,
+    ) -> (VmafFfmpeg, bool) {
         let mut args = self.vmaf_args.clone();
         if !args.iter().any(|a| a.contains("n_threads")) {
             // default n_threads to all cores
@@ -99,13 +114,24 @@ impl Vmaf {
         lavfi.insert_str(0, "libvmaf=shortest=true:ts_sync_mode=nearest:");
 
         let mut model = VmafModel::from_args(&args);
-        if let (None, Some((w, h))) = (model, distorted_res)
-            && w > 2560
-            && h > 1440
-        {
-            // for >2k resolutions use 4k model
-            lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
-            model = Some(VmafModel::V0_6_1_4k);
+        let user_model = model.is_some();
+        if !user_model {
+            if let Some((w, h)) = distorted_res
+                && w > 2560
+                && h > 1440
+            {
+                // for >2k resolutions use 4k model
+                if default_v1_model {
+                    lavfi.push_str(":model=version=vmaf_v1.0.16_1d5h_2160");
+                    model = Some(VmafModel::V1_0_16_1d5h4k);
+                } else {
+                    lavfi.push_str(":model=version=vmaf_4k_v0.6.1");
+                    model = Some(VmafModel::V0_6_1_4k);
+                }
+            } else if default_v1_model {
+                lavfi.push_str(":model=version=vmaf_v1.0.16_3d0h");
+                model = Some(VmafModel::V1_0_16_3d0h);
+            }
         }
 
         let ref_vf: Cow<_> = match ref_vfilter {
@@ -131,7 +157,23 @@ impl Vmaf {
         );
 
         lavfi.insert_str(0, &prefix);
-        lavfi
+        (
+            VmafFfmpeg {
+                filter_complex: lavfi,
+                fps: self.fps(default_v1_model),
+            },
+            user_model,
+        )
+    }
+
+    fn fps(&self, default_v1_model: bool) -> Option<f32> {
+        match default_v1_model {
+            true => self.vmaf_fps.filter(|r| *r > 0.0),
+            _ => self
+                .vmaf_fps
+                .or(Some(DEFAULT_V0_VMAF_FPS))
+                .filter(|r| *r > 0.0),
+        }
     }
 
     fn vf_scale(&self, model: VmafModel, distorted_res: Option<(u32, u32)>) -> Option<(i32, i32)> {
@@ -152,6 +194,12 @@ impl Vmaf {
             _ => None,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct VmafFfmpeg {
+    pub filter_complex: String,
+    pub fps: Option<f32>,
 }
 
 /// Return the smallest ffmpeg vf `(w, h)` scale values so that at least one of the
@@ -217,11 +265,11 @@ enum VmafModel {
 
 impl VmafModel {
     fn from_args(args: &[Arc<str>]) -> Option<Self> {
-        let mut using_custom_model: Vec<_> = args.iter().filter(|v| v.contains("model")).collect();
-
-        match using_custom_model.len() {
-            0 => None,
-            1 => Some(match using_custom_model.remove(0) {
+        let mut model_args = args.iter().filter(|v| v.contains("model"));
+        let first = model_args.next()?;
+        Some(match (first, model_args.next()) {
+            (_, Some(_)) => Self::Custom,
+            (arg, _) => match arg {
                 v if v.ends_with("version=vmaf_v0.6.1") => Self::V0_6_1,
                 v if v.ends_with("version=vmaf_4k_v0.6.1") => Self::V0_6_1_4k,
                 v if v.ends_with("version=vmaf_v1.0.16_3d0h") => Self::V1_0_16_3d0h,
@@ -233,9 +281,8 @@ impl VmafModel {
                 v if v.ends_with("version=vmaf_v1.0.16_3d0h_2160") => Self::V1_0_16_3d0h4k,
                 v if v.ends_with("version=vmaf_v1.0.16_hfr_3d0h_2160") => Self::V1_0_16_3d0h4k,
                 _ => Self::Custom,
-            }),
-            _ => Some(Self::Custom),
-        }
+            },
+        })
     }
 
     fn wants_1080_scale(self) -> bool {
@@ -250,214 +297,302 @@ impl VmafModel {
     }
 }
 
-#[test]
-fn vmaf_lavfi() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn vmaf_lavfi() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(
             None,
             Some(PixelFormat::Yuv420p),
-            Some("scale=1280:-1,fps=24")
-        ),
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
-    );
-}
+            Some("scale=1280:-1,fps=24"),
+        );
 
-#[test]
-fn vmaf_lavfi_default() {
-    let vmaf = Vmaf::default();
-    let expected = format!(
-        "[0:v]setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
-        thread::available_parallelism().map_or(1, |p| p.get())
-    );
-    assert_eq!(vmaf.ffmpeg_lavfi(None, None, None), expected);
-}
-
-#[test]
-fn vmaf_lavfi_default_pix_fmt() {
-    let vmaf = Vmaf::default();
-    let expected = format!(
-        "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
-        thread::available_parallelism().map_or(1, |p| p.get())
-    );
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p10le), None),
-        expected
-    );
-}
-
-#[test]
-fn vmaf_lavfi_include_n_threads() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["log_path=output.xml".into()],
-        ..<_>::default()
-    };
-    let expected = format!(
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:log_path=output.xml:n_threads={}",
-        thread::available_parallelism().map_or(1, |p| p.get())
-    );
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p), None),
-        expected
-    );
-}
-
-/// Low resolution videos should be upscaled to 1080p
-#[test]
-fn vmaf_lavfi_small_width_upscale_to_1k() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
-    );
-}
-
-#[test]
-fn vmaf_lavfi_v1_0_16_small_width_upscale_to_1k() {
-    for v in [
-        "vmaf_v1.0.16_3d0h",
-        "vmaf_v1.0.16_hfr_3d0h",
-        "vmaf_v1.0.16_5d0h",
-        "vmaf_v1.0.16_hfr_5d0h",
-    ] {
-        let vmaf = Vmaf {
-            vmaf_args: vec!["n_threads=5".into(), format!("model=version={v}").into()],
-            ..<_>::default()
-        };
         assert_eq!(
-            vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_v1.0.16_3d0h"
+        );
+        assert_eq!(lavfi.fps, None);
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=1280:-1,fps=24,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
+        );
+        assert_eq!(v0_lavfi.fps, Some(DEFAULT_V0_VMAF_FPS));
+    }
+
+    #[test]
+    fn vmaf_lavfi_default() {
+        let (lavfi, v0_lavfi) = Vmaf::default().ffmpeg_lavfi(None, None, None);
+        assert_eq!(
+            lavfi.filter_complex,
             format!(
-                "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-                 [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version={v}"
-            ),
-            "{v}: {vmaf:#?}",
+                "[0:v]setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}:model=version=vmaf_v1.0.16_3d0h",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            format!(
+                "[0:v]setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                 [1:v]setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
         );
     }
-}
 
-/// 4k videos should use 4k model
-#[test]
-fn vmaf_lavfi_4k() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3840, 2160)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
-    );
-}
-
-/// >2k videos should be upscaled to 4k & use 4k model
-#[test]
-fn vmaf_lavfi_3k_upscale_to_4k() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into()],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((3008, 1692)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version=vmaf_4k_v0.6.1"
-    );
-}
-
-#[test]
-fn vmaf_lavfi_v1_0_16_3k_upscale_to_4k() {
-    for v in [
-        "vmaf_v1.0.16_1d5h_2160",
-        "vmaf_v1.0.16_hfr_1d5h_2160",
-        "vmaf_v1.0.16_3d0h_2160",
-        "vmaf_v1.0.16_hfr_3d0h_2160",
-    ] {
-        let vmaf = Vmaf {
-            vmaf_args: vec!["n_threads=5".into(), format!("model=version={v}").into()],
-            ..<_>::default()
-        };
+    #[test]
+    fn vmaf_lavfi_default_pix_fmt() {
+        let (lavfi, v0_lavfi) =
+            Vmaf::default().ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p10le), None);
         assert_eq!(
-            vmaf.ffmpeg_lavfi(Some((3008, 1692)), Some(PixelFormat::Yuv420p), None),
+            lavfi.filter_complex,
             format!(
-                "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-                 [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version={v}"
-            ),
-            "{v}: {vmaf:#?}",
+                "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                 [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}:model=version=vmaf_v1.0.16_3d0h",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            format!(
+                "[0:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                 [1:v]format=yuv420p10le,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads={}",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
         );
     }
-}
 
-/// If user has overridden the model, don't default a vmaf width
-#[test]
-fn vmaf_lavfi_small_width_custom_model() {
-    let vmaf = Vmaf {
-        vmaf_args: vec![
-            "model=version=foo".into(),
-            "n_threads=5".into(),
-            "n_subsample=4".into(),
-        ],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
-    );
-}
+    #[test]
+    fn vmaf_lavfi_include_n_threads() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["log_path=output.xml".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(None, Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            format!(
+                "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                 [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:log_path=output.xml:n_threads={}:model=version=vmaf_v1.0.16_3d0h",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            format!(
+                "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                 [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                 [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:log_path=output.xml:n_threads={}",
+                thread::available_parallelism().map_or(1, |p| p.get())
+            )
+        );
+    }
 
-#[test]
-fn vmaf_lavfi_custom_model_and_width() {
-    let vmaf = Vmaf {
-        vmaf_args: vec![
-            "model=version=foo".into(),
-            "n_threads=5".into(),
-            "n_subsample=4".into(),
-        ],
-        // if specified just do it
-        vmaf_scale: VmafScale::Custom {
-            width: 123,
-            height: 720,
-        },
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
-    );
-}
+    /// Low resolution videos should be upscaled to 1080p
+    #[test]
+    fn vmaf_lavfi_small_width_upscale_to_1k() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_v1.0.16_3d0h"
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
+        );
+    }
 
-#[test]
-fn vmaf_lavfi_1080p() {
-    let vmaf = Vmaf {
-        vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
-        ..<_>::default()
-    };
-    assert_eq!(
-        vmaf.ffmpeg_lavfi(Some((1920, 1080)), Some(PixelFormat::Yuv420p), None),
-        "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
-         [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
-         [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
-    );
+    #[test]
+    fn vmaf_lavfi_v1_0_16_small_width_upscale_to_1k() {
+        for v in [
+            "vmaf_v1.0.16_3d0h",
+            "vmaf_v1.0.16_hfr_3d0h",
+            "vmaf_v1.0.16_5d0h",
+            "vmaf_v1.0.16_hfr_5d0h",
+        ] {
+            let (lavfi, v0_lavfi) = Vmaf {
+                vmaf_args: vec!["n_threads=5".into(), format!("model=version={v}").into()],
+                ..<_>::default()
+            }
+            .ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None);
+            assert_eq!(
+                lavfi.filter_complex,
+                format!(
+                    "[0:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                     [1:v]format=yuv420p,scale=1920:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                     [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version={v}"
+                ),
+                "{v}",
+            );
+            assert!(v0_lavfi.is_none(), "unexpected {v0_lavfi:?}");
+        }
+    }
+
+    /// 4k videos should use 2160/4k models
+    #[test]
+    fn vmaf_lavfi_4k() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((3840, 2160)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_v1.0.16_1d5h_2160"
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_4k_v0.6.1"
+        );
+    }
+
+    /// >2k videos should be upscaled to 4k & use 4k model
+    #[test]
+    fn vmaf_lavfi_3k_upscale_to_4k() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["n_threads=5".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((3008, 1692)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version=vmaf_v1.0.16_1d5h_2160"
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version=vmaf_4k_v0.6.1"
+        );
+    }
+
+    #[test]
+    fn vmaf_lavfi_v1_0_16_3k_upscale_to_4k() {
+        for v in [
+            "vmaf_v1.0.16_1d5h_2160",
+            "vmaf_v1.0.16_hfr_1d5h_2160",
+            "vmaf_v1.0.16_3d0h_2160",
+            "vmaf_v1.0.16_hfr_3d0h_2160",
+        ] {
+            let (lavfi, v0_lavfi) = Vmaf {
+                vmaf_args: vec!["n_threads=5".into(), format!("model=version={v}").into()],
+                ..<_>::default()
+            }
+            .ffmpeg_lavfi(Some((3008, 1692)), Some(PixelFormat::Yuv420p), None);
+            assert_eq!(
+                lavfi.filter_complex,
+                format!(
+                    "[0:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+                     [1:v]format=yuv420p,scale=3840:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+                     [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:model=version={v}"
+                ),
+                "{v}",
+            );
+            assert!(v0_lavfi.is_none(), "unexpected {v0_lavfi:?}");
+        }
+    }
+
+    /// If user has overridden the model, don't default a vmaf width
+    #[test]
+    fn vmaf_lavfi_small_width_custom_model() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec![
+                "model=version=foo".into(),
+                "n_threads=5".into(),
+                "n_subsample=4".into(),
+            ],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
+        );
+        assert!(v0_lavfi.is_none(), "unexpected {v0_lavfi:?}");
+    }
+
+    #[test]
+    fn vmaf_lavfi_custom_model_and_width() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec![
+                "model=version=foo".into(),
+                "n_threads=5".into(),
+                "n_subsample=4".into(),
+            ],
+            // if specified just do it
+            vmaf_scale: VmafScale::Custom {
+                width: 123,
+                height: 720,
+            },
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((1280, 720)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,scale=123:-1:flags=bicubic,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:model=version=foo:n_threads=5:n_subsample=4"
+        );
+        assert!(v0_lavfi.is_none(), "unexpected {v0_lavfi:?}");
+    }
+
+    #[test]
+    fn vmaf_lavfi_1080p() {
+        let (lavfi, v0_lavfi) = Vmaf {
+            vmaf_args: vec!["n_threads=5".into(), "n_subsample=4".into()],
+            ..<_>::default()
+        }
+        .ffmpeg_lavfi(Some((1920, 1080)), Some(PixelFormat::Yuv420p), None);
+        assert_eq!(
+            lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4:model=version=vmaf_v1.0.16_3d0h"
+        );
+        let v0_lavfi = v0_lavfi.expect("should v0 fallback");
+        assert_eq!(
+            v0_lavfi.filter_complex,
+            "[0:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[dis];\
+             [1:v]format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[ref];\
+             [dis][ref]libvmaf=shortest=true:ts_sync_mode=nearest:n_threads=5:n_subsample=4"
+        );
+    }
 }

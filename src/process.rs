@@ -1,6 +1,6 @@
 pub mod child;
 
-use anyhow::{anyhow, ensure};
+use anyhow::ensure;
 use std::{
     borrow::Cow,
     ffi::OsStr,
@@ -49,16 +49,36 @@ pub fn exit_ok_stderr(
     done: io::Result<ExitStatus>,
     cmd_str: &str,
     stderr: &Chunks,
-) -> anyhow::Result<()> {
-    exit_ok(name, done).map_err(|e| cmd_err(e, cmd_str, stderr))
+) -> Result<(), CmdError> {
+    exit_ok(name, done).map_err(|e| CmdError::new(e, cmd_str, stderr))
 }
 
-pub fn cmd_err(err: impl Display, cmd_str: &str, stderr: &Chunks) -> anyhow::Error {
-    anyhow!(
-        "{err}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
-        String::from_utf8_lossy(&stderr.out).trim()
-    )
+#[derive(Debug)]
+pub struct CmdError(pub String);
+
+impl CmdError {
+    pub fn new(err: impl Display, cmd_str: &str, stderr: &Chunks) -> Self {
+        Self(format!(
+            "{err}\n----cmd-----\n{cmd_str}\n---stderr---\n{}\n------------",
+            String::from_utf8_lossy(&stderr.out).trim()
+        ))
+    }
+
+    pub fn could_be_caused_by_vmaf_model(&self) -> bool {
+        self.0.contains("could not load libvmaf model")
+            || self
+                .0
+                .contains("Speed_chroma_feature_speed_chroma_uv_score")
+    }
 }
+
+impl Display for CmdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CmdError {}
 
 #[derive(Debug, PartialEq)]
 pub enum FfmpegOut {
@@ -246,7 +266,7 @@ impl FfmpegOutStream {
 }
 
 impl Stream for FfmpegOutStream {
-    type Item = anyhow::Result<FfmpegOut>;
+    type Item = Result<FfmpegOut, CmdError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {

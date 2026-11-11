@@ -112,7 +112,7 @@ cargo install --git https://github.com/alexheretic/ab-av1
 ```
 
 ### Requirements
-**ffmpeg** newer than git-2022-02-24 with libsvtav1, libvmaf, libopus enabled. 
+**ffmpeg** that isn't too old with libsvtav1, libvmaf, libopus enabled. 
 
 `ffmpeg` should be in `$PATH`.
 

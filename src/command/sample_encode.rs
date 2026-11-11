@@ -19,13 +19,13 @@ use clap::{ArgAction, Parser};
 use console::style;
 use futures_util::Stream;
 use indicatif::{HumanBytes, HumanDuration, ProgressBar, ProgressStyle};
-use log::info;
+use log::{info, warn};
 use std::{
     fmt::Display,
     io::{self, IsTerminal},
     path::{Path, PathBuf},
     pin::pin,
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 use tokio::fs;
@@ -366,46 +366,86 @@ pub fn run(
                             sample: sample_n,
                             samples,
                         });
+                        let (lavfi, v0_lavfi) = vmaf.ffmpeg_lavfi(
+                            encoded_probe.resolution,
+                            PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
+                            score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
+                        );
+
+                        let progress_update = |time: Duration, fps| {
+                            let progress = match xpsnr {
+                                false => (sample_duration_us +
+                                    time.as_micros_u64() +
+                                    sample_idx * sample_duration_us * 2) as f32
+                                    / (sample_duration_us * samples * 2) as f32,
+                                true => (sample_duration_us + sample_duration_us / 2 +
+                                    time.as_micros_u64() / 2 +
+                                    sample_idx * sample_duration_us * 2) as f32
+                                    / (sample_duration_us * samples * 2) as f32,
+                            };
+                            Update::Status(Status {
+                                work: Work::Score(ScoreKind::Vmaf),
+                                fps,
+                                progress,
+                                full_pass,
+                                sample: sample_n,
+                                samples,
+                            })
+                        };
+
                         let vmaf = vmaf::run(
                             &sample,
                             &encoded_sample,
-                            &vmaf.ffmpeg_lavfi(
-                                encoded_probe.resolution,
-                                PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
-                                score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
-                            ),
-                            vmaf.fps(),
+                            &lavfi.filter_complex,
+                            lavfi.fps,
                         )?;
                         let mut vmaf = pin!(vmaf);
                         let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
+                        let mut error = None;
                         while let Some(vmaf) = vmaf.next().await {
                             match vmaf {
                                 VmafOut::Done(score) => {
                                     result.vmaf_score = Some(score);
                                 }
                                 VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
-                                    let progress = match xpsnr {
-                                        false => (sample_duration_us +
-                                            time.as_micros_u64() +
-                                            sample_idx * sample_duration_us * 2) as f32
-                                            / (sample_duration_us * samples * 2) as f32,
-                                        true => (sample_duration_us + sample_duration_us / 2 +
-                                            time.as_micros_u64() / 2 +
-                                            sample_idx * sample_duration_us * 2) as f32
-                                            / (sample_duration_us * samples * 2) as f32,
-                                    };
-                                    yield Update::Status(Status {
-                                        work: Work::Score(ScoreKind::Vmaf),
-                                        fps,
-                                        progress,
-                                        full_pass,
-                                        sample: sample_n,
-                                        samples,
-                                    });
+                                    yield progress_update(time, fps);
                                     logger.update(sample_duration, time, fps);
                                 }
                                 VmafOut::Progress(_) => {}
-                                VmafOut::Err(e) => Err(e)?,
+                                VmafOut::Err(e) => error = Some(e),
+                            }
+                        }
+                        if let Some(first_error) = error {
+                            if let Some(lavfi) = v0_lavfi
+                            && first_error.could_be_caused_by_vmaf_model() {
+                                warn!("v1 vmaf model not supported, falling back to v0");
+                                args::DEFAULT_V0_MODELS.store(true, Ordering::Relaxed);
+                                let vmaf = vmaf::run(
+                                    &sample,
+                                    &encoded_sample,
+                                    &lavfi.filter_complex,
+                                    lavfi.fps,
+                                )?;
+                                let mut vmaf = pin!(vmaf);
+                                let mut logger = ProgressLogger::new("ab_av1::vmaf", Instant::now());
+                                while let Some(vmaf) = vmaf.next().await {
+                                    match vmaf {
+                                        VmafOut::Done(score) => {
+                                            result.vmaf_score = Some(score);
+                                        }
+                                        VmafOut::Progress(FfmpegOut::Progress { time, fps, .. }) => {
+                                            yield progress_update(time, fps);
+                                            logger.update(sample_duration, time, fps);
+                                        }
+                                        VmafOut::Progress(_) => {}
+                                        VmafOut::Err(_) => {
+                                            Err(first_error)?;
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                Err(first_error)?;
                             }
                         }
                     }
