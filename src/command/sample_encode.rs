@@ -6,7 +6,7 @@ use crate::{
         args::{self, PixelFormat},
     },
     console_ext::style,
-    ffmpeg::{self, FfmpegEncodeArgs, remove_arg},
+    ffmpeg::{self, FfmpegEncodeArgs},
     ffprobe::{self, Ffprobe},
     log::ProgressLogger,
     process::FfmpegOut,
@@ -161,11 +161,7 @@ pub fn run(
         let input_is_image = input_probe.is_image;
         let input_len = fs::metadata(&*input).await?.len();
         let sample_out_ext = sample_args.extension.as_deref().unwrap_or("mkv");
-        let mut enc_args = args.to_ffmpeg_args(crf, &input_probe, sample_out_ext)?;
-        // ignore user -fps_mode for sample encoding, as we always use passthrough
-        remove_arg(&mut enc_args.output_args, "-fps_mode");
-        remove_arg(&mut enc_args.output_args, "-vsync");
-
+        let enc_args = args.to_ffmpeg_args(crf, &input_probe, sample_out_ext)?;
         let duration = input_probe.duration.clone()?;
         let input_fps = input_probe.fps.clone()?;
         let samples = sample_args.sample_count(duration).max(1);
