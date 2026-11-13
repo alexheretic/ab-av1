@@ -73,6 +73,7 @@ pub async fn vmaf(
         dprobe.resolution,
         PixelFormat::opt_max(dprobe.pixel_format(), rprobe.pixel_format()),
         score.reference_vfilter.as_deref(),
+        dprobe.fps.ok(),
     );
     let vmaf_score =
         match do_vmaf_progress(&reference, &distorted, &bar, &nframes, duration, &lavfi).await {
