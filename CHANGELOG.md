@@ -3,6 +3,7 @@
   Fallbacks to retrying with previous v0 model defaults if the newer models are not supported.
   - new 1080p/general default `vmaf_v1.0.16_3d0h` replaces `vmaf_v0.6.1`.
   - new 4k default `vmaf_v1.0.16_1d5h_2160` replaces `vmaf_4k_v0.6.1`.
+  - Automatically use "hfr" variant for distorted videos >= 50 fps.
 
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors

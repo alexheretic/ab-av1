@@ -248,7 +248,8 @@ pub fn run(
                 input_len,
                 full_pass,
                 &enc_args,
-                (&score, &vmaf, &xpsnr),
+                // Note: `1`: Invalidates older caches for hfr model selection
+                (&score, &vmaf, &xpsnr, 1u8),
             )
             .await
             {
@@ -370,6 +371,7 @@ pub fn run(
                             encoded_probe.resolution,
                             PixelFormat::opt_max(enc_args.pix_fmt, input_pix_fmt),
                             score.reference_vfilter.as_deref().or(args.vfilter.as_deref()),
+                            encoded_probe.fps.ok(),
                         );
 
                         let progress_update = |time: Duration, fps| {
