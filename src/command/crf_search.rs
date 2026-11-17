@@ -8,8 +8,10 @@ use crate::{
         sample_encode::{self, StdoutFormat, Work},
     },
     console_ext::style,
+    ffmpeg::remove_arg,
     ffprobe::{self, Ffprobe},
     float::TerseF32,
+    sample,
 };
 use anyhow::Context;
 use clap::{ArgAction, Parser};
@@ -300,6 +302,23 @@ pub fn run(
         assert!(min_q < max_q);
         let mut q = (min_q + max_q) / 2;
 
+        // Seed the search from prior cached results, if any.
+        if let Ok(Some(seeded_q)) = seed_q_from_cache(
+            cache,
+            &args,
+            &input_probe,
+            &q_conv,
+            &sample,
+            min_score,
+            &score,
+            &vmaf,
+            &xpsnr,
+        )
+        .await
+        {
+            q = seeded_q;
+        }
+
         let mut args = sample_encode::Args {
             args: args.clone(),
             crf: 0.0,
@@ -409,6 +428,86 @@ pub fn run(
         }
         unreachable!();
     }
+}
+
+/// Read cached results for the first sample position, returning the `q` closest below the target score.
+#[allow(clippy::too_many_arguments)]
+async fn seed_q_from_cache(
+    cache: bool,
+    args: &args::Encode,
+    input_probe: &Ffprobe,
+    q_conv: &QualityConverter,
+    sample: &args::Sample,
+    min_score: f32,
+    score: &args::ScoreArgs,
+    vmaf: &args::Vmaf,
+    xpsnr: &args::Xpsnr,
+) -> anyhow::Result<Option<i64>> {
+    if !cache {
+        return Ok(None);
+    }
+
+    let input_len = tokio::fs::metadata(&*args.input).await?.len();
+    let duration = input_probe.duration.clone()?;
+    let input_fps = input_probe.fps.clone().unwrap_or_default();
+    let is_image = input_probe.is_image;
+    let samples = sample.sample_count(duration).max(1);
+    let full_pass = is_image
+        || sample.sample_duration.is_zero()
+        || sample.sample_duration * samples as _ >= duration.mul_f64(0.85);
+    if full_pass {
+        return Ok(None);
+    }
+
+    // Mirror sample_encode::sample() idx 0 naming so the same cache keys are probed.
+    let sample_duration = if input_fps > 0.0 {
+        sample
+            .sample_duration
+            .max(Duration::from_secs_f64(1.0 / input_fps))
+    } else {
+        sample.sample_duration
+    };
+    let sample_start =
+        duration.saturating_sub(sample_duration * samples as _) / (samples as u32 + 1);
+    let sample_frames = ((sample_duration.as_secs_f64() * input_fps).round() as u32).max(1);
+    let sample_name = std::path::Path::new(&args.input).with_file_name(sample::sample_file_name(
+        &args.input,
+        sample_start,
+        sample_duration >= Duration::from_secs(2),
+        sample_frames,
+    ));
+
+    let mut enc_args = args.to_ffmpeg_args(
+        0.0,
+        input_probe,
+        sample.extension.as_deref().unwrap_or("mkv"),
+    )?;
+    // match the key normalization done by sample_encode::run
+    remove_arg(&mut enc_args.output_args, "-fps_mode");
+    remove_arg(&mut enc_args.output_args, "-vsync");
+
+    let cached = sample_encode::cache::cached_crfs(
+        true,
+        &sample_name,
+        duration,
+        args.input.extension(),
+        input_len,
+        false,
+        &enc_args,
+        (score, vmaf, xpsnr),
+    )
+    .await;
+
+    Ok(cached
+        .into_iter()
+        .filter(|(_, r)| r.vmaf_score.or(r.xpsnr_score).unwrap_or_default() < min_score)
+        .max_by(|a, b| {
+            a.1.vmaf_score
+                .or(a.1.xpsnr_score)
+                .unwrap_or_default()
+                .total_cmp(&b.1.vmaf_score.or(b.1.xpsnr_score).unwrap_or_default())
+        })
+        .map(|(crf, _)| q_conv.q(crf)))
 }
 
 #[derive(Debug, Clone)]
