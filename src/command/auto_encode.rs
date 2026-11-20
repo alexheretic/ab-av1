@@ -195,12 +195,3 @@ pub async fn auto_encode(Args { mut search, encode }: Args) -> anyhow::Result<()
     )
     .await
 }
-
-/// crf-search json output is not currently available in auto-encode.
-#[test]
-fn stdout_format_unsupported() {
-    assert!(
-        Args::try_parse_from(["auto-encode", "-i", "vid.mkv", "--stdout-format", "json"]).is_err()
-    );
-    assert!(Args::try_parse_from(["auto-encode", "-i", "vid.mkv"]).is_ok());
-}

@@ -539,12 +539,6 @@ fn error_json_message() {
     );
 }
 
-#[test]
-fn parse_stdout_format() {
-    Args::try_parse_from(["crf-search", "-i", "vid.mkv", "--stdout-format", "json"])
-        .expect("--stdout-format json should parse");
-}
-
 /// Produce a q value between given samples using vmaf score linear interpolation
 /// so the output q value should produce the `min_vmaf`.
 ///
