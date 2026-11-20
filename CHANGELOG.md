@@ -6,6 +6,10 @@
   - Automatically use "hfr" variant for distorted videos >= 50 fps.
 * Add crf-search & auto-encode `--score-tolerance`, setting a fixed distance-from-min-score
   tolerance that allows the search to accept a crf before all possibilities have been attempted.
+  - `--score-tolerance=0` would be maximally thorough (even more so than --thorough) producing the 
+    highest valid crf.
+  - Higher values like `--score-tolerance=2` may end the search much faster but perhaps with a 
+    much lower crf.
 
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
