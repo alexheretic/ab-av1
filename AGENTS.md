@@ -10,3 +10,7 @@
 
 ## Lint Rules
 * New code should not introduce additional clippy warnings (latest stable).
+
+## Public API
+* JSON stdout messages (`--stdout-format json`) are a public API documented in `stdout-format-json.md`.
+* Update `stdout-format-json.md` and the CHANGELOG when adding or changing JSON message fields.
