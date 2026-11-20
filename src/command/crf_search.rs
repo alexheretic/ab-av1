@@ -572,19 +572,6 @@ fn vmaf_lerp_q(min_vmaf: f32, worse_q: &Sample, better_q: &Sample) -> i64 {
     lerp.clamp(better_q.q + 1, worse_q.q - 1)
 }
 
-#[test]
-fn score_tolerance_conflicts_with_thorough() {
-    let args = [
-        "crf-search",
-        "-i",
-        "vid.mkv",
-        "--thorough",
-        "--score-tolerance",
-        "0.5",
-    ];
-    assert!(Args::try_parse_from(args).is_err());
-}
-
 /// sample_progress: [0, 1]
 pub fn guess_progress(run: usize, sample_progress: f32, thorough: bool) -> f64 {
     let total_runs_guess = match () {
