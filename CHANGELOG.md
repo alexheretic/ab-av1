@@ -4,9 +4,8 @@
   - new 1080p/general default `vmaf_v1.0.16_3d0h` replaces `vmaf_v0.6.1`.
   - new 4k default `vmaf_v1.0.16_1d5h_2160` replaces `vmaf_4k_v0.6.1`.
   - Automatically use "hfr" variant for distorted videos >= 50 fps.
-* Add crf-search & auto-encode `--score-tolerance`, accepting a crf as soon as its score is within
-  the given amount above `--min-vmaf` (or `--min-xpsnr`). This can save search iterations when a
-  slightly higher score than the minimum is fine.
+* Add crf-search & auto-encode `--score-tolerance`, setting a fixed distance-from-min-score
+  tolerance that allows the search to accept a crf before all possibilities have been attempted.
 
 # v0.11.7
 * Add encode & auto-encode `--verify`, decoding the finished encode & failing on decode errors
