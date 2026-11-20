@@ -84,9 +84,20 @@ pub struct SearchArgs {
     /// Keep searching until a crf is found no more than min_vmaf+0.05 or all
     /// possibilities have been attempted.
     ///
-    /// By default the "higher vmaf tolerance" increases with each attempt (0.1, 0.2, 0.4 etc...).
+    /// This is equivalent to --score-tolerance 0.05
     #[arg(long)]
     pub thorough: bool,
+
+    /// Sets a constant distance from min score tolerance which allows the search to accept a crf
+    /// result before all possibilities have been attempted.
+    ///
+    /// When unspecified this starts at 0.1 and increases as the search progresses. E.g. for
+    /// crf increments of 1 the sequence is: 0.1, 0.2, 0.4, 0.8, ...
+    ///
+    /// Setting this may allow a search to finish faster (using high tolerance) or take longer
+    /// to find a crf closer to the min score. See --thorough.
+    #[arg(long, conflicts_with = "thorough")]
+    pub score_tolerance: Option<f32>,
 
     /// Constant rate factor search increment precision.
     ///
@@ -259,6 +270,7 @@ pub fn run(
         crf_increment,
         high_crf_means_hq,
         thorough,
+        score_tolerance,
         sample,
         cache,
         vmaf,
@@ -276,6 +288,7 @@ pub fn run(
         Error::ensure_other(min_crf < max_crf, "Invalid --min-crf & --max-crf")?;
         // by default use vmaf 95, otherwise use whatever is specified
         let min_score = min_vmaf.or(min_xpsnr).unwrap_or(DEFAULT_MIN_VMAF);
+        let user_score_tolerance = score_tolerance.or(thorough.then_some(0.05));
 
         // Whether to make the 2nd iteration on the ~20%/~80% crf point instead of the min/max to
         // improve interpolation by narrowing the crf range a 20% (or 30%) subrange.
@@ -315,13 +328,11 @@ pub fn run(
         let mut crf_attempts = Vec::new();
 
         for run in 1.. {
-            // how much we're prepared to go higher than the min-vmaf
-            let higher_tolerance = match thorough {
-                true => 0.05,
+            let higher_tolerance = user_score_tolerance.unwrap_or_else(|| {
                 // increment 1.0 => +0.1, +0.2, +0.4, +0.8 ..
                 // increment 0.1 => +0.1, +0.1, +0.1, +0.16 ..
-                _ => (crf_increment.min(1.0) * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1),
-            };
+                (crf_increment.min(1.0) * 2_f32.powi(run as i32 - 1) * 0.1).max(0.1)
+            });
             args.crf = q_conv.crf(q);
 
             let mut sample_enc = pin!(sample_encode::run(args.clone(), input_probe.clone()));
