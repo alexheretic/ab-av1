@@ -1,4 +1,4 @@
-# Unreleased (0.12.0)
+# v0.12.0
 * Use vmaf v1.0.16 models by default.
   Fallbacks to retrying with previous v0 model defaults if the newer models are not supported.
   - new 1080p/general default `vmaf_v1.0.16_3d0h` replaces `vmaf_v0.6.1`.
