@@ -10,10 +10,10 @@ RUN apt-get update && apt-get install -y wget xz-utils
 # fetch ffmpeg bin
 RUN dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
-        amd64) wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linux64-gpl-7.1.tar.xz -O /tmp/ffmpeg.tar.xz && \
-                tar -xvf /tmp/ffmpeg.tar.xz  && cd ffmpeg-n7.1-latest-linux64-gpl-7.1/bin && mv ffmpeg ffprobe /build/ ;; \
-        arm64) wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linuxarm64-gpl-7.1.tar.xz -O /tmp/ffmpeg.tar.xz && \
-                tar -xvf /tmp/ffmpeg.tar.xz  && cd ffmpeg-n7.1-latest-linuxarm64-gpl-7.1/bin && mv ffmpeg ffprobe /build/ ;; \
+        amd64) wget https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz -O /tmp/ffmpeg.tar.xz && \
+                tar -xvf /tmp/ffmpeg.tar.xz  && cd ffmpeg-n9.0-latest-linux64-gpl-9.0/bin && mv ffmpeg ffprobe /build/ ;; \
+        arm64) wget https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-linuxarm64-gpl-9.0.tar.xz -O /tmp/ffmpeg.tar.xz && \
+                tar -xvf /tmp/ffmpeg.tar.xz  && cd ffmpeg-n9.0-latest-linuxarm64-gpl-9.0/bin && mv ffmpeg ffprobe /build/ ;; \
         *) echo "Unsupported architecture: ${dpkgArch}"; exit 1 ;; \
     esac
 
