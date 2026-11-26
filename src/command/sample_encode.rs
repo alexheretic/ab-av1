@@ -172,25 +172,8 @@ pub fn run(
         let keep = sample_args.keep;
         let temp_dir = sample_args.temp_dir;
 
-        let (samples, sample_duration, full_pass) = {
-            if input_is_image {
-                (1, duration.max(Duration::from_secs(1)), true)
-            } else if sample_args.sample_duration.is_zero()
-                || sample_args.sample_duration * samples as _ >= duration.mul_f64(0.85)
-            {
-                // if the sample time is most of the full input time just encode the whole thing
-                (1, duration, true)
-            } else {
-                let sample_duration = if input_fps > 0.0 {
-                    // if sample-length is lower than a single frame use the frame time
-                    let one_frame_duration = Duration::from_secs_f64(1.0 / input_fps);
-                    sample_args.sample_duration.max(one_frame_duration)
-                } else {
-                    sample_args.sample_duration
-                };
-                (samples, sample_duration, false)
-            }
-        };
+        let (samples, sample_duration, full_pass) =
+            sample_plan(input_is_image, duration, input_fps, samples, sample_args.sample_duration);
         let sample_duration_us = sample_duration.as_micros_u64();
 
         // Start creating copy samples async, this is IO bound & not cpu intensive
@@ -248,8 +231,7 @@ pub fn run(
                 input_len,
                 full_pass,
                 &enc_args,
-                // Note: `1`: Invalidates older caches for hfr model selection
-                (&score, &vmaf, &xpsnr, 1u8),
+                cache_scoring(&score, &vmaf, xpsnr),
             )
             .await
             {
@@ -506,6 +488,54 @@ pub fn run(
     }
 }
 
+/// Scoring part of the sample-encode cache key.
+pub(crate) fn cache_scoring<'a>(
+    score: &'a args::ScoreArgs,
+    vmaf: &'a args::Vmaf,
+    xpsnr: bool,
+) -> impl std::hash::Hash + 'a {
+    // Note: `1`: Invalidates older caches for hfr model selection
+    (score, vmaf, xpsnr, 1u8)
+}
+
+/// The `(samples, sample_duration, full_pass)` plan `run` will use for an input.
+pub(crate) fn sample_plan(
+    is_image: bool,
+    duration: Duration,
+    input_fps: f64,
+    samples: u64,
+    sample_duration: Duration,
+) -> (u64, Duration, bool) {
+    if is_image {
+        (1, duration.max(Duration::from_secs(1)), true)
+    } else if sample_duration.is_zero() || sample_duration * samples as _ >= duration.mul_f64(0.85)
+    {
+        // if the sample time is most of the full input time just encode the whole thing
+        (1, duration, true)
+    } else {
+        let sample_duration = if input_fps > 0.0 {
+            // if sample-length is lower than a single frame use the frame time
+            let one_frame_duration = Duration::from_secs_f64(1.0 / input_fps);
+            sample_duration.max(one_frame_duration)
+        } else {
+            sample_duration
+        };
+        (samples, sample_duration, false)
+    }
+}
+
+/// The sample start time `run` uses for sample index `idx` of `samples`.
+pub(crate) fn sample_start(
+    idx: u64,
+    samples: u64,
+    sample_duration: Duration,
+    duration: Duration,
+) -> Duration {
+    (duration.saturating_sub(sample_duration * samples as _) / (samples as u32 + 1))
+        * (idx + 1) as u32
+        + sample_duration * idx as _
+}
+
 /// Copy a sample from the input to the temp_dir (or input dir).
 async fn sample(
     input: Arc<PathBuf>,
@@ -516,12 +546,7 @@ async fn sample(
     fps: f64,
     temp_dir: Option<PathBuf>,
 ) -> anyhow::Result<(Arc<PathBuf>, u64)> {
-    let sample_n = sample_idx + 1;
-
-    let sample_start = (duration.saturating_sub(sample_duration * samples as _)
-        / (samples as u32 + 1))
-        * sample_n as _
-        + sample_duration * sample_idx as _;
+    let sample_start = sample_start(sample_idx, samples, sample_duration, duration);
 
     let sample_frames = ((sample_duration.as_secs_f64() * fps).round() as u32).max(1);
     let floor_to_sec = sample_duration >= Duration::from_secs(2);

@@ -58,10 +58,8 @@ pub async fn cached_encode(
     }
 }
 
-/// All previously cached sample-encode results for this input & args, at any crf.
-#[allow(clippy::too_many_arguments)]
-pub async fn cached_crfs(
-    cache: bool,
+/// All previously cached sample-encode results for this sample & args, at any crf.
+async fn cached_crfs(
     sample: &Path,
     input_duration: Duration,
     input_extension: Option<&OsStr>,
@@ -70,10 +68,6 @@ pub async fn cached_crfs(
     enc_args: &FfmpegEncodeArgs<'_>,
     scoring: impl Hash,
 ) -> Vec<(f32, super::EncodeResult)> {
-    if !cache {
-        return Vec::new();
-    }
-
     let prefix = *encode_key(
         sample,
         input_duration,
@@ -89,7 +83,7 @@ pub async fn cached_crfs(
     let scanned = tokio::task::spawn_blocking(move || {
         let db = open_db()?;
         let mut results = Vec::new();
-        for entry in db.scan_prefix(&prefix) {
+        for entry in db.scan_prefix(prefix) {
             let (db_key, data) = entry?;
             if let Some(crf) = db_key
                 .get(prefix.len()..)
@@ -114,6 +108,83 @@ pub async fn cached_crfs(
             Vec::new()
         }
     }
+}
+
+/// All cached **full** sample-encode outputs for this input & args, at any crf.
+///
+/// Only crfs are returned where every sample of the run has a cached result, so the
+/// aggregated scores are compatible with a real `sample_encode::Output`.
+#[allow(clippy::too_many_arguments)]
+pub async fn cached_full_outputs(
+    input: &Path,
+    input_duration: Duration,
+    input_extension: Option<&OsStr>,
+    input_size: u64,
+    input_fps: f64,
+    samples: u64,
+    sample_duration: Duration,
+    enc_args: &FfmpegEncodeArgs<'_>,
+    scoring: &impl Hash,
+) -> Vec<(f32, super::Output)> {
+    use super::{EncodeResults, estimate_encode_size_by_file_percent};
+    use std::collections::HashMap;
+
+    let floor_to_sec = sample_duration >= Duration::from_secs(2);
+    let frames = ((sample_duration.as_secs_f64() * input_fps).round() as u32).max(1);
+
+    let mut per_sample: Vec<HashMap<u32, super::EncodeResult>> = Vec::new();
+    for idx in 0..samples {
+        let start = super::sample_start(idx, samples, sample_duration, input_duration);
+        let name = crate::sample::sample_file_name(input, start, floor_to_sec, frames);
+        let found = cached_crfs(
+            Path::new(&name),
+            input_duration,
+            input_extension,
+            input_size,
+            false,
+            enc_args,
+            scoring,
+        )
+        .await;
+        if found.is_empty() {
+            return Vec::new();
+        }
+        per_sample.push(
+            found
+                .into_iter()
+                .map(|(crf, r)| (crf.to_bits(), r))
+                .collect(),
+        );
+    }
+
+    let mut outputs = Vec::new();
+    for crf_bits in per_sample[0].keys() {
+        if !per_sample[1..].iter().all(|m| m.contains_key(crf_bits)) {
+            continue;
+        }
+        let results: Vec<super::EncodeResult> =
+            per_sample.iter().map(|m| m[crf_bits].clone()).collect();
+        let predicted_encode_size = results
+            .estimate_encode_size_by_duration(input_duration, false)
+            .min(
+                estimate_encode_size_by_file_percent(&results, input, false)
+                    .await
+                    .unwrap_or(u64::MAX),
+            );
+        outputs.push((
+            f32::from_bits(*crf_bits),
+            super::Output {
+                vmaf_score: results.mean_vmaf_score(),
+                xpsnr_score: results.mean_xpsnr_score(),
+                predicted_encode_size,
+                encode_percent: results.encoded_percent_size(),
+                predicted_encode_time: results.estimate_encode_time(input_duration, false),
+                from_cache: true,
+            },
+        ));
+    }
+    outputs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    outputs
 }
 
 pub async fn cache_result(key: Key, result: &super::EncodeResult) -> anyhow::Result<()> {
@@ -264,5 +335,109 @@ mod tests {
         );
         assert_eq!(low.prefix, high.prefix);
         assert!(low.db_key() < high.db_key());
+    }
+
+    #[test]
+    fn key_prefix_differs_when_input_or_args_differ() {
+        let sample = Path::new("movie.sample15+120f.mkv");
+        let base = encode_key(
+            sample,
+            Duration::from_secs(100),
+            None,
+            1000,
+            false,
+            &svt_args(30.0),
+            (),
+        );
+        let mut diff_preset = svt_args(30.0);
+        diff_preset.preset = Some(Arc::from("6"));
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                sample,
+                Duration::from_secs(100),
+                None,
+                1000,
+                false,
+                &diff_preset,
+                ()
+            )
+            .prefix
+        );
+
+        let mut diff_args = svt_args(30.0);
+        diff_args
+            .output_args
+            .push(Arc::new("-svtav1-params".to_string()));
+        diff_args.output_args.push(Arc::new("tune=1".to_string()));
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                sample,
+                Duration::from_secs(100),
+                None,
+                1000,
+                false,
+                &diff_args,
+                ()
+            )
+            .prefix
+        );
+
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                Path::new("movie.sample60+120f.mkv"),
+                Duration::from_secs(100),
+                None,
+                1000,
+                false,
+                &svt_args(30.0),
+                ()
+            )
+            .prefix
+        );
+
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                sample,
+                Duration::from_secs(101),
+                None,
+                1000,
+                false,
+                &svt_args(30.0),
+                ()
+            )
+            .prefix
+        );
+
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                sample,
+                Duration::from_secs(100),
+                None,
+                1001,
+                false,
+                &svt_args(30.0),
+                ()
+            )
+            .prefix
+        );
+
+        assert_ne!(
+            base.prefix,
+            encode_key(
+                sample,
+                Duration::from_secs(100),
+                None,
+                1000,
+                false,
+                &svt_args(30.0),
+                1u8
+            )
+            .prefix
+        );
     }
 }
