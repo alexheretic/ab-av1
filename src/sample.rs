@@ -11,13 +11,13 @@ use std::{
 };
 use tokio::process::Command;
 
-/// Create a non-video (audio + subtitle) sample from `sample_start` for `sample_duration`, returning its size.
+/// Create a non-video (audio + subtitle) sample from `sample_start` for `sample_duration`, returning its size & actual duration.
 pub async fn non_video_size(
     input: &Path,
     sample_start: Duration,
     sample_duration: Duration,
     temp_dir: Option<PathBuf>,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<(u64, Duration)> {
     let mut sample_start_s = sample_start.as_secs_f32();
     if sample_duration >= Duration::from_secs(2) {
         sample_start_s = sample_start_s.floor();
@@ -42,6 +42,7 @@ pub async fn non_video_size(
         .arg2("-i", input)
         .arg2("-map", "0:a?")
         .arg2("-map", "0:s?")
+        .arg("-vn")
         .arg2("-c", "copy")
         .arg(&dest)
         .stdin(Stdio::null())
@@ -51,8 +52,12 @@ pub async fn non_video_size(
 
     ensure_success("ffmpeg non-video copy", &out)?;
     let size = tokio::fs::metadata(&dest).await?.len();
+    // stream copy can't cut exactly, so use the duration that was actually copied
+    let copied = crate::ffprobe::probe(&dest)
+        .duration
+        .unwrap_or(sample_duration);
     let _ = tokio::fs::remove_file(&dest).await;
-    Ok(size)
+    Ok((size, copied))
 }
 
 /// Create a sample from `sample_start` + `frames`.

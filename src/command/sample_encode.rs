@@ -697,6 +697,7 @@ async fn estimate_encode_size_by_file_percent(
 }
 
 /// Return estimated encoded video stream size from the sample percentage change to the input's video stream size.
+/// Returns `u64::MAX` when it can't be estimated so it doesn't affect the minimum.
 async fn estimate_encode_size_by_vstream_percent(
     results: &Vec<EncodeResult>,
     input: &Path,
@@ -704,35 +705,35 @@ async fn estimate_encode_size_by_vstream_percent(
     sample_duration: Duration,
     temp_dir: Option<&Path>,
 ) -> u64 {
-    if results.is_empty() {
-        return 0;
-    }
-    if results.len() == 1 {
-        return results[0].encoded_size;
+    if results.len() < 2 {
+        return u64::MAX;
     }
     let encode_proportion = results.encoded_percent_size() / 100.0;
 
     let sample_start =
         duration.saturating_sub(sample_duration * results.len() as _) / (results.len() as u32 + 1);
-    let non_video_sample_size = sample::non_video_size(
+    let (non_video_sample_size, copied_duration) = sample::non_video_size(
         input,
         sample_start,
         sample_duration,
         temp_dir.map(Path::to_path_buf),
     )
     .await
-    .unwrap_or(0);
-    if non_video_sample_size == 0 {
-        return 0;
+    .unwrap_or_default();
+    if non_video_sample_size == 0 || copied_duration.is_zero() {
+        return u64::MAX;
     }
     let non_video_size = (non_video_sample_size as f64 * duration.as_secs_f64()
-        / sample_duration.as_secs_f64())
+        / copied_duration.as_secs_f64())
     .round() as u64;
     let input_vstream_size = fs::metadata(input)
         .await
         .map(|m| m.len())
         .unwrap_or(0)
         .saturating_sub(non_video_size);
+    if input_vstream_size == 0 {
+        return u64::MAX;
+    }
 
     (input_vstream_size as f64 * encode_proportion).round() as _
 }
