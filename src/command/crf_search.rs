@@ -8,6 +8,7 @@ use crate::{
         sample_encode::{self, StdoutFormat, Work},
     },
     console_ext::style,
+    ffmpeg::remove_arg,
     ffprobe::{self, Ffprobe},
     float::TerseF32,
 };
@@ -313,6 +314,24 @@ pub fn run(
         assert!(min_q < max_q);
         let mut q = (min_q + max_q) / 2;
 
+        // Pre-fill attempts with every full sample-encode result already in the cache.
+        let mut crf_attempts = if cache {
+            seed_attempts(&args, &input_probe, &q_conv, &sample, min_crf, max_crf, &score, &vmaf, min_xpsnr.is_some()).await
+        } else {
+            Vec::new()
+        };
+
+        // A cached attempt already satisfying the target within the initial tolerance ends the search.
+        let initial_tolerance = user_score_tolerance.unwrap_or((crf_increment.min(1.0) * 0.1).max(0.1));
+        if let Some(done) = cached_done(&crf_attempts, min_score, initial_tolerance, max_encoded_percent) {
+            yield Update::Done(done.clone());
+            return;
+        }
+        // Otherwise start at the cached attempt closest to the target score.
+        if let Some(seeded_q) = seed_q(&crf_attempts, min_score) {
+            q = seeded_q;
+        }
+
         let mut args = sample_encode::Args {
             args: args.clone(),
             crf: 0.0,
@@ -324,8 +343,6 @@ pub fn run(
             xpsnr: min_xpsnr.is_some(),
             xpsnr_opts: xpsnr,
         };
-
-        let mut crf_attempts = Vec::new();
 
         for run in 1.. {
             let higher_tolerance = user_score_tolerance.unwrap_or_else(|| {
@@ -420,6 +437,107 @@ pub fn run(
         }
         unreachable!();
     }
+}
+
+/// Full sample-encode outputs found entirely in the cache, within the search crf range.
+#[allow(clippy::too_many_arguments)]
+async fn seed_attempts(
+    args: &args::Encode,
+    input_probe: &Ffprobe,
+    q_conv: &QualityConverter,
+    sample: &args::Sample,
+    min_crf: f32,
+    max_crf: f32,
+    score: &args::ScoreArgs,
+    vmaf: &args::Vmaf,
+    xpsnr: bool,
+) -> Vec<Sample> {
+    let (Ok(duration), Ok(input_fps)) = (input_probe.duration.clone(), input_probe.fps.clone())
+    else {
+        return Vec::new();
+    };
+    let (samples, sample_duration, full_pass) = sample_encode::sample_plan(
+        input_probe.is_image,
+        duration,
+        input_fps,
+        sample.sample_count(duration).max(1),
+        sample.sample_duration,
+    );
+    if full_pass {
+        return Vec::new();
+    }
+    let Ok(input_meta) = tokio::fs::metadata(&*args.input).await else {
+        return Vec::new();
+    };
+    let Ok(mut enc_args) = args.to_ffmpeg_args(
+        0.0,
+        input_probe,
+        sample.extension.as_deref().unwrap_or("mkv"),
+    ) else {
+        return Vec::new();
+    };
+    // match the key normalization done by sample_encode::run
+    remove_arg(&mut enc_args.output_args, "-fps_mode");
+    remove_arg(&mut enc_args.output_args, "-vsync");
+
+    sample_encode::cache::cached_full_outputs(
+        &args.input,
+        duration,
+        args.input.extension(),
+        input_meta.len(),
+        input_fps,
+        samples,
+        sample_duration,
+        &enc_args,
+        &sample_encode::cache_scoring(score, vmaf, xpsnr),
+    )
+    .await
+    .into_iter()
+    .filter(|(crf, _)| *crf >= min_crf && *crf <= max_crf)
+    .map(|(crf, enc)| Sample {
+        q: q_conv.q(crf),
+        crf,
+        enc,
+    })
+    .collect()
+}
+
+/// The cached attempt already satisfying the target within `tolerance`, preferring the smallest file.
+fn cached_done(
+    attempts: &[Sample],
+    min_score: f32,
+    tolerance: f32,
+    max_encoded_percent: f32,
+) -> Option<&Sample> {
+    attempts
+        .iter()
+        .filter(|s| {
+            let score = s.enc.single_score();
+            score > min_score
+                && score < min_score + tolerance
+                && s.enc.encode_percent <= max_encoded_percent as _
+        })
+        .max_by_key(|s| s.q)
+}
+
+/// The `q` of the cached attempt closest to the target: the best "bad" if any, else the worst "good".
+fn seed_q(attempts: &[Sample], min_score: f32) -> Option<i64> {
+    attempts
+        .iter()
+        .filter(|s| s.enc.single_score() <= min_score)
+        .max_by(|a, b| {
+            a.enc
+                .single_score()
+                .total_cmp(&b.enc.single_score())
+                .then(a.q.cmp(&b.q))
+        })
+        .or_else(|| {
+            attempts
+                .iter()
+                .filter(|s| s.enc.single_score() > min_score)
+                .max_by_key(|s| s.q)
+        })
+        .map(|s| s.q)
 }
 
 #[derive(Debug, Clone)]
@@ -675,4 +793,59 @@ pub enum Update {
     /// Run result (excludes successful final runs)
     RunResult(Sample),
     Done(Sample),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attempt(q: i64, crf: f32, score: f32, encode_percent: f64) -> Sample {
+        Sample {
+            q,
+            crf,
+            enc: sample_encode::Output {
+                vmaf_score: Some(score),
+                xpsnr_score: None,
+                predicted_encode_size: 1000,
+                encode_percent,
+                predicted_encode_time: Duration::from_secs(10),
+                from_cache: true,
+            },
+        }
+    }
+
+    #[test]
+    fn cached_done_returns_only_attempts_within_tolerance_and_size() {
+        let attempts = [
+            attempt(40, 40.0, 96.0, 50.0),  // good but over the tolerance band
+            attempt(43, 43.0, 95.05, 30.0), // good & within tolerance
+            attempt(44, 44.0, 95.02, 90.0), // good & within tolerance but over max percent
+        ];
+        let done = cached_done(&attempts, 95.0, 0.1, 80.0).unwrap();
+        assert_eq!(done.q, 43);
+        assert!(cached_done(&attempts[..1], 95.0, 0.1, 80.0).is_none());
+    }
+
+    #[test]
+    fn cached_done_prefers_the_highest_q() {
+        let attempts = [
+            attempt(41, 41.0, 95.05, 30.0),
+            attempt(43, 43.0, 95.08, 35.0),
+        ];
+        assert_eq!(cached_done(&attempts, 95.0, 0.1, 80.0).unwrap().q, 43);
+    }
+
+    #[test]
+    fn seed_q_prefers_best_bad_then_worst_good() {
+        let attempts = [
+            attempt(38, 38.0, 96.0, 50.0), // good
+            attempt(42, 42.0, 94.0, 30.0), // bad
+            attempt(45, 45.0, 92.0, 20.0), // worse
+        ];
+        // best bad (closest below target) wins over worst good
+        assert_eq!(seed_q(&attempts, 95.0).unwrap(), 42);
+        // only goods -> worst good (highest q)
+        assert_eq!(seed_q(&attempts[..1], 95.0).unwrap(), 38);
+        assert_eq!(seed_q(&[], 95.0), None);
+    }
 }
